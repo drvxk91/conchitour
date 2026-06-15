@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   generateTiles: (scenePath: string) => ipcRenderer.invoke('tiles:generate', scenePath),
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  // Synchronous: returns the port of the localhost file server started in main.
+  getFileServerPort: () => ipcRenderer.sendSync('file-server:port') as number,
 });
 
 export interface PhotoExif {
@@ -36,6 +38,7 @@ declare global {
       copyToProject: (paths: string[], destDir: string) => Promise<string[]>;
       generateTiles: (scenePath: string) => Promise<boolean>;
       getPathForFile: (file: File) => string;
+      getFileServerPort: () => number;
     };
   }
 }

@@ -1,16 +1,9 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 
 const isDev = process.env.NODE_ENV === 'development';
-
-// Register local:// scheme before app is ready so the renderer can load
-// source photos without cross-origin restrictions in both dev and prod.
-// secure + corsEnabled are required when the renderer loads from http://localhost (dev mode)
-// so that Chromium doesn't block local:// images as mixed-content.
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'local', privileges: { bypassCSP: true, secure: true, corsEnabled: true, stream: true, supportFetchAPI: true } },
-]);
 
 async function createWindow() {
   const win = new BrowserWindow({
@@ -35,24 +28,46 @@ async function createWindow() {
   }
 }
 
+let fileServerPort = 0;
+
 app.whenReady().then(async () => {
-  // Serve local files via local:// scheme so thumbnails work in dev (http origin).
-  // Uses fs.readFile instead of net.fetch('file://...') because net.fetch does not
-  // reliably handle file:// URLs on Windows in Electron 33.
-  protocol.handle('local', async (req) => {
-    const withoutScheme = req.url.slice('local://'.length).replace(/^\//, '');
-    const filePath = decodeURIComponent(withoutScheme);
+  // A plain localhost HTTP server is the most reliable way to load local photos
+  // into <img> elements in Electron. Custom protocol.handle() works for fetch()
+  // but has subresource-loading quirks in Electron 33 that break <img> src.
+  const fileServer = http.createServer(async (req, res) => {
     try {
-      const data = await fs.readFile(filePath);
+      const filePath = decodeURIComponent(req.url!.slice(1));
       const ext = path.extname(filePath).toLowerCase();
+      if (!['.jpg', '.jpeg', '.png'].includes(ext)) {
+        res.writeHead(403).end();
+        return;
+      }
+      const data = await fs.readFile(filePath);
       const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
-      return new Response(data, { headers: { 'Content-Type': mime } });
+      res.writeHead(200, {
+        'Content-Type': mime,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'private, max-age=3600',
+      });
+      res.end(data);
     } catch {
-      return new Response(null, { status: 404 });
+      res.writeHead(404).end();
     }
   });
 
+  await new Promise<void>((resolve) => {
+    fileServer.listen(0, '127.0.0.1', () => {
+      fileServerPort = (fileServer.address() as { port: number }).port;
+      resolve();
+    });
+  });
+
   await createWindow();
+});
+
+// Synchronous IPC so the renderer can get the port before rendering any image.
+ipcMain.on('file-server:port', (event) => {
+  event.returnValue = fileServerPort;
 });
 
 app.on('window-all-closed', () => {
@@ -131,8 +146,10 @@ ipcMain.handle('photos:readMeta', async (_e, filePaths: string[]) => {
       const camera = [make, model].filter(Boolean).join(' ');
       if (camera) exif.camera = camera;
 
-      if (raw?.GPSImgDirection != null) {
-        exif.direction = Number(raw.GPSImgDirection);
+      // GPSImgDirection (standard EXIF) or Insta360 XMP heading tags
+      const dir = raw?.GPSImgDirection ?? raw?.Heading ?? raw?.['Insta360.Heading'] ?? raw?.Yaw;
+      if (dir != null) {
+        exif.direction = Number(dir);
       }
 
       if (raw?.latitude != null && raw?.longitude != null) {

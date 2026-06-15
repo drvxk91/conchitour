@@ -2,10 +2,7 @@ import { useState, useMemo } from 'react';
 import clsx from 'clsx';
 import { Search, Plus } from 'lucide-react';
 import { useProject } from '@/store/project';
-
-function toLocalUrl(p: string) {
-  return 'local:///' + p.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
-}
+import { toLocalUrl } from '@/lib/local-url';
 
 export function SceneSidebar() {
   const { project, activeSceneId, setActiveScene } = useProject();

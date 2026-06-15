@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useProject } from '@/store/project';
 import { fromPercent } from '@/lib/projection';
@@ -9,7 +9,7 @@ import { SceneInspector } from './SceneInspector';
 import { ParcoursGraph } from './ParcoursGraph';
 import type { Hotspot, LinkHotspot } from '@/types';
 
-export type EditorMode = 'navigate' | 'hotspot';
+export type EditorMode = 'navigate' | 'hotspot' | 'north';
 
 function makeHotspot(type: Hotspot['type'], ath = 0, atv = 0): Hotspot {
   const base = { id: uuid(), ath, atv };
@@ -31,11 +31,13 @@ export function ScenesScreen() {
     deleteHotspot,
     deleteScene,
     duplicateScene,
+    updateScene,
     undo,
     redo,
   } = useProject();
 
   const [mode, setMode] = useState<EditorMode>('navigate');
+  const [northDraft, setNorthDraft] = useState<number | undefined>(undefined);
   const activeScene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
 
   // Auto-select first scene
@@ -44,6 +46,26 @@ export function ScenesScreen() {
       setActiveScene(project.scenes[0].id);
     }
   }, [project.scenes, activeSceneId, setActiveScene]);
+
+  // When entering north mode, seed the draft from the scene's current heading
+  useEffect(() => {
+    if (mode === 'north' && activeScene) {
+      setNorthDraft((prev) => prev ?? activeScene.heading);
+    } else if (mode !== 'north') {
+      setNorthDraft(undefined);
+    }
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleNorthConfirm = useCallback((heading: number) => {
+    if (activeScene) {
+      updateScene(activeScene.id, { heading });
+    }
+    setMode('navigate');
+  }, [activeScene, updateScene]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleNorthCancel = useCallback(() => {
+    setMode('navigate');
+  }, []);
 
   // Stale refs for keyboard handler (avoids stale closure)
   const sceneRef = useRef(activeScene);
@@ -59,6 +81,7 @@ export function ScenesScreen() {
 
       if (e.key === 'v' || e.key === 'V') { setMode('navigate'); return; }
       if (e.key === 'h' || e.key === 'H') { setMode('hotspot');  return; }
+      if (e.key === 'n' || e.key === 'N') { setMode((m) => m === 'north' ? 'navigate' : 'north'); return; }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const sc = sceneRef.current;
@@ -121,11 +144,19 @@ export function ScenesScreen() {
           addHotspot(activeScene.id, h);
           setActiveHotspot(h.id);
         }}
+        onNorthConfirm={handleNorthConfirm}
+        onNorthCancel={handleNorthCancel}
+        northDraftHeading={northDraft}
       />
 
       <div className="flex-1 flex min-h-0">
         <SceneSidebar />
-        <SceneViewer mode={mode} onAddHotspot={handleAddHotspotAt} />
+        <SceneViewer
+          mode={mode}
+          onAddHotspot={handleAddHotspotAt}
+          northDraft={northDraft}
+          onNorthDraftChange={setNorthDraft}
+        />
         <SceneInspector onDeleteScene={handleDeleteScene} />
       </div>
 

@@ -16,6 +16,9 @@ interface Props {
   onDuplicate: () => void;
   onDelete: () => void;
   onAddHotspotType: (type: Hotspot['type']) => void;
+  onNorthConfirm: (heading: number) => void;
+  onNorthCancel: () => void;
+  northDraftHeading?: number;
 }
 
 const HOTSPOT_TYPES: { type: Hotspot['type']; label: string; Icon: typeof Link }[] = [
@@ -26,7 +29,7 @@ const HOTSPOT_TYPES: { type: Hotspot['type']; label: string; Icon: typeof Link }
   { type: 'form',     label: 'Form',     Icon: ClipboardList },
 ];
 
-export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, onDelete, onAddHotspotType }: Props) {
+export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, onDelete, onAddHotspotType, onNorthConfirm, onNorthCancel, northDraftHeading }: Props) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -95,9 +98,39 @@ export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, 
       <button title="Align horizon" onClick={() => stub('Align horizon')} className="btn text-xs gap-1">
         <AlignCenter size={13} />
       </button>
-      <button title="Set North" onClick={() => stub('Set North')} className="btn text-xs gap-1">
+      <button
+        data-testid="toolbar-set-north"
+        title="Set North (N)"
+        onClick={() => onModeChange(mode === 'north' ? 'navigate' : 'north')}
+        className={clsx('btn text-xs gap-1', mode === 'north' && 'btn-primary')}
+      >
         <Compass size={13} />
+        <span>N</span>
+        <kbd className="ml-1 text-[10px] opacity-50">N</kbd>
       </button>
+
+      {mode === 'north' && northDraftHeading !== undefined && (
+        <>
+          <div className="w-px h-5 bg-line mx-1" />
+          <span className="text-xs text-ink-soft" data-testid="north-heading-display">
+            {northDraftHeading.toFixed(1)}°
+          </span>
+          <button
+            data-testid="north-cancel"
+            onClick={onNorthCancel}
+            className="btn text-xs"
+          >
+            Cancel
+          </button>
+          <button
+            data-testid="north-confirm"
+            onClick={() => onNorthConfirm(northDraftHeading)}
+            className="btn btn-primary text-xs"
+          >
+            Confirm North
+          </button>
+        </>
+      )}
 
       <div className="w-px h-5 bg-line mx-1" />
 

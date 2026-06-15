@@ -127,9 +127,9 @@ test.describe('Import screen — file import (no GPS)', () => {
     await expect(page.getByText('Continue to Scenes')).toBeVisible();
   });
 
-  test('thumbnail img src uses local:/// protocol', async () => {
+  test('thumbnail img src uses localhost file server URL', async () => {
     const src = await page.locator('[data-testid="import-grid"] img').first().getAttribute('src');
-    expect(src).toMatch(/^local:\/\/\//);
+    expect(src).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
   });
 });
 

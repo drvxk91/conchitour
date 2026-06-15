@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { Check, X, MapPin } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { isValidSlug } from '@/lib/slug';
+import { normalizeHeading } from '@/lib/heading';
 import type { Scene } from '@/types';
 
 export function MetaTab({ scene }: { scene: Scene }) {
@@ -151,11 +152,13 @@ export function MetaTab({ scene }: { scene: Scene }) {
         <div className="flex-1">
           <label className="label-sm">Heading (°)</label>
           <input
+            data-testid="heading-input"
             type="number"
             className="input"
             value={scene.heading}
-            onChange={(e) => updateScene(scene.id, { heading: Number(e.target.value) })}
+            onChange={(e) => updateScene(scene.id, { heading: normalizeHeading(Number(e.target.value)) })}
           />
+          <p className="help-sm">Or use the Set North tool in the toolbar (N).</p>
         </div>
         <div className="flex-1">
           <label className="label-sm">Camera height (m)</label>

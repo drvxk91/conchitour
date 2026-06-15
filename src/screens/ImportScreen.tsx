@@ -4,13 +4,7 @@ import clsx from 'clsx';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { useProject } from '@/store/project';
 import { newScene } from '@/lib/scene-factory';
-
-// Converts an OS path to a local:// URL served by the custom Electron protocol.
-// Uses three slashes (local:///) so the Windows drive letter (e.g. C:) stays in
-// the URL path, not in the authority component (where Chromium would mangle it).
-function toLocalUrl(p: string): string {
-  return 'local:///' + p.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
-}
+import { toLocalUrl } from '@/lib/local-url';
 
 export function ImportScreen() {
   const {

@@ -78,6 +78,22 @@ Read it before touching anything. Every field has a reason. Key invariants:
 5. **SEO + Branding + Share + Modules**
 6. **Compile pipeline** (output folder generation)
 
+## Critical feature — Setting the North
+
+Every `Scene.heading` (0–360°) records where the camera was pointing relative to true North at capture time. **This is the axis pin for GPS-based auto-hotspot generation** on the Map screen: without a correct heading, the computed ath/atv for neighboring scenes will be wrong by the rotation delta.
+
+### How to set it
+1. Click the **Compass / N button** in the SceneToolbar (keyboard `N`).
+2. Drag the viewer **horizontally** — N/E/S/W markers rotate with the image.
+3. Position N (red badge) over the feature that is actually pointing North.
+4. Click **Confirm North**. The heading is saved to `scene.heading`.
+
+### Auto-detection
+`electron/main.ts` reads `GPSImgDirection`, `Heading` (Insta360 XMP), and `Yaw` from EXIF on import. If found, `newScene()` in `src/lib/scene-factory.ts` seeds `heading` automatically — no manual step needed for well-tagged cameras.
+
+### Helper
+`src/lib/heading.ts` → `normalizeHeading(deg)` → normalizes any degree value to `[0, 360)`.
+
 ## Commands
 
 ```
@@ -85,6 +101,8 @@ npm install         # install deps
 npm run dev         # vite + electron in dev
 npm run build       # production build + electron-builder
 npm run typecheck   # type-check without emit
+npm run test        # vitest unit tests
+npm run test:e2e    # playwright e2e tests (builds first)
 ```
 
 ## Non-negotiable rules

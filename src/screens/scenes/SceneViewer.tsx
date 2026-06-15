@@ -6,12 +6,15 @@ import {
 import { useProject } from '@/store/project';
 import { toPercent, fromPercent } from '@/lib/projection';
 import { toLocalUrl } from '@/lib/local-url';
+import { normalizeHeading } from '@/lib/heading';
 import type { EditorMode } from './ScenesScreen';
 import type { Hotspot } from '@/types';
 
 type Props = {
   mode: EditorMode;
   onAddHotspot: (xPct: number, yPct: number) => void;
+  northDraft?: number;
+  onNorthDraftChange?: (heading: number) => void;
 };
 
 function HotspotIcon({ hotspot }: { hotspot: Hotspot }) {
@@ -32,7 +35,7 @@ function categoryColor(sceneId: string, hotspot: Hotspot, project: ReturnType<ty
   return project.categories.find((c) => c.id === catId)?.color ?? '#6b6b68';
 }
 
-export function SceneViewer({ mode, onAddHotspot }: Props) {
+export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange }: Props) {
   const { project, activeSceneId, activeHotspotId, setActiveHotspot, updateHotspot } = useProject();
   const containerRef = useRef<HTMLDivElement>(null);
   const justCreatedRef = useRef(false);
@@ -42,6 +45,10 @@ export function SceneViewer({ mode, onAddHotspot }: Props) {
   const draggedRef  = useRef(false);                  // true once mouse actually moves
   const livePosRef  = useRef<{ id: string; ath: number; atv: number } | null>(null);
   const [livePos, setLivePos] = useState<{ id: string; ath: number; atv: number } | null>(null);
+
+  // Drag state for north mode
+  const northDragStartX   = useRef<number | null>(null);
+  const northDragStartHdg = useRef<number>(0);
 
   const scene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
 
@@ -71,6 +78,14 @@ export function SceneViewer({ mode, onAddHotspot }: Props) {
   }
 
   function handleContainerMouseMove(e: React.MouseEvent) {
+    // North mode: horizontal drag rotates the heading
+    if (mode === 'north' && northDragStartX.current !== null && containerRef.current) {
+      const dx = e.clientX - northDragStartX.current;
+      const degsPerPx = 360 / containerRef.current.getBoundingClientRect().width;
+      const newHeading = normalizeHeading(northDragStartHdg.current + dx * degsPerPx);
+      onNorthDraftChange?.(newHeading);
+      return;
+    }
     if (!draggingRef.current || !containerRef.current) return;
     draggedRef.current = true;
     const { x, y } = getXY(e);
@@ -79,7 +94,17 @@ export function SceneViewer({ mode, onAddHotspot }: Props) {
     setLivePos(pos);
   }
 
+  function handleContainerMouseDown(e: React.MouseEvent) {
+    if (mode === 'north') {
+      northDragStartX.current   = e.clientX;
+      northDragStartHdg.current = northDraft ?? scene?.heading ?? 0;
+    }
+  }
+
   function handleContainerMouseUp() {
+    // Reset north drag state
+    northDragStartX.current = null;
+
     const pos = livePosRef.current;
     if (draggingRef.current && pos && scene && draggedRef.current) {
       updateHotspot(scene.id, pos.id, { ath: pos.ath, atv: pos.atv });
@@ -99,15 +124,31 @@ export function SceneViewer({ mode, onAddHotspot }: Props) {
     );
   }
 
+  // Compass positions for north mode overlay
+  const activeHeading = (mode === 'north' && northDraft !== undefined) ? northDraft : scene.heading;
+  const cardinals = [
+    { label: 'N', world: 0 },
+    { label: 'E', world: 90 },
+    { label: 'S', world: 180 },
+    { label: 'W', world: 270 },
+  ].map(({ label, world }) => {
+    const ath = ((world - activeHeading + 180 + 3600) % 360) - 180;
+    return { label, x: toPercent(ath, 0).x };
+  });
+
   return (
     <div
       ref={containerRef}
       className={clsx(
         'flex-1 relative overflow-hidden bg-zinc-900 select-none',
-        livePos ? 'cursor-grabbing' : (mode === 'hotspot' ? 'cursor-crosshair' : 'cursor-default')
+        mode === 'north' ? 'cursor-ew-resize'
+          : livePos ? 'cursor-grabbing'
+          : mode === 'hotspot' ? 'cursor-crosshair'
+          : 'cursor-default'
       )}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onMouseDown={handleContainerMouseDown}
       onMouseMove={handleContainerMouseMove}
       onMouseUp={handleContainerMouseUp}
       onMouseLeave={handleContainerMouseUp}
@@ -136,11 +177,56 @@ export function SceneViewer({ mode, onAddHotspot }: Props) {
         style={{ top: '50%' }}
       />
 
-      {/* Compass (top-right) */}
+      {/* North mode overlay */}
+      {mode === 'north' && (
+        <div className="absolute inset-0 bg-black/30 pointer-events-none">
+          {/* Cardinal direction markers */}
+          {cardinals.map(({ label, x }) => (
+            <div
+              key={label}
+              className="absolute top-0 -translate-x-1/2 flex flex-col items-center pointer-events-none"
+              style={{ left: `${x}%` }}
+            >
+              <div className={clsx(
+                'px-2 py-0.5 rounded-b text-xs font-bold shadow',
+                label === 'N'
+                  ? 'bg-red-500 text-white'
+                  : 'bg-white/80 text-zinc-800'
+              )}>
+                {label}
+              </div>
+              <div className="w-px h-8 bg-white/50" />
+            </div>
+          ))}
+          {/* Center crosshair */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-8 h-px bg-white/60" />
+            <div className="absolute w-px h-8 bg-white/60" />
+          </div>
+          {/* Drag hint */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[11px] px-3 py-1.5 rounded-full backdrop-blur-sm pointer-events-none">
+            Drag left/right to rotate · {activeHeading.toFixed(1)}°
+          </div>
+        </div>
+      )}
+
+      {/* Compass (top-right) — shows heading; highlights when non-zero */}
       <div className="absolute top-3 right-3 pointer-events-none flex items-center gap-1 bg-black/40 text-white text-[10px] rounded px-2 py-1 backdrop-blur-sm">
         <Crosshair size={11} />
-        <span>{Math.round(scene.heading)}° N</span>
+        <span>{Math.round(activeHeading)}° N</span>
       </div>
+
+      {/* Persistent N badge — shown outside north mode when heading is set */}
+      {mode !== 'north' && scene.heading !== 0 && (
+        <div
+          className="absolute top-0 -translate-x-1/2 pointer-events-none"
+          style={{ left: `${cardinals[0].x}%` }}
+        >
+          <div className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-b shadow">
+            N
+          </div>
+        </div>
+      )}
 
       {/* Hotspot overlays */}
       {scene.hotspots.map((h) => {
@@ -184,10 +270,12 @@ export function SceneViewer({ mode, onAddHotspot }: Props) {
         );
       })}
 
-      {/* Hint */}
-      <div className="absolute bottom-3 right-3 text-[10px] text-white/50 pointer-events-none select-none">
-        Double-click to add a hotspot
-      </div>
+      {/* Hint — only in navigate/hotspot modes */}
+      {mode !== 'north' && (
+        <div className="absolute bottom-3 right-3 text-[10px] text-white/50 pointer-events-none select-none">
+          Double-click to add a hotspot
+        </div>
+      )}
     </div>
   );
 }
