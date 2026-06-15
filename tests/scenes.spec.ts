@@ -96,6 +96,11 @@ test.describe('Scenes screen — layout', () => {
   test('parcours graph is visible', async () => {
     await expect(page.getByTestId('parcours-graph')).toBeVisible();
   });
+
+  test('scene viewer img src uses localhost file server URL', async () => {
+    const src = await page.locator('[data-testid="scene-viewer"] img').first().getAttribute('src');
+    expect(src).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+  });
 });
 
 // ─── Scene selection ─────────────────────────────────────────────────────────

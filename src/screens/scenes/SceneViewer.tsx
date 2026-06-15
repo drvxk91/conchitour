@@ -5,19 +5,14 @@ import {
 } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { toPercent, fromPercent } from '@/lib/projection';
+import { toLocalUrl } from '@/lib/local-url';
 import type { EditorMode } from './ScenesScreen';
 import type { Hotspot } from '@/types';
 
-interface Props {
+type Props = {
   mode: EditorMode;
   onAddHotspot: (xPct: number, yPct: number) => void;
-}
-
-// Three slashes (local:///) keep the Windows drive letter in the URL path,
-// not in the authority where Chromium would mangle it (C → hostname).
-function toLocalUrl(p: string) {
-  return 'local:///' + p.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
-}
+};
 
 function HotspotIcon({ hotspot }: { hotspot: Hotspot }) {
   const cls = 'w-4 h-4';
