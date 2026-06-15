@@ -54,6 +54,7 @@ export function Sidebar() {
                 <button
                   key={id}
                   onClick={() => setActiveScreen(id)}
+                  data-testid={`nav-${id}`}
                   className={clsx(
                     'w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm mb-px text-left transition-colors',
                     active ? 'bg-ink text-paper' : 'text-ink hover:bg-paper-tinted'
