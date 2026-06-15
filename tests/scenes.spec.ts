@@ -98,8 +98,11 @@ test.describe('Scenes screen — layout', () => {
   });
 
   test('scene viewer img src uses localhost file server URL', async () => {
+    // Navigate mode shows Pannellum (no <img>); switch to hotspot mode for the flat image
+    await page.keyboard.press('h');
     const src = await page.locator('[data-testid="scene-viewer"] img').first().getAttribute('src');
     expect(src).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+    await page.keyboard.press('v');
   });
 });
 

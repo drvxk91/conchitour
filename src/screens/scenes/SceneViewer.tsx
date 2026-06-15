@@ -7,6 +7,7 @@ import { useProject } from '@/store/project';
 import { toPercent, fromPercent } from '@/lib/projection';
 import { toLocalUrl } from '@/lib/local-url';
 import { normalizeHeading } from '@/lib/heading';
+import { PanoViewer } from '@/components/PanoViewer';
 import type { EditorMode } from './ScenesScreen';
 import type { Hotspot } from '@/types';
 
@@ -124,7 +125,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
     );
   }
 
-  // Compass positions for north mode overlay
+  // Compass positions for north mode overlay and N badge
   const activeHeading = (mode === 'north' && northDraft !== undefined) ? northDraft : scene.heading;
   const cardinals = [
     { label: 'N', world: 0 },
@@ -136,6 +137,15 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
     return { label, x: toPercent(ath, 0).x };
   });
 
+  // Pre-compute hotspot category colors for PanoViewer
+  const hotspotColors = Object.fromEntries(
+    scene.hotspots.map((h) => [h.id, categoryColor(scene.id, h, project)])
+  );
+
+  // In flat mode (hotspot or north), we show the equirectangular image with overlays.
+  // In navigate mode we hand off to Pannellum for real 360° viewing.
+  const isFlat = mode === 'hotspot' || mode === 'north';
+
   return (
     <div
       ref={containerRef}
@@ -146,36 +156,66 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
           : mode === 'hotspot' ? 'cursor-crosshair'
           : 'cursor-default'
       )}
-      onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
+      // Click/dblclick only create hotspots in flat modes.
+      // Move/up/leave are always attached so hotspot drag works in navigate mode too.
+      onClick={isFlat ? handleClick : undefined}
+      onDoubleClick={isFlat ? handleDoubleClick : undefined}
       onMouseDown={handleContainerMouseDown}
       onMouseMove={handleContainerMouseMove}
       onMouseUp={handleContainerMouseUp}
       onMouseLeave={handleContainerMouseUp}
       data-testid="scene-viewer"
     >
-      {/* Scene image */}
-      <img
-        src={toLocalUrl(scene.media.sourcePath)}
-        alt={scene.title.en}
-        className="w-full h-full object-cover pointer-events-none"
-        draggable={false}
-        onError={(e) => {
-          e.currentTarget.style.display = 'none';
-          const fb = e.currentTarget.nextElementSibling as HTMLElement | null;
-          if (fb) fb.style.display = 'flex';
-        }}
-      />
-      {/* Shown only when the image fails to load */}
-      <div className="absolute inset-0 hidden items-center justify-center bg-zinc-800 pointer-events-none">
-        <span className="text-white/30 text-sm select-none">Image unavailable</span>
-      </div>
+      {/* ── Navigate mode: real 360° Pannellum viewer ── */}
+      {!isFlat && (
+        <PanoViewer
+          imageUrl={toLocalUrl(scene.media.sourcePath)}
+          hotspots={scene.hotspots}
+          hotspotColors={hotspotColors}
+          activeHotspotId={activeHotspotId}
+          heading={scene.heading}
+          onHotspotClick={(id) => setActiveHotspot(activeHotspotId === id ? null : id)}
+          onDoubleClick={(ath, atv) => {
+            const { x, y } = toPercent(ath, atv);
+            onAddHotspot(x, y);
+          }}
+        />
+      )}
 
-      {/* Horizon line */}
-      <div
-        className="absolute inset-x-0 border-t border-white/20 pointer-events-none"
-        style={{ top: '50%' }}
-      />
+      {/* ── Flat mode: equirectangular image + overlays ── */}
+      {isFlat && (
+        <>
+          <img
+            src={toLocalUrl(scene.media.sourcePath)}
+            alt={scene.title.en}
+            className="w-full h-full object-cover pointer-events-none"
+            draggable={false}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              const fb = e.currentTarget.nextElementSibling as HTMLElement | null;
+              if (fb) fb.style.display = 'flex';
+            }}
+          />
+          <div className="absolute inset-0 hidden items-center justify-center bg-zinc-800 pointer-events-none">
+            <span className="text-white/30 text-sm select-none">Image unavailable</span>
+          </div>
+        </>
+      )}
+
+      {/* Horizon line (flat modes only) */}
+      {isFlat && (
+        <div
+          className="absolute inset-x-0 border-t border-white/20 pointer-events-none"
+          style={{ top: '50%' }}
+        />
+      )}
+
+      {/* 360° hint shown in navigate mode */}
+      {!isFlat && !scene.hotspots.length && (
+        <div className="absolute bottom-3 left-3 text-[10px] text-white/50 pointer-events-none select-none bg-black/30 px-2 py-1 rounded">
+          360° view — switch to Hotspot mode (H) to place hotspots
+        </div>
+      )}
 
       {/* North mode overlay */}
       {mode === 'north' && (
@@ -228,14 +268,14 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
         </div>
       )}
 
-      {/* Hotspot overlays */}
+      {/* Hotspot overlays — visible in all modes; draggable in flat modes */}
       {scene.hotspots.map((h) => {
         const posAth = livePos?.id === h.id ? livePos.ath : h.ath;
         const posAtv = livePos?.id === h.id ? livePos.atv : h.atv;
         const { x, y } = toPercent(posAth, posAtv);
         const isSelected    = h.id === activeHotspotId;
         const isDraggingThis = livePos?.id === h.id;
-        const color = categoryColor(scene.id, h, project);
+        const color = hotspotColors[h.id] ?? '#6b6b68';
 
         return (
           <div
@@ -257,7 +297,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
             onMouseDown={(e) => {
               e.stopPropagation();
               draggingRef.current = h.id;
-              draggedRef.current  = false; // reset so a stationary click isn't treated as a drag
+              draggedRef.current  = false;
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -270,8 +310,8 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
         );
       })}
 
-      {/* Hint — only in navigate/hotspot modes */}
-      {mode !== 'north' && (
+      {/* Hint — hotspot mode only */}
+      {mode === 'hotspot' && (
         <div className="absolute bottom-3 right-3 text-[10px] text-white/50 pointer-events-none select-none">
           Double-click to add a hotspot
         </div>

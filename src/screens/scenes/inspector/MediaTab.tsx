@@ -23,6 +23,9 @@ export function MediaTab({ scene }: { scene: Scene }) {
   const { media } = scene;
   const name = media.sourcePath.replace(/\\/g, '/').split('/').pop() ?? '—';
   const dims = media.width && media.height ? `${media.width} × ${media.height}` : '—';
+  // Equirectangular 360° images have a 2:1 aspect ratio (width ≈ 2 × height)
+  const isEquirect = media.width > 0 && media.height > 0 &&
+    Math.abs(media.width / media.height - 2) < 0.1;
 
   return (
     <div className="p-4 space-y-4 text-sm" data-testid="media-tab">
@@ -31,6 +34,14 @@ export function MediaTab({ scene }: { scene: Scene }) {
         <Row icon={<HardDrive size={13} />} label="Dimensions" value={dims} />
         <Row icon={<HardDrive size={13} />} label="File size" value={fmt(media.fileSizeBytes)} />
       </div>
+      {media.width > 0 && (
+        <div className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1 ${
+          isEquirect ? 'bg-green-50 text-green-700 border border-green-200'
+                     : 'bg-amber-50 text-amber-700 border border-amber-200'
+        }`}>
+          {isEquirect ? '✓ Equirectangular 360°' : '⚠ Not equirectangular — viewer may distort'}
+        </div>
+      )}
 
       {media.exif && (
         <>
