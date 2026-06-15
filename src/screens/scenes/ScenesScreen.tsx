@@ -122,7 +122,7 @@ export function ScenesScreen() {
     const h: LinkHotspot = { id: uuid(), type: 'link', ath, atv, targetSceneId: '' };
     addHotspot(activeScene.id, h);
     setActiveHotspot(h.id);
-    setMode('navigate');
+    // Stay in current mode so the new hotspot remains visible in the overlay
   }
 
   function handleDeleteScene(id: string) {

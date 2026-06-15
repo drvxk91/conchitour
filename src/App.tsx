@@ -6,17 +6,17 @@ import { useProject } from '@/store/project';
 
 export default function App() {
   const { activeScreen } = useProject();
-  const isScenes = activeScreen === 'scenes';
+  const needsFullHeight = activeScreen === 'scenes' || activeScreen === 'map';
   return (
     <div className="h-screen flex flex-col">
       <TitleBar />
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         <Sidebar />
-        {/* Scenes screen owns its own scroll/overflow; other screens scroll freely */}
+        {/* Scenes + Map own their scroll/overflow; other screens scroll freely */}
         <main
           className={clsx(
-            'flex-1',
-            isScenes ? 'overflow-hidden' : 'overflow-auto bg-paper-soft'
+            'flex-1 min-h-0',
+            needsFullHeight ? 'overflow-hidden' : 'overflow-auto bg-paper-soft'
           )}
         >
           <ScreenRouter />

@@ -3,9 +3,10 @@ import clsx from 'clsx';
 import { Search, Plus } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { toLocalUrl } from '@/lib/local-url';
+import { newScene } from '@/lib/scene-factory';
 
 export function SceneSidebar() {
-  const { project, activeSceneId, setActiveScene } = useProject();
+  const { project, activeSceneId, setActiveScene, addScene, updateScene, setProcessing } = useProject();
   const [query, setQuery] = useState('');
   const [filterCat, setFilterCat] = useState<string | null>(null);
 
@@ -21,6 +22,29 @@ export function SceneSidebar() {
     }
     return map;
   }, [project.scenes]);
+
+  async function handleAddScene() {
+    const paths = await window.conchitect.openFiles();
+    if (!paths.length) return;
+    setProcessing(true, 'Reading EXIF...');
+    try {
+      const meta = await window.conchitect.readPhotosMeta(paths);
+      const existingSlugs = new Set(project.scenes.map((s) => s.slug));
+      setProcessing(true, 'Generating tiles...');
+      for (const m of meta) {
+        const scene = newScene(m.path, {
+          width: m.width, height: m.height, fileSize: m.fileSize, exif: m.exif,
+        }, existingSlugs);
+        existingSlugs.add(scene.slug);
+        addScene(scene);
+        await window.conchitect.generateTiles(scene.media.sourcePath);
+        updateScene(scene.id, { media: { ...scene.media, tilesGenerated: true } });
+      }
+      setProcessing(false, 'Done');
+    } catch {
+      setProcessing(false, '');
+    }
+  }
 
   const visible = project.scenes.filter((sc) => {
     if (filterCat && !sc.categoryIds.includes(filterCat)) return false;
@@ -138,12 +162,12 @@ export function SceneSidebar() {
         })}
       </div>
 
-      {/* Add scene placeholder */}
+      {/* Add scene */}
       <div className="p-2 border-t border-line">
         <button
-          disabled
-          className="btn w-full justify-center text-xs opacity-40 cursor-not-allowed"
-          title="Import photos to add scenes"
+          onClick={handleAddScene}
+          className="btn w-full justify-center text-xs"
+          title="Add more photos to this project"
         >
           <Plus size={12} />
           Add scene

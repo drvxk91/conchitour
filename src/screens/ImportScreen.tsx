@@ -10,6 +10,7 @@ export function ImportScreen() {
   const {
     project,
     addScene,
+    updateScene,
     setActiveScreen,
     isProcessing,
     processingMessage,
@@ -41,6 +42,7 @@ export function ImportScreen() {
       for (const scene of scenes) {
         addScene(scene);
         await window.conchitect.generateTiles(scene.media.sourcePath);
+        updateScene(scene.id, { media: { ...scene.media, tilesGenerated: true } });
       }
 
       setProcessing(false, 'Done');

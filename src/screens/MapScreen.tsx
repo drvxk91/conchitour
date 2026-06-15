@@ -32,6 +32,7 @@ function MapView({ scenes, categories, activeSceneId, onDragEnd, onSelect }: Map
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const didFitRef = useRef(false);
 
   function colorFor(scene: typeof scenes[0]) {
     return categories.find((c) => c.id === scene.categoryIds[0])?.color ?? '#6b6b68';
@@ -57,12 +58,14 @@ function MapView({ scenes, categories, activeSceneId, onDragEnd, onSelect }: Map
     if (!containerRef.current || mapRef.current) return;
     let map: L.Map;
     try {
-      map = L.map(containerRef.current, { zoomControl: true });
+      map = L.map(containerRef.current, { zoomControl: true, center: [20, 0], zoom: 2 });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(map);
       mapRef.current = map;
+      // Ensure Leaflet recalculates container size after the DOM settles
+      setTimeout(() => { try { map.invalidateSize(); } catch { /* ignore */ } }, 100);
     } catch (err) {
       console.warn('[MapView] Leaflet init error:', err);
       return;
@@ -120,16 +123,15 @@ function MapView({ scenes, categories, activeSceneId, onDragEnd, onSelect }: Map
       }
     }
 
-    // Auto-fit bounds on first load
-    if (geoScenes.length >= 1 && markersRef.current.size > 0) {
+    // Fit once on first load (C1.3: 0 GPS → world view already set, 1 → zoom 16, N → fitBounds)
+    if (!didFitRef.current && geoScenes.length >= 1) {
+      didFitRef.current = true;
       try {
         if (geoScenes.length === 1) {
-          if (!map.getBounds().contains([geoScenes[0].geo.lat, geoScenes[0].geo.lng])) {
-            map.setView([geoScenes[0].geo.lat, geoScenes[0].geo.lng], 17);
-          }
+          map.setView([geoScenes[0].geo.lat, geoScenes[0].geo.lng], 16);
         } else {
           const coords = geoScenes.map((s): L.LatLngExpression => [s.geo.lat, s.geo.lng]);
-          map.fitBounds(L.latLngBounds(coords), { padding: [40, 40], maxZoom: 18 });
+          map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
         }
       } catch { /* ignore fitBounds errors */ }
     }

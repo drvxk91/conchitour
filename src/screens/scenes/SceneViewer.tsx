@@ -137,7 +137,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
     return { label, x: toPercent(ath, 0).x };
   });
 
-  // Pre-compute hotspot category colors for PanoViewer
+  // Pre-compute hotspot category colors for overlay rendering
   const hotspotColors = Object.fromEntries(
     scene.hotspots.map((h) => [h.id, categoryColor(scene.id, h, project)])
   );
@@ -170,11 +170,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
       {!isFlat && (
         <PanoViewer
           imageUrl={toLocalUrl(scene.media.sourcePath)}
-          hotspots={scene.hotspots}
-          hotspotColors={hotspotColors}
-          activeHotspotId={activeHotspotId}
           heading={scene.heading}
-          onHotspotClick={(id) => setActiveHotspot(activeHotspotId === id ? null : id)}
           onDoubleClick={(ath, atv) => {
             const { x, y } = toPercent(ath, atv);
             onAddHotspot(x, y);
@@ -268,8 +264,8 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
         </div>
       )}
 
-      {/* Hotspot overlays — visible in all modes; draggable in flat modes */}
-      {scene.hotspots.map((h) => {
+      {/* Hotspot overlays — flat modes only (hotspot + north); navigate mode uses Pannellum */}
+      {isFlat && scene.hotspots.map((h) => {
         const posAth = livePos?.id === h.id ? livePos.ath : h.ath;
         const posAtv = livePos?.id === h.id ? livePos.atv : h.atv;
         const { x, y } = toPercent(posAth, posAtv);
