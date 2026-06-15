@@ -273,21 +273,34 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
         const isDraggingThis = livePos?.id === h.id;
         const color = hotspotColors[h.id] ?? '#6b6b68';
 
+        // Compute display label: use title override, type-specific field, or target scene title
+        let label: string | null = null;
+        const t = h.title?.en ?? null;
+        if (t) {
+          label = t;
+        } else if (h.type === 'link') {
+          const target = project.scenes.find((s) => s.id === h.targetSceneId);
+          label = target ? (target.title.en || target.slug) : null;
+        } else if (h.type === 'video' || h.type === 'text') {
+          label = h.title.en || null;
+        } else if (h.type === 'external') {
+          label = h.label.en || null;
+        } else if (h.type === 'form') {
+          label = h.subject.en || null;
+        }
+
         return (
           <div
             key={h.id}
             data-testid={`hotspot-${h.id}`}
             className={clsx(
-              'absolute flex items-center justify-center rounded-full text-white',
+              'absolute flex flex-col items-center pointer-events-auto',
               !isDraggingThis && 'transition-transform hover:scale-110',
-              isSelected ? 'w-9 h-9 shadow-lg' : 'w-8 h-8'
             )}
             style={{
               left: `${x}%`,
               top:  `${y}%`,
               transform: 'translate(-50%, -50%)',
-              backgroundColor: color + 'cc',
-              boxShadow: isSelected ? `0 0 0 3px ${color}, 0 0 0 5px white` : undefined,
               cursor: isDraggingThis ? 'grabbing' : 'grab',
             }}
             onMouseDown={(e) => {
@@ -301,7 +314,23 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
               setActiveHotspot(isSelected ? null : h.id);
             }}
           >
-            <HotspotIcon hotspot={h} />
+            <div
+              className={clsx(
+                'flex items-center justify-center rounded-full text-white',
+                isSelected ? 'w-9 h-9 shadow-lg' : 'w-8 h-8'
+              )}
+              style={{
+                backgroundColor: color + 'cc',
+                boxShadow: isSelected ? `0 0 0 3px ${color}, 0 0 0 5px white` : undefined,
+              }}
+            >
+              <HotspotIcon hotspot={h} />
+            </div>
+            {label && (
+              <span className="mt-0.5 text-[9px] text-white bg-black/50 px-1.5 py-0.5 rounded whitespace-nowrap max-w-[90px] truncate pointer-events-none select-none">
+                {label}
+              </span>
+            )}
           </div>
         );
       })}

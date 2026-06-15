@@ -24,6 +24,8 @@ export interface BaseHotspot {
   type: HotspotType;
   ath: number;
   atv: number;
+  /** Optional visible label shown in the viewer overlay (localized) */
+  title?: Record<string, string>;
   /** Optional override of category icon (otherwise uses target scene's category) */
   iconStyle?: string;
 }
@@ -37,27 +39,32 @@ export interface LinkHotspot extends BaseHotspot {
 export interface VideoHotspot extends BaseHotspot {
   type: 'video';
   url: string;
-  title: string;
+  /** Localized video title shown in the viewer */
+  title: Record<string, string>;
   autoplay?: boolean;
 }
 
 export interface TextHotspot extends BaseHotspot {
   type: 'text';
-  title: string;
-  body: string;
+  /** Localized panel title */
+  title: Record<string, string>;
+  /** Localized body (HTML allowed) */
+  body: Record<string, string>;
 }
 
 export interface ExternalHotspot extends BaseHotspot {
   type: 'external';
   url: string;
-  label: string;
+  /** Localized button label */
+  label: Record<string, string>;
   openInNewTab?: boolean;
 }
 
 export interface FormHotspot extends BaseHotspot {
   type: 'form';
   mailto: string;
-  subject: string;
+  /** Localized email subject line */
+  subject: Record<string, string>;
   fields: Array<{ name: string; label: string; required: boolean }>;
 }
 

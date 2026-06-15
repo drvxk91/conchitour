@@ -14,10 +14,10 @@ export type EditorMode = 'navigate' | 'hotspot' | 'north';
 function makeHotspot(type: Hotspot['type'], ath = 0, atv = 0): Hotspot {
   const base = { id: uuid(), ath, atv };
   if (type === 'link')     return { ...base, type: 'link', targetSceneId: '' };
-  if (type === 'video')    return { ...base, type: 'video', url: '', title: '' };
-  if (type === 'text')     return { ...base, type: 'text', title: '', body: '' };
-  if (type === 'external') return { ...base, type: 'external', url: '', label: '' };
-  return { ...base, type: 'form', mailto: '', subject: '', fields: [] };
+  if (type === 'video')    return { ...base, type: 'video', url: '', title: { en: '' } };
+  if (type === 'text')     return { ...base, type: 'text', title: { en: '' }, body: { en: '' } };
+  if (type === 'external') return { ...base, type: 'external', url: '', label: { en: '' } };
+  return { ...base, type: 'form', mailto: '', subject: { en: '' }, fields: [] };
 }
 
 export function ScenesScreen() {

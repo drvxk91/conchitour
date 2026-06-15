@@ -1,28 +1,197 @@
 import { useState } from 'react';
 import clsx from 'clsx';
-import { Plus, Trash2, ChevronDown, Link, Video, Type, ExternalLink, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Link, Video, Type, ExternalLink, ClipboardList, Globe } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { useProject } from '@/store/project';
-import type { Scene, Hotspot } from '@/types';
+import type { Scene, Hotspot, LinkHotspot, VideoHotspot, TextHotspot, ExternalHotspot, FormHotspot } from '@/types';
 
 const TYPE_ICONS: Record<Hotspot['type'], typeof Link> = {
   link: Link, video: Video, text: Type, external: ExternalLink, form: ClipboardList,
 };
 
-function targetLabel(h: Hotspot, scenes: { id: string; title: { en?: string }; slug: string }[]): string {
+function l(val: Record<string, string> | undefined, lang: string): string {
+  if (!val) return '';
+  return val[lang] ?? val.en ?? Object.values(val)[0] ?? '';
+}
+
+function targetLabel(h: Hotspot, lang: string, scenes: { id: string; title: Record<string, string>; slug: string }[]): string {
   if (h.type === 'link') {
     const t = scenes.find((s) => s.id === h.targetSceneId);
-    return t ? (t.title.en || t.slug) : '(unset)';
+    return t ? (l(t.title, lang) || t.slug) : '(unset)';
   }
-  if (h.type === 'video' || h.type === 'external') return h.url || '—';
-  if (h.type === 'text')   return h.title || '—';
-  if (h.type === 'form')   return h.mailto || '—';
+  if (h.type === 'video') return h.url || '—';
+  if (h.type === 'text')  return l(h.title, lang) || '—';
+  if (h.type === 'external') return h.url || '—';
+  if (h.type === 'form')  return h.mailto || '—';
   return '—';
 }
+
+// ── Per-type editor ────────────────────────────────────────────────────────────
+
+function LinkEditor({ scene, h, lang }: { scene: Scene; h: LinkHotspot; lang: string }) {
+  const { project, updateHotspot } = useProject();
+  function upd(patch: Partial<LinkHotspot>) { updateHotspot(scene.id, h.id, patch as Partial<Hotspot>); }
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Target scene</span>
+        <select
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          value={h.targetSceneId}
+          onChange={(e) => upd({ targetSceneId: e.target.value })}
+        >
+          <option value="">(unset)</option>
+          {project.scenes.filter((s) => s.id !== scene.id).map((s) => (
+            <option key={s.id} value={s.id}>{l(s.title, lang) || s.slug}</option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Label (optional)</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="Override label…"
+          value={h.title?.[lang] ?? ''}
+          onChange={(e) => upd({ title: { ...(h.title ?? {}), [lang]: e.target.value } })}
+        />
+      </label>
+    </div>
+  );
+}
+
+function VideoEditor({ scene, h, lang }: { scene: Scene; h: VideoHotspot; lang: string }) {
+  const { updateHotspot } = useProject();
+  function upd(patch: Partial<VideoHotspot>) { updateHotspot(scene.id, h.id, patch as Partial<Hotspot>); }
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Video URL</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="https://youtube.com/…"
+          value={h.url}
+          onChange={(e) => upd({ url: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Title [{lang}]</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="Video title…"
+          value={h.title[lang] ?? ''}
+          onChange={(e) => upd({ title: { ...h.title, [lang]: e.target.value } })}
+        />
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={h.autoplay ?? false} onChange={(e) => upd({ autoplay: e.target.checked })} />
+        <span className="text-xs text-ink">Autoplay</span>
+      </label>
+    </div>
+  );
+}
+
+function TextEditor({ scene, h, lang }: { scene: Scene; h: TextHotspot; lang: string }) {
+  const { updateHotspot } = useProject();
+  function upd(patch: Partial<TextHotspot>) { updateHotspot(scene.id, h.id, patch as Partial<Hotspot>); }
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Title [{lang}]</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="Panel title…"
+          value={h.title[lang] ?? ''}
+          onChange={(e) => upd({ title: { ...h.title, [lang]: e.target.value } })}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Body [{lang}]</span>
+        <textarea
+          rows={4}
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none resize-none"
+          placeholder="HTML content…"
+          value={h.body[lang] ?? ''}
+          onChange={(e) => upd({ body: { ...h.body, [lang]: e.target.value } })}
+        />
+      </label>
+    </div>
+  );
+}
+
+function ExternalEditor({ scene, h, lang }: { scene: Scene; h: ExternalHotspot; lang: string }) {
+  const { updateHotspot } = useProject();
+  function upd(patch: Partial<ExternalHotspot>) { updateHotspot(scene.id, h.id, patch as Partial<Hotspot>); }
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">URL</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="https://…"
+          value={h.url}
+          onChange={(e) => upd({ url: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Button label [{lang}]</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="Visit website…"
+          value={h.label[lang] ?? ''}
+          onChange={(e) => upd({ label: { ...h.label, [lang]: e.target.value } })}
+        />
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={h.openInNewTab ?? true} onChange={(e) => upd({ openInNewTab: e.target.checked })} />
+        <span className="text-xs text-ink">Open in new tab</span>
+      </label>
+    </div>
+  );
+}
+
+function FormEditor({ scene, h, lang }: { scene: Scene; h: FormHotspot; lang: string }) {
+  const { updateHotspot } = useProject();
+  function upd(patch: Partial<FormHotspot>) { updateHotspot(scene.id, h.id, patch as Partial<Hotspot>); }
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Send to (mailto)</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="contact@example.com"
+          value={h.mailto}
+          onChange={(e) => upd({ mailto: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[10px] text-ink-faded uppercase tracking-wide">Subject [{lang}]</span>
+        <input
+          className="mt-0.5 w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none"
+          placeholder="Email subject…"
+          value={h.subject[lang] ?? ''}
+          onChange={(e) => upd({ subject: { ...h.subject, [lang]: e.target.value } })}
+        />
+      </label>
+    </div>
+  );
+}
+
+function HotspotEditor({ scene, h, lang }: { scene: Scene; h: Hotspot; lang: string }) {
+  if (h.type === 'link')     return <LinkEditor     scene={scene} h={h} lang={lang} />;
+  if (h.type === 'video')    return <VideoEditor    scene={scene} h={h} lang={lang} />;
+  if (h.type === 'text')     return <TextEditor     scene={scene} h={h} lang={lang} />;
+  if (h.type === 'external') return <ExternalEditor scene={scene} h={h} lang={lang} />;
+  return <FormEditor scene={scene} h={h as FormHotspot} lang={lang} />;
+}
+
+// ── Main tab ───────────────────────────────────────────────────────────────────
 
 export function HotspotsTab({ scene }: { scene: Scene }) {
   const { project, addHotspot, updateHotspot, deleteHotspot, activeHotspotId, setActiveHotspot } = useProject();
   const [addOpen, setAddOpen] = useState(false);
+
+  const langs = project.languages.available.length ? project.languages.available : ['en'];
+  const [lang, setLang] = useState(project.languages.default || 'en');
 
   const TYPES: Hotspot['type'][] = ['link', 'video', 'text', 'external', 'form'];
 
@@ -30,17 +199,34 @@ export function HotspotsTab({ scene }: { scene: Scene }) {
     const base = { id: uuid(), ath: 0, atv: 0 };
     let h: Hotspot;
     if (type === 'link')     h = { ...base, type: 'link', targetSceneId: '' };
-    else if (type === 'video')    h = { ...base, type: 'video', url: '', title: '' };
-    else if (type === 'text')     h = { ...base, type: 'text', title: '', body: '' };
-    else if (type === 'external') h = { ...base, type: 'external', url: '', label: '' };
-    else                          h = { ...base, type: 'form', mailto: '', subject: '', fields: [] };
+    else if (type === 'video')    h = { ...base, type: 'video', url: '', title: { en: '' } };
+    else if (type === 'text')     h = { ...base, type: 'text', title: { en: '' }, body: { en: '' } };
+    else if (type === 'external') h = { ...base, type: 'external', url: '', label: { en: '' } };
+    else                          h = { ...base, type: 'form', mailto: '', subject: { en: '' }, fields: [] };
     addHotspot(scene.id, h);
     setActiveHotspot(h.id);
     setAddOpen(false);
   }
 
+  const activeHotspot = scene.hotspots.find((h) => h.id === activeHotspotId) ?? null;
+
   return (
     <div className="p-3 text-sm space-y-2" data-testid="hotspots-tab">
+      {/* Language selector (only when project has multiple languages) */}
+      {langs.length > 1 && (
+        <div className="flex items-center gap-1.5 text-xs text-ink-faded">
+          <Globe size={11} />
+          <span>Editing:</span>
+          <select
+            className="bg-paper-strong border border-line-soft rounded px-1.5 py-0.5 text-xs focus:outline-none"
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+          >
+            {langs.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
+          </select>
+        </div>
+      )}
+
       {scene.hotspots.length === 0 && (
         <p className="text-xs text-ink-faded py-4 text-center">
           No hotspots — double-click the viewer to add one.
@@ -76,28 +262,7 @@ export function HotspotsTab({ scene }: { scene: Scene }) {
                     <Icon size={11} className="text-ink-soft" />
                   </td>
                   <td className="py-1 pr-1 max-w-[80px] truncate text-ink">
-                    {h.type === 'link' ? (
-                      <select
-                        className="text-xs bg-transparent w-full outline-none"
-                        value={(h as import('@/types').LinkHotspot).targetSceneId}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          updateHotspot(scene.id, h.id, { targetSceneId: e.target.value } as Partial<Hotspot>);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <option value="">(unset)</option>
-                        {project.scenes
-                          .filter((s) => s.id !== scene.id)
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.title.en || s.slug}
-                            </option>
-                          ))}
-                      </select>
-                    ) : (
-                      targetLabel(h, project.scenes)
-                    )}
+                    {targetLabel(h, lang, project.scenes)}
                   </td>
                   <td className="py-1 pr-1 text-right text-ink-soft w-10">
                     <input
@@ -138,6 +303,16 @@ export function HotspotsTab({ scene }: { scene: Scene }) {
         </table>
       )}
 
+      {/* Per-type editor for the active hotspot */}
+      {activeHotspot && (
+        <div className="border border-line-soft rounded-lg p-3 bg-paper-strong space-y-1">
+          <p className="text-[10px] font-medium text-ink-faded uppercase tracking-wide mb-2">
+            {activeHotspot.type} hotspot
+          </p>
+          <HotspotEditor scene={scene} h={activeHotspot} lang={lang} />
+        </div>
+      )}
+
       {/* Add hotspot */}
       <div className="relative">
         <button
@@ -168,3 +343,4 @@ export function HotspotsTab({ scene }: { scene: Scene }) {
     </div>
   );
 }
+
