@@ -16,6 +16,7 @@ type Props = {
   onAddHotspot: (xPct: number, yPct: number) => void;
   northDraft?: number;
   onNorthDraftChange?: (heading: number) => void;
+  pannellumGetYaw?: React.MutableRefObject<() => number>;
 };
 
 function HotspotIcon({ hotspot }: { hotspot: Hotspot }) {
@@ -36,7 +37,7 @@ function categoryColor(sceneId: string, hotspot: Hotspot, project: ReturnType<ty
   return project.categories.find((c) => c.id === catId)?.color ?? '#6b6b68';
 }
 
-export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange }: Props) {
+export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange, pannellumGetYaw }: Props) {
   const { project, activeSceneId, activeHotspotId, setActiveHotspot, updateHotspot } = useProject();
   const containerRef = useRef<HTMLDivElement>(null);
   const justCreatedRef = useRef(false);
@@ -171,6 +172,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, onNorthDraftChange
         <PanoViewer
           imageUrl={toLocalUrl(scene.media.sourcePath)}
           heading={scene.heading}
+          getYaw={pannellumGetYaw}
           onDoubleClick={(ath, atv) => {
             const { x, y } = toPercent(ath, atv);
             onAddHotspot(x, y);

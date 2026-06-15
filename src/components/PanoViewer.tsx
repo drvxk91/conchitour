@@ -18,9 +18,11 @@ interface Props {
   imageUrl: string;
   heading: number;
   onDoubleClick: (ath: number, atv: number) => void;
+  /** When provided, will be set to a function that returns the current yaw (0 while viewer is not ready) */
+  getYaw?: React.MutableRefObject<() => number>;
 }
 
-export function PanoViewer({ imageUrl, heading, onDoubleClick }: Props) {
+export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewerRef     = useRef<PanViewer | null>(null);
   const lastClickRef  = useRef<{ t: number; pitch: number; yaw: number } | null>(null);
@@ -65,6 +67,10 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick }: Props) {
       return;
     }
     viewerRef.current = viewer;
+
+    if (getYaw) {
+      getYaw.current = () => { try { return viewerRef.current?.getYaw() ?? 0; } catch { return 0; } };
+    }
 
     // Double-click detection (Pannellum swallows native dblclick)
     function handleClick(e: MouseEvent) {

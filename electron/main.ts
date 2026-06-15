@@ -189,3 +189,27 @@ ipcMain.handle('tiles:generate', async (_e, _scenePath: string) => {
   await new Promise<void>((resolve) => setTimeout(resolve, 1000));
   return true;
 });
+
+ipcMain.handle('preview:open', async (_e, sourcePath: string, heading: number) => {
+  const previewWin = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    title: 'Preview — Conchitect',
+    backgroundColor: '#000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  if (isDev) {
+    const params = new URLSearchParams({ preview: sourcePath, heading: String(heading) });
+    await previewWin.loadURL(`http://localhost:5173/?${params}`);
+  } else {
+    await previewWin.loadFile(path.join(__dirname, '../dist/index.html'), {
+      query: { preview: sourcePath, heading: String(heading) },
+    });
+  }
+  return true;
+});

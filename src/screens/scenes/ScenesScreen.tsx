@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useProject } from '@/store/project';
 import { fromPercent } from '@/lib/projection';
+import { normalizeHeading } from '@/lib/heading';
 import { SceneToolbar } from './SceneToolbar';
 import { SceneSidebar } from './SceneSidebar';
 import { SceneViewer } from './SceneViewer';
@@ -39,6 +40,7 @@ export function ScenesScreen() {
   const [mode, setMode] = useState<EditorMode>('navigate');
   const [northDraft, setNorthDraft] = useState<number | undefined>(undefined);
   const activeScene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
+  const pannellumGetYaw = useRef<() => number>(() => 0);
 
   // Auto-select first scene
   useEffect(() => {
@@ -47,10 +49,17 @@ export function ScenesScreen() {
     }
   }, [project.scenes, activeSceneId, setActiveScene]);
 
-  // When entering north mode, seed the draft from the scene's current heading
+  // When entering north mode, seed the draft heading.
+  // If Pannellum was active, use its current yaw to estimate the true heading:
+  // viewer was looking at ath=yaw; if the user considers that "North", heading = normalizeHeading(-yaw).
+  // Otherwise fall back to the scene's saved heading.
   useEffect(() => {
     if (mode === 'north' && activeScene) {
-      setNorthDraft((prev) => prev ?? activeScene.heading);
+      setNorthDraft((prev) => {
+        if (prev !== undefined) return prev;
+        const yaw = pannellumGetYaw.current();
+        return yaw !== 0 ? normalizeHeading(-yaw) : activeScene.heading;
+      });
     } else if (mode !== 'north') {
       setNorthDraft(undefined);
     }
@@ -147,6 +156,11 @@ export function ScenesScreen() {
         onNorthConfirm={handleNorthConfirm}
         onNorthCancel={handleNorthCancel}
         northDraftHeading={northDraft}
+        onPreview={() => {
+          if (activeScene) {
+            window.conchitect.openPreview(activeScene.media.sourcePath, activeScene.heading);
+          }
+        }}
       />
 
       <div className="flex-1 flex min-h-0">
@@ -156,6 +170,7 @@ export function ScenesScreen() {
           onAddHotspot={handleAddHotspotAt}
           northDraft={northDraft}
           onNorthDraftChange={setNorthDraft}
+          pannellumGetYaw={pannellumGetYaw}
         />
         <SceneInspector onDeleteScene={handleDeleteScene} />
       </div>

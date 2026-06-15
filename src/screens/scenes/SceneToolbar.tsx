@@ -19,6 +19,7 @@ interface Props {
   onNorthConfirm: (heading: number) => void;
   onNorthCancel: () => void;
   northDraftHeading?: number;
+  onPreview: () => void;
 }
 
 const HOTSPOT_TYPES: { type: Hotspot['type']; label: string; Icon: typeof Link }[] = [
@@ -29,7 +30,7 @@ const HOTSPOT_TYPES: { type: Hotspot['type']; label: string; Icon: typeof Link }
   { type: 'form',     label: 'Form',     Icon: ClipboardList },
 ];
 
-export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, onDelete, onAddHotspotType, onNorthConfirm, onNorthCancel, northDraftHeading }: Props) {
+export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, onDelete, onAddHotspotType, onNorthConfirm, onNorthCancel, northDraftHeading, onPreview }: Props) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -42,10 +43,6 @@ export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, 
     document.addEventListener('mousedown', outside);
     return () => document.removeEventListener('mousedown', outside);
   }, []);
-
-  function stub(label: string) {
-    alert(`${label} — not yet implemented`);
-  }
 
   return (
     <div className="h-10 flex items-center gap-1 px-3 border-b border-line bg-paper flex-shrink-0">
@@ -154,7 +151,7 @@ export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, 
 
       <div className="w-px h-5 bg-line mx-1" />
 
-      <button title="Preview (P)" onClick={() => stub('Preview')} className="btn text-xs gap-1">
+      <button title="Preview (P)" onClick={onPreview} className="btn text-xs gap-1">
         <Eye size={13} />
         <span>Preview</span>
         <kbd className="ml-1 text-[10px] opacity-50">P</kbd>

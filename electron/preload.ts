@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('conchitect', {
   readPhotosMeta: (paths: string[]) => ipcRenderer.invoke('photos:readMeta', paths),
   copyToProject: (paths: string[], destDir: string) => ipcRenderer.invoke('photos:copyToProject', paths, destDir),
   generateTiles: (scenePath: string) => ipcRenderer.invoke('tiles:generate', scenePath),
+  openPreview: (sourcePath: string, heading: number) => ipcRenderer.invoke('preview:open', sourcePath, heading),
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Synchronous: returns the port of the localhost file server started in main.
@@ -37,6 +38,7 @@ declare global {
       readPhotosMeta: (paths: string[]) => Promise<PhotoMetaResult[]>;
       copyToProject: (paths: string[], destDir: string) => Promise<string[]>;
       generateTiles: (scenePath: string) => Promise<boolean>;
+      openPreview: (sourcePath: string, heading: number) => Promise<boolean>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
     };
