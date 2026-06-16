@@ -92,7 +92,7 @@ export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, 
 
       <div className="w-px h-5 bg-line mx-1" />
 
-      <button title="Align horizon" onClick={() => stub('Align horizon')} className="btn text-xs gap-1">
+      <button title="Align horizon" className="btn text-xs gap-1 opacity-40 cursor-not-allowed" disabled>
         <AlignCenter size={13} />
       </button>
       <button
@@ -121,7 +121,7 @@ export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, 
           </button>
           <button
             data-testid="north-confirm"
-            onClick={() => onNorthConfirm(northDraftHeading)}
+            onClick={() => onNorthConfirm(northDraftHeading ?? 0)}
             className="btn btn-primary text-xs"
           >
             Confirm North

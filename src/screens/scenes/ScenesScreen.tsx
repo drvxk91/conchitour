@@ -38,9 +38,37 @@ export function ScenesScreen() {
   } = useProject();
 
   const [mode, setMode] = useState<EditorMode>('navigate');
+  // northDraft is the live Pannellum yaw polled during north mode (shown in toolbar)
   const [northDraft, setNorthDraft] = useState<number | undefined>(undefined);
   const activeScene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
-  const pannellumGetYaw = useRef<() => number>(() => 0);
+
+  const pannellumGetYaw   = useRef<() => number>(() => 0);
+  const pannellumGetPitch = useRef<() => number>(() => 0);
+  const pannellumGetFov   = useRef<() => number>(() => 75);
+  const pannellumSetYaw   = useRef<(yaw: number) => void>(() => {});
+
+  // Entry snapshot for north mode: restore yaw on Cancel
+  const northEntryYaw = useRef<number>(0);
+
+  // rAF loop: poll live yaw from Pannellum during north mode for the toolbar display
+  const northRafRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (mode !== 'north') {
+      if (northRafRef.current !== null) { cancelAnimationFrame(northRafRef.current); northRafRef.current = null; }
+      return;
+    }
+    northEntryYaw.current = pannellumGetYaw.current();
+    setNorthDraft(pannellumGetYaw.current());
+    let alive = true;
+    function tick() {
+      if (!alive) return;
+      const yaw = pannellumGetYaw.current();
+      setNorthDraft(yaw);
+      northRafRef.current = requestAnimationFrame(tick);
+    }
+    northRafRef.current = requestAnimationFrame(tick);
+    return () => { alive = false; if (northRafRef.current !== null) cancelAnimationFrame(northRafRef.current); };
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select first scene
   useEffect(() => {
@@ -49,34 +77,19 @@ export function ScenesScreen() {
     }
   }, [project.scenes, activeSceneId, setActiveScene]);
 
-  // When entering north mode, seed the draft heading.
-  // If Pannellum was active, use its current yaw to estimate the true heading:
-  // viewer was looking at ath=yaw; if the user considers that "North", heading = normalizeHeading(-yaw).
-  // Otherwise fall back to the scene's saved heading.
-  useEffect(() => {
-    if (mode === 'north' && activeScene) {
-      setNorthDraft((prev) => {
-        if (prev !== undefined) return prev;
-        const yaw = pannellumGetYaw.current();
-        return yaw !== 0 ? normalizeHeading(-yaw) : activeScene.heading;
-      });
-    } else if (mode !== 'north') {
-      setNorthDraft(undefined);
-    }
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleNorthConfirm = useCallback((heading: number) => {
     if (activeScene) {
-      updateScene(activeScene.id, { heading });
+      updateScene(activeScene.id, { heading: normalizeHeading(heading) });
     }
     setMode('navigate');
-  }, [activeScene, updateScene]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeScene, updateScene]);
 
   const handleNorthCancel = useCallback(() => {
+    pannellumSetYaw.current(northEntryYaw.current);
     setMode('navigate');
   }, []);
 
-  // Stale refs for keyboard handler (avoids stale closure)
+  // Stale refs for keyboard handler
   const sceneRef = useRef(activeScene);
   const hotspotRef = useRef(activeHotspotId);
   sceneRef.current = activeScene;
@@ -131,7 +144,6 @@ export function ScenesScreen() {
     const h: LinkHotspot = { id: uuid(), type: 'link', ath, atv, targetSceneId: '' };
     addHotspot(activeScene.id, h);
     setActiveHotspot(h.id);
-    // Stay in current mode so the new hotspot remains visible in the overlay
   }
 
   function handleDeleteScene(id: string) {
@@ -169,8 +181,10 @@ export function ScenesScreen() {
           mode={mode}
           onAddHotspot={handleAddHotspotAt}
           northDraft={northDraft}
-          onNorthDraftChange={setNorthDraft}
           pannellumGetYaw={pannellumGetYaw}
+          pannellumGetPitch={pannellumGetPitch}
+          pannellumGetFov={pannellumGetFov}
+          pannellumSetYaw={pannellumSetYaw}
         />
         <SceneInspector onDeleteScene={handleDeleteScene} />
       </div>

@@ -10,6 +10,8 @@ interface PanViewer {
   destroy: () => void;
   getYaw: () => number;
   getPitch: () => number;
+  getHfov: () => number;
+  setYaw: (yaw: number, animated?: boolean) => void;
   mouseEventToCoords: (e: MouseEvent) => [number, number]; // [pitch, yaw]
   on: (event: string, cb: (...a: unknown[]) => void) => PanViewer;
 }
@@ -20,9 +22,15 @@ interface Props {
   onDoubleClick: (ath: number, atv: number) => void;
   /** When provided, will be set to a function that returns the current yaw (0 while viewer is not ready) */
   getYaw?: React.MutableRefObject<() => number>;
+  getPitch?: React.MutableRefObject<() => number>;
+  getFov?: React.MutableRefObject<() => number>;
+  /** Exposed to allow callers to programmatically pan the viewer */
+  setYaw?: React.MutableRefObject<(yaw: number) => void>;
+  /** Exposed to allow callers to get 360° coords from a native MouseEvent */
+  getMouseCoords?: React.MutableRefObject<((e: MouseEvent) => [number, number]) | null>;
 }
 
-export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw }: Props) {
+export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch, getFov, setYaw, getMouseCoords }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewerRef     = useRef<PanViewer | null>(null);
   const lastClickRef  = useRef<{ t: number; pitch: number; yaw: number } | null>(null);
@@ -71,6 +79,18 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw }: Props) 
     if (getYaw) {
       getYaw.current = () => { try { return viewerRef.current?.getYaw() ?? 0; } catch { return 0; } };
     }
+    if (getPitch) {
+      getPitch.current = () => { try { return viewerRef.current?.getPitch() ?? 0; } catch { return 0; } };
+    }
+    if (getFov) {
+      getFov.current = () => { try { return viewerRef.current?.getHfov() ?? 75; } catch { return 75; } };
+    }
+    if (setYaw) {
+      setYaw.current = (yaw: number) => { try { viewerRef.current?.setYaw(yaw, false); } catch { /* ignore */ } };
+    }
+    if (getMouseCoords) {
+      getMouseCoords.current = (e: MouseEvent) => { try { return viewer.mouseEventToCoords(e); } catch { return [0, 0]; } };
+    }
 
     // Double-click detection (Pannellum swallows native dblclick)
     function handleClick(e: MouseEvent) {
@@ -92,6 +112,7 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw }: Props) 
 
     return () => {
       el.removeEventListener('click', handleClick);
+      if (getMouseCoords) getMouseCoords.current = null;
       try { viewer.destroy(); } catch { /* ignore */ }
       viewerRef.current = null;
     };
