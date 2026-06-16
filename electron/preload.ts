@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   copyToProject: (paths: string[], destDir: string) => ipcRenderer.invoke('photos:copyToProject', paths, destDir),
   generateTiles: (scenePath: string) => ipcRenderer.invoke('tiles:generate', scenePath),
   openPreview: (sourcePath: string, heading: number) => ipcRenderer.invoke('preview:open', sourcePath, heading),
+  exportExcel: (projectData: unknown) => ipcRenderer.invoke('excel:export', projectData),
+  importExcel: (projectData: unknown) => ipcRenderer.invoke('excel:import', projectData),
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Synchronous: returns the port of the localhost file server started in main.
@@ -29,6 +31,20 @@ export interface PhotoMetaResult {
   exif?: PhotoExif;
 }
 
+export interface ExcelImportResult {
+  canceled: boolean;
+  updated?: number;
+  skipped?: number;
+  errors?: string[];
+  scenePatch?: Record<string, Record<string, unknown>>;
+  catPatch?: Record<string, Record<string, unknown>>;
+}
+
+export interface ExcelExportResult {
+  canceled: boolean;
+  path?: string;
+}
+
 declare global {
   interface Window {
     conchitect: {
@@ -39,6 +55,8 @@ declare global {
       copyToProject: (paths: string[], destDir: string) => Promise<string[]>;
       generateTiles: (scenePath: string) => Promise<boolean>;
       openPreview: (sourcePath: string, heading: number) => Promise<boolean>;
+      exportExcel: (projectData: unknown) => Promise<ExcelExportResult>;
+      importExcel: (projectData: unknown) => Promise<ExcelImportResult>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
     };
