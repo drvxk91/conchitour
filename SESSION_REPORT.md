@@ -55,17 +55,28 @@
 - Row matching: by `scene_id` first, then by `slug`. Unmatched rows are logged and counted as `skipped`.
 - Slug uniqueness re-validation after import is not implemented (spec listed it but it's complex and the store's `updateScene` patch does not mutate slugs from Excel currently).
 
-## Suggested Next Sprint: F
+## Sprint F — Metadata Screens (058f12e)
 
-**Sprint F — Project / SEO / Languages / Branding / Share / Modules**
+All 6 stub screens implemented:
 
-These 6 screens are currently stub placeholders. They represent the remaining metadata layers before compile:
+| Screen | What was built |
+|--------|---------------|
+| ProjectScreen | name, creator, contactEmail, copyright, publicationUrl, shortDescription — auto-save on blur |
+| SeoScreen | metaTitle, metaDescription, keyword tag editor, schemaType, imageSitemap, per-scene alt text |
+| LanguagesScreen | Add/remove/default languages, DeepL API key; added `updateLanguages` to Zustand store |
+| BrandingScreen | Logo/favicon/loader file pickers, opening scene, color pickers with swatches, multilingual intro text |
+| ShareScreen | 6 social toggles, live share bar preview |
+| ModulesScreen | VR, gyroscope, fullscreen, feedback mailto, forms, DeepL key |
 
-1. **ProjectScreen** — `meta` fields (name, creator, copyright, publication_url, etc.) + project-level save/load dialog
-2. **SeoScreen** — metaTitle, metaDescription, keywords, schemaType, imageSitemap toggle; per-scene alt text (bulk edit from scenes table)
-3. **LanguagesScreen** — add/remove languages; DeepL auto-translation toggle + API key prompt; show translation progress
-4. **BrandingScreen** — logo/favicon/loader file upload; opening scene selector; primary/accent color pickers; intro text editor
-5. **ShareScreen** — social button toggles; live share URL preview; screenshot capture via Electron
-6. **ModulesScreen** — VR / gyroscope / fullscreen / feedback / forms toggles; DeepL key entry
+## Suggested Next Sprint: G
 
-After Sprint F, Sprint G (Compile / krpano export) generates the static output folder.
+**Sprint G — Compile Pipeline (krpano export)**
+
+The last stub is `CompileScreen.tsx`. It generates the static output folder:
+
+1. **Output structure**: `dist/index.html`, `dist/tour.xml`, `dist/media/<scene>.jpg`, `dist/tiles/<scene>/`, `dist/krpano/`
+2. **krpano XML generation**: one `<scene>` per scene, `<hotspot>` elements, `<view>` settings, `<image>` pointing to tiles
+3. **HTML shell**: branding colors, OG meta, share bar JS, lang switcher
+4. **`compile:run` IPC handler** in main.ts: copies media, generates XML, writes HTML
+5. **Progress UI**: step log in CompileScreen with copy-path at end
+6. **Sitemaps**: `sitemap.xml` + optional `sitemap-images.xml`
