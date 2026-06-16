@@ -79,6 +79,8 @@ export interface Category {
   color: string;
   iconSvg?: string;
   pinSvg?: string;
+  /** whether to show scenes of this category as map pins (default true) */
+  useAsPin?: boolean;
 }
 
 export interface SceneMedia {
@@ -111,6 +113,8 @@ export interface Scene {
   heading: number;
   /** camera height in meters at capture time */
   captureHeightMeters: number;
+  /** visibility radius in metres for auto-compute link hotspots (default 150) */
+  visibilityRadius?: number;
   defaultView?: ViewPoint;
   hotspots: Hotspot[];
   media: SceneMedia;
