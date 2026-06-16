@@ -53,6 +53,7 @@ interface ProjectStore {
 
   // Project-level fields
   updateMeta: (patch: Partial<Project['meta']>) => void;
+  updateLanguages: (patch: Partial<Project['languages']>) => void;
   updateSeo: (patch: Partial<Project['seo']>) => void;
   updateBranding: (patch: Partial<Project['branding']>) => void;
   updateShare: (patch: Partial<Project['share']>) => void;
@@ -205,6 +206,14 @@ export const useProject = create<ProjectStore>((set) => ({
       withHistory(s, {
         ...s.project,
         meta: { ...s.project.meta, ...patch },
+      })
+    ),
+
+  updateLanguages: (patch) =>
+    set((s) =>
+      withHistory(s, {
+        ...s.project,
+        languages: { ...s.project.languages, ...patch },
       })
     ),
 
