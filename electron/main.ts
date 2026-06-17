@@ -1311,13 +1311,19 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     }
 
     // ── krpano plugins (webvr, gyro2, etc.) ────────────────────────────────
+    // Drop the fs.access guard: copyDir already throws ENOENT if the source is missing,
+    // and a bare catch {} was swallowing that error silently.
     const pluginsSrc = path.join(kPath, 'viewer', 'plugins');
     try {
-      await fs.access(pluginsSrc);
       const pluginCount = await copyDir(pluginsSrc, path.join(outputDir, 'krpano', 'plugins'));
-      progress(`Plugins copied (${pluginCount} files)`, 'ok');
-    } catch {
-      progress('viewer/plugins/ not found in krpano install — VR/gyro may 404', 'info');
+      if (pluginCount > 0) {
+        progress(`Plugins copied (${pluginCount} files)`, 'ok');
+      } else {
+        progress(`Warning: viewer/plugins/ is empty at ${pluginsSrc}`, 'info');
+      }
+    } catch (err) {
+      const msg = (err instanceof Error) ? err.message : String(err);
+      progress(`Warning: plugins not copied — ${msg}`, 'info');
     }
 
     // ── License (opt-in) ───────────────────────────────────────────────────
@@ -1327,7 +1333,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
         await fs.copyFile(licenseFile, path.join(outputDir, 'krpano', 'krpanolicense.xml'));
         progress('krpanolicense.xml included', 'ok');
       } catch {
-        progress('krpanolicense.xml not found at krpano installation path', 'info');
+        progress(`krpanolicense.xml not found at ${licenseFile} — download it from krpano.com/register`, 'info');
       }
     }
 
