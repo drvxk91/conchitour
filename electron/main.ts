@@ -372,7 +372,12 @@ ipcMain.handle('excel:import', async (_e, projectData: unknown) => {
   return { canceled: false, updated, skipped, errors, scenePatch, catPatch };
 });
 
-ipcMain.handle('preview:open', async (_e, sourcePath: string, heading: number) => {
+// Temporary store for preview scene data (consumed by preview:getData immediately after window loads)
+let pendingPreviewData: unknown = null;
+
+ipcMain.handle('preview:open', async (_e, sourcePath: string, heading: number, sceneData?: unknown) => {
+  pendingPreviewData = sceneData ?? null;
+
   const previewWin = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -394,4 +399,10 @@ ipcMain.handle('preview:open', async (_e, sourcePath: string, heading: number) =
     });
   }
   return true;
+});
+
+ipcMain.handle('preview:getData', async () => {
+  const data = pendingPreviewData;
+  pendingPreviewData = null;
+  return data;
 });

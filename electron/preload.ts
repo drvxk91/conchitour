@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   readPhotosMeta: (paths: string[]) => ipcRenderer.invoke('photos:readMeta', paths),
   copyToProject: (paths: string[], destDir: string) => ipcRenderer.invoke('photos:copyToProject', paths, destDir),
   generateTiles: (scenePath: string) => ipcRenderer.invoke('tiles:generate', scenePath),
-  openPreview: (sourcePath: string, heading: number) => ipcRenderer.invoke('preview:open', sourcePath, heading),
+  openPreview: (sourcePath: string, heading: number, sceneData?: unknown) => ipcRenderer.invoke('preview:open', sourcePath, heading, sceneData),
+  getPreviewData: () => ipcRenderer.invoke('preview:getData'),
   exportExcel: (projectData: unknown) => ipcRenderer.invoke('excel:export', projectData),
   importExcel: (projectData: unknown) => ipcRenderer.invoke('excel:import', projectData),
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
@@ -54,7 +55,8 @@ declare global {
       readPhotosMeta: (paths: string[]) => Promise<PhotoMetaResult[]>;
       copyToProject: (paths: string[], destDir: string) => Promise<string[]>;
       generateTiles: (scenePath: string) => Promise<boolean>;
-      openPreview: (sourcePath: string, heading: number) => Promise<boolean>;
+      openPreview: (sourcePath: string, heading: number, sceneData?: unknown) => Promise<boolean>;
+      getPreviewData: () => Promise<unknown>;
       exportExcel: (projectData: unknown) => Promise<ExcelExportResult>;
       importExcel: (projectData: unknown) => Promise<ExcelImportResult>;
       getPathForFile: (file: File) => string;
