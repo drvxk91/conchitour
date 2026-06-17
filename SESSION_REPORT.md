@@ -268,3 +268,70 @@ after the tile switch to keep lines/circles visible.
 - DeepL auto-translation wiring in Languages screen
 - ImportScreen: copy photos to `sources/` when projectDir is set (uses project:copy-source IPC)
 - Playwright E2E tests for the full compile flow
+
+## Sprint N follow-up — tour.xml multires format (2026-06-17)
+
+| Part | Status | Notes | Commit |
+|------|--------|-------|--------|
+| Part 1 — Tile inventory | DONE | Confirmed actual layout via Node fs.readdir on test7 | (analysis) |
+| Part 2 — tour.xml multires fix | DONE | `generateKrpanoXml` now emits correct `<image type="CUBE" multires="true">` block | 8d7f06c |
+| Part 3 — thumburl fix | DONE | Changed `thumb.jpg` → `preview.jpg` (only file that exists at tiles root) | 8d7f06c |
+| Part 4.1 — plugins copy | ALREADY FIXED | test7/krpano/plugins/ has all 37 files — fix was in c8e56b5 | — |
+| Part 4.2 — license copy | ALREADY FIXED | code at main.ts:1372 copies when `settings.includeLicense` is true | — |
+| Part 4.3 — audit script | DONE | Now detects old single-cube format + verifies a concrete sample tile | 9909395 |
+| Part 5 — verification | DONE | Audit shows 15/15 ✅ on patched test7 output | — |
+
+### Root cause of the showstopper
+
+`generateKrpanoXml` wrote:
+```xml
+<image><cube url="panos/<slug>.tiles/pano_%s.jpg"/></image>
+```
+This asks krpano for 6 single files (`pano_l.jpg`, `pano_f.jpg`, …). krpanotools with `multires.config` generates a tiled directory structure instead:
+```
+panos/<slug>.tiles/<face>/l<N>/<row>/l<N>_<face>_<row>_<col>.jpg
+```
+None of the single-cube files exist → black panorama + 6 network 404s.
+
+### Tile layout discovered from test7
+
+```
+panos/pano_terrasse.tiles/
+├── preview.jpg           (only top-level file; NO thumb.jpg)
+├── f/, b/, l/, r/, u/, d/  (six faces)
+│   ├── l2/1/ → l2_f_1_1.jpg (512×512), l2_f_1_2.jpg (512×512), l2_f_1_3.jpg (256×512)
+│   ├── l2/2/ → l2_f_2_1.jpg ... l2_f_2_3.jpg
+│   └── l2/3/ → l2_f_3_1.jpg (512×256), ..., l2_f_3_3.jpg (256×256)  ← partial edge tiles
+│   └── l1/   → 2×2 tiles, 512px full, 128px edge
+```
+
+Key insight: **edge tiles are smaller than tileSize** (256px vs 512px for l2, 128px vs 512px for l1).  
+`tiledimagewidth` must be computed as `(numCols-1)*tileSize + lastColWidth`, not `numCols*tileSize`.
+
+Correct dimensions: l2 face = **1280×1280**, l1 face = **640×640**.
+
+### Fix: `detectTileInfo()` + updated `generateKrpanoXml`
+
+`detectTileInfo(panosDir, slug)` walks `<slug>.tiles/f/` after krpanotools runs:
+1. Detects `tileSize` by reading JPEG SOF header of the top-left tile (always full-size)
+2. For each level: reads the last tile in row 1 (for width) and first tile of last row (for height)
+3. Computes exact face dimensions from partial edge tiles
+4. Returns `TileInfo { tileSize, levels: [{num, tiledimagewidth, tiledimageheight, url}] }`
+
+`generateKrpanoXml` now emits:
+```xml
+<image type="CUBE" multires="true" tilesize="512" baseindex="1">
+  <level tiledimagewidth="1280" tiledimageheight="1280">
+    <cube url="panos/pano_terrasse.tiles/%s/l2/%v/l2_%s_%v_%h.jpg"/>
+  </level>
+  <level tiledimagewidth="640" tiledimageheight="640">
+    <cube url="panos/pano_terrasse.tiles/%s/l1/%v/l1_%s_%v_%h.jpg"/>
+  </level>
+</image>
+```
+
+### Sprint N follow-up — Test results
+
+- **Type errors:** 0
+- **Unit tests:** 98 / 98 passed
+- **Audit (test7 with patched tour.xml):** 15/15 ✅
