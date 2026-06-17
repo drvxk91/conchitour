@@ -1338,7 +1338,7 @@ ${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;trans
   });
   </script>
   <script src="/krpano/krpano.js"></script>
-  <script>embedpano({xml:"/tour.xml",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:${onready}});</script>
+  <script>embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:${onready}});</script>
 </body>
 </html>`;
 }
