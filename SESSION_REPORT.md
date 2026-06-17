@@ -193,10 +193,36 @@ after the tile switch to keep lines/circles visible.
 
 **Part 5 (stepped UI)**: `msgToStep()` maps substring matches from progress messages to step IDs. This is fragile if progress messages change but avoids coupling main.ts and renderer with an explicit step enum. Steps show as done when their `ok` message is received; the `completedStepsRef` is not reactive (avoiding re-renders on every log line).
 
+## Sprint L — Live preview server + persistent bugs (2026-06-17)
+
+| Part | Subtask | Status | Notes | Commit |
+|------|---------|--------|-------|--------|
+| 7 | KRPANO_PIPELINE.md | DONE | Full pipeline reference docs (9 steps, tile cache, IPC surface, output layout) | b2c318d |
+| 1 | Compile state persists across navigation | DONE | ROOT CAUSE A: steps not restored from log on remount. ROOT CAUSE B: setRunning(false) no-op on old instance. FIX: replay log through msgToStep + compile:done event | 2444d0a |
+| 2 | Localized fields in scene MetaTab | DONE | Language selector (Globe icon) for title/description; saveTitle/saveDesc use dynamic [lang] key; sync effect depends on [scene.id, lang] | e9d2a3b |
+| 3 | Feedback button toggle fix | DONE | ROOT CAUSE: enabled={!!m.feedbackMailto} — empty string is falsy so toggle self-reverted. FIX: enabled={m.feedbackMailto !== undefined} | ace6ec9 |
+| 4 | Real-time tile progress bar | DONE | krpanotools stdout /(\d+)%/ → compile:tile-progress IPC; CompileScreen shows scene N/M + animated progress bar | a0c8b56 |
+| 5 | Live preview server + hot-reload | PENDING | Requires npm install ws @types/ws; WebSocket hot-reload; new UI section |  |
+| 6 | Semver project versioning + HistoryScreen | PENDING | project:save-checkpoint, project:restore-version IPC; File menu entry |  |
+
+### Sprint L — Test results
+
+- **Type errors:** 0
+- **Unit tests:** 98 / 98 passed
+- **check:no-js:** inherited from Sprint I, still valid
+
+### Sprint L — Technical decisions
+
+**Part 1 (compile:done event)**: Both the success and error paths in `compile:run` now call `event.sender.send('compile:done', result)` after setting `compileRunState.running = false`. CompileScreen subscribes in a dedicated `useEffect` (separate from the `compile:progress` subscription) so the running state clears correctly even when the component remounted mid-compile. The `setIsCompiling(false)` Zustand call was already surviving unmount via the old `finally{}` block; Part 1 only fixed the renderer-local `running` state.
+
+**Part 2 (MetaTab language selector)**: Same pattern as `HotspotsTab` — `langs` + `lang` state, `Globe` icon, `<select>`. The sync `useEffect` depends on `[scene.id, lang]` so switching scenes or languages both re-derive the displayed value. Only the selected language's key is written on save; other language keys are preserved via spread.
+
+**Part 4 (tile progress)**: `tileableScenes` is computed before the loop with `scenes.filter(s => s.media?.sourcePath)`. The per-scene index (`tileSceneIdx`) increments only on scenes with a source path. Progress bar clears to `null` when the `tiles` step completes (received via `onCompileProgress` with `status: 'ok'`).
+
 ## Suggested Next Sprint
 
+- Part 5: Live preview server with hot-reload (ws package)
+- Part 6: Semver project versioning with HistoryScreen
 - DeepL auto-translation wiring in Languages screen
 - ImportScreen: copy photos to `sources/` when projectDir is set (uses project:copy-source IPC)
 - Playwright E2E tests for the full compile flow
-- Manual test: open a real project file, verify sourceFile round-trip
-- Tile cache invalidation test: change a photo, re-compile, verify cache miss
