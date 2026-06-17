@@ -15,9 +15,13 @@ contextBridge.exposeInMainWorld('conchitect', {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Synchronous: returns the port of the localhost file server started in main.
   getFileServerPort: () => ipcRenderer.sendSync('file-server:port') as number,
+  // Settings
+  settingsGet: (): Promise<ConchitectSettings> => ipcRenderer.invoke('settings:get'),
+  settingsSet: (patch: Partial<ConchitectSettings>): Promise<boolean> => ipcRenderer.invoke('settings:set', patch),
+  krpanoValidate: (krpanoPath: string): Promise<KrpanoValidationResult> => ipcRenderer.invoke('krpano:validate', krpanoPath),
   // Compile pipeline
   showFolderDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
-  compileRun: (projectData: unknown, outputDir: string): Promise<unknown> => ipcRenderer.invoke('compile:run', projectData, outputDir),
+  compileRun: (projectData: unknown, outputDir: string): Promise<CompileResult> => ipcRenderer.invoke('compile:run', projectData, outputDir),
   onCompileProgress: (cb: (msg: string, status: string) => void): (() => void) => {
     const handler = (_event: unknown, data: { msg: string; status: string }) => cb(data.msg, data.status);
     ipcRenderer.on('compile:progress', handler as Parameters<typeof ipcRenderer.on>[1]);
@@ -55,9 +59,23 @@ export interface ExcelExportResult {
   path?: string;
 }
 
+export interface ConchitectSettings {
+  krpanoPath: string;
+  includeLicense: boolean;
+  includeTestServer: boolean;
+  useKrpanoTiles: boolean;
+}
+
+export interface KrpanoValidationResult {
+  valid: boolean;
+  missing: string[];
+}
+
 export interface CompileResult {
   ok: boolean;
   outputDir?: string;
+  fileCount?: number;
+  sizeBytes?: number;
   error?: string;
 }
 
@@ -76,6 +94,9 @@ declare global {
       importExcel: (projectData: unknown) => Promise<ExcelImportResult>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
+      settingsGet: () => Promise<ConchitectSettings>;
+      settingsSet: (patch: Partial<ConchitectSettings>) => Promise<boolean>;
+      krpanoValidate: (krpanoPath: string) => Promise<KrpanoValidationResult>;
       showFolderDialog: () => Promise<string | null>;
       compileRun: (projectData: unknown, outputDir: string) => Promise<CompileResult>;
       onCompileProgress: (cb: (msg: string, status: string) => void) => () => void;

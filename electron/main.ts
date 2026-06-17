@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
 import * as XLSX from 'xlsx';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -407,6 +409,59 @@ ipcMain.handle('preview:getData', async () => {
   return data;
 });
 
+// ── App settings ──────────────────────────────────────────────────────────────
+
+interface ConchitectSettings {
+  krpanoPath: string;
+  includeLicense: boolean;
+  includeTestServer: boolean;
+  useKrpanoTiles: boolean;
+}
+
+const DEFAULT_SETTINGS: ConchitectSettings = {
+  krpanoPath: 'C:\\Users\\matth\\Documents\\krpano-dev\\krpano',
+  includeLicense: false,
+  includeTestServer: false,
+  useKrpanoTiles: false,
+};
+
+async function readSettings(): Promise<ConchitectSettings> {
+  try {
+    const p = path.join(app.getPath('userData'), 'conchitect-settings.json');
+    const raw = await fs.readFile(p, 'utf-8');
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+async function saveSettings(patch: Partial<ConchitectSettings>): Promise<void> {
+  const current = await readSettings();
+  const p = path.join(app.getPath('userData'), 'conchitect-settings.json');
+  await fs.writeFile(p, JSON.stringify({ ...current, ...patch }, null, 2), 'utf-8');
+}
+
+ipcMain.handle('settings:get', () => readSettings());
+
+ipcMain.handle('settings:set', async (_e, patch: Partial<ConchitectSettings>) => {
+  await saveSettings(patch);
+  return true;
+});
+
+ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
+  const checks = [
+    { file: 'krpanotools.exe',                                        label: 'krpanotools.exe' },
+    { file: path.join('krpano Testing Server.exe'),                   label: 'krpano Testing Server.exe' },
+    { file: path.join('viewer', 'krpano.js'),                         label: 'viewer/krpano.js' },
+    { file: path.join('templates', 'xml', 'skin', 'vtourskin.xml'),   label: 'templates/xml/skin/vtourskin.xml' },
+  ];
+  const missing: string[] = [];
+  for (const { file, label } of checks) {
+    try { await fs.access(path.join(krpanoPath, file)); } catch { missing.push(label); }
+  }
+  return { valid: missing.length === 0, missing };
+});
+
 // ── Compile pipeline ──────────────────────────────────────────────────────────
 
 function xmlEsc(s: string | undefined | null): string {
@@ -446,34 +501,54 @@ async function copyDir(src: string, dest: string): Promise<number> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function generateKrpanoXml(project: any): string {
+function generateKrpanoXml(project: any, tiledSlugs: Set<string>): string {
   const lang: string = project.languages?.default || 'en';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scenes: any[] = project.scenes || [];
+  const modules = project.modules || {};
   const startSceneId: string | undefined = project.branding?.startSceneId;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startScene = scenes.find((s: any) => s.id === startSceneId) ?? scenes[0];
   const startName: string = startScene ? sceneXmlName(startScene.slug) : '';
   const projectTitle = xmlEsc(project.meta?.name || 'Virtual Tour');
+  const gyro = modules.gyro ? 'true' : 'false';
+  const webvr = modules.vr ? 'true' : 'false';
 
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-  xml += `<krpano version="1.23" title="${projectTitle}"${startName ? ` onstart="loadscene(${startName});"` : ''}>\n\n`;
+  xml += `<krpano version="1.23" title="${projectTitle}">\n\n`;
 
-  // Hotspot styles
-  xml += '<style name="hs_link" type="text"\n';
-  xml += '  css="font-family:sans-serif; color:#fff; font-size:14px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
-  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
-  xml += '<style name="hs_text" type="text"\n';
-  xml += '  css="font-family:sans-serif; color:#fff; font-size:13px; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px;"\n';
-  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
-  xml += '<style name="hs_external" type="text"\n';
-  xml += '  css="font-family:sans-serif; color:#93c5fd; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
-  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
-  xml += '<style name="hs_video" type="text"\n';
-  xml += '  css="font-family:sans-serif; color:#fbbf24; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
-  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
+  xml += '  <include url="skin/vtourskin.xml"/>\n\n';
 
-  // Scenes
+  xml += '  <skin_settings\n';
+  xml += '    maps="false"\n';
+  xml += `    gyro="${gyro}"\n`;
+  xml += `    webvr="${webvr}"\n`;
+  xml += '    title="true"\n';
+  xml += '    thumbs="true"\n';
+  xml += '    thumbs_width="120" thumbs_height="80" thumbs_padding="10" thumbs_crop="0|40|240|160"\n';
+  xml += '    thumbs_opened="false"\n';
+  xml += '    deeplinking="false"\n';
+  xml += '    loadscene_flags="MERGE"\n';
+  xml += '    loadscene_blend="OPENBLEND(0.5, 0.0, 0.75, 0.05, linear)"\n';
+  xml += '  />\n\n';
+
+  if (startName) {
+    xml += '  <action name="startup" autorun="preinit">\n';
+    xml += `    loadscene(${startName});\n`;
+    xml += '  </action>\n\n';
+  }
+
+  // Custom hotspot styles (text, external, video — link uses skin default arrow)
+  xml += '  <style name="hs_text" type="text"\n';
+  xml += '    css="font-family:sans-serif; color:#fff; font-size:13px; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px;"\n';
+  xml += '    edge="bottom" zoom="false" distorted="false"/>\n\n';
+  xml += '  <style name="hs_external" type="text"\n';
+  xml += '    css="font-family:sans-serif; color:#93c5fd; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
+  xml += '    edge="bottom" zoom="false" distorted="false"/>\n\n';
+  xml += '  <style name="hs_video" type="text"\n';
+  xml += '    css="font-family:sans-serif; color:#fbbf24; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
+  xml += '    edge="bottom" zoom="false" distorted="false"/>\n\n';
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const scene of scenes) {
     const sName = sceneXmlName(scene.slug);
@@ -482,12 +557,23 @@ function generateKrpanoXml(project: any): string {
     const hlookat: number = dv?.hlookat ?? 0;
     const vlookat: number = dv?.vlookat ?? 0;
     const fov: number = dv?.fov ?? 90;
-    const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
     const heading: number = scene.heading ?? 0;
+    const useTiles = tiledSlugs.has(scene.slug);
+    const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
 
-    xml += `<scene name="${sName}" title="${sTitle}">\n`;
-    xml += `  <view hlookat="${hlookat.toFixed(1)}" vlookat="${vlookat.toFixed(1)}" fov="${fov.toFixed(1)}" maxpixelzoom="2.0" fovmin="50" fovmax="140"/>\n`;
-    xml += `  <image><sphere url="media/${xmlEsc(scene.slug)}${xmlEsc(ext)}" northoffset="${heading}"/></image>\n`;
+    const thumbAttr = useTiles ? ` thumburl="panos/${scene.slug}.tiles/thumb.jpg"` : '';
+    const latAttr   = scene.geo?.lat != null ? ` lat="${scene.geo.lat}"` : '';
+    const lngAttr   = scene.geo?.lng != null ? ` lng="${scene.geo.lng}"` : '';
+
+    xml += `  <scene name="${sName}" title="${sTitle}"${thumbAttr}${latAttr}${lngAttr} heading="${heading}">\n`;
+    xml += `    <view hlookat="${hlookat.toFixed(1)}" vlookat="${vlookat.toFixed(1)}" fovtype="MFOV" fov="${fov.toFixed(1)}" maxpixelzoom="2.0" fovmin="50" fovmax="140"/>\n`;
+
+    if (useTiles) {
+      xml += `    <preview url="panos/${scene.slug}.tiles/preview.jpg"/>\n`;
+      xml += `    <image><cube url="panos/${scene.slug}.tiles/pano_%s.jpg"/></image>\n`;
+    } else {
+      xml += `    <image><sphere url="media/${xmlEsc(scene.slug)}${xmlEsc(ext)}" northoffset="${heading}"/></image>\n`;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const hs of (scene.hotspots as any[])) {
@@ -500,24 +586,23 @@ function generateKrpanoXml(project: any): string {
         const targetScene = scenes.find((s: any) => s.id === hs.targetSceneId);
         if (!targetScene) continue;
         const linkedScene = sceneXmlName(targetScene.slug);
-        const label = xmlEsc(loc(hs.title, lang) || `→ ${loc(targetScene.title, lang) || targetScene.slug}`);
-        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_link" text="${label}" linkedscene="${linkedScene}"/>\n`;
+        // No style — vtour skin applies its own arrow image to linked hotspots
+        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" linkedscene="${linkedScene}"/>\n`;
       } else if (hs.type === 'text') {
         const label = xmlEsc(loc(hs.title, lang) || 'Info');
-        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_text" text="${label}"/>\n`;
+        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_text" text="${label}"/>\n`;
       } else if (hs.type === 'external') {
         const label = xmlEsc(loc(hs.label, lang) || 'Link');
         const url = xmlEsc(hs.url || '');
-        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_external" text="${label}" onclick="openurl(${url}, _blank);"/>\n`;
+        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_external" text="${label}" onclick="openurl(${url}, _blank);"/>\n`;
       } else if (hs.type === 'video') {
         const label = xmlEsc(`▶ ${loc(hs.title, lang) || 'Video'}`);
         const url = xmlEsc(hs.url || '');
-        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_video" text="${label}"${url ? ` onclick="openurl(${url}, _blank);"` : ''}/>\n`;
+        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_video" text="${label}"${url ? ` onclick="openurl(${url}, _blank);"` : ''}/>\n`;
       }
-      // form hotspots: omitted in static export (no server)
     }
 
-    xml += '</scene>\n\n';
+    xml += '  </scene>\n\n';
   }
 
   xml += '</krpano>\n';
@@ -582,7 +667,7 @@ ${description ? `  <meta name="description" content="${description}">\n` : ''}${
 <body>
   <div id="pano"></div>
 ${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.4);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script src="krpano/krpano.js"></script>
-  <script>embedpano({swf:"krpano/krpano.swf",xml:"tour.xml",target:"pano",html5:"auto",mobilescale:1.0,passQueryParameters:true});</script>
+  <script>embedpano({xml:"tour.xml",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:true});</script>
 </body>
 </html>`;
 }
@@ -670,9 +755,140 @@ ${description ? `  <meta name="description" content="${description}">\n` : ''}${
 <body>
   <div id="pano"></div>
 ${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.4);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script src="../../krpano/krpano.js"></script>
-  <script>embedpano({swf:"../../krpano/krpano.swf",xml:"../../tour.xml",target:"pano",html5:"auto",mobilescale:1.0,passQueryParameters:false,onready:function(krp){krp.call("loadscene(${xmlName},null,MERGE,BLEND(0.5));");}});</script>
+  <script>embedpano({xml:"../../tour.xml",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){krp.call("loadscene(${xmlName},null,MERGE,BLEND(0.5));");}});</script>
 </body>
 </html>`;
+}
+
+function generateHtaccess(): string {
+  return `# Generated by Conchitect
+Options -Indexes
+ErrorDocument 404 /404.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "\\.(js|css|jpg|jpeg|png|gif|ico|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\\.html$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+</IfModule>
+`;
+}
+
+function generateRedirects(): string {
+  return `# Netlify — generated by Conchitect
+/*  /index.html  200
+`;
+}
+
+function generateVercelJson(): string {
+  return JSON.stringify({
+    cleanUrls: true,
+    trailingSlash: false,
+    rewrites: [{ source: '/(.*)', destination: '/index.html' }],
+    headers: [{
+      source: '/(.*)\\.(?:js|css|jpg|jpeg|png|gif|ico|woff2?)',
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+    }],
+  }, null, 2);
+}
+
+function generateWebConfig(): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated by Conchitect — IIS rewrite rules -->
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <rule name="SPA" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="/index.html" />
+        </rule>
+      </rules>
+    </rewrite>
+    <staticContent>
+      <mimeMap fileExtension=".xml" mimeType="application/xml" />
+    </staticContent>
+  </system.webServer>
+</configuration>`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateRobotsTxt(project: any): string {
+  const publicUrl = String(project.meta?.publicationUrl || '').replace(/\/$/, '');
+  return `User-agent: *\nAllow: /\n${publicUrl ? `Sitemap: ${publicUrl}/sitemap.xml\n` : ''}`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateReadmeTxt(project: any, includeLicense: boolean, krpanoPath: string): string {
+  const name = project.meta?.name || 'Virtual Tour';
+  const licenseSection = includeLicense
+    ? '  Your krpanolicense.xml is included in the krpano/ folder.'
+    : `  Your krpano license is NOT included.\n  Copy krpanolicense.xml from:\n    ${krpanoPath}\\krpanolicense.xml\n  into the krpano/ folder to remove the watermark.`;
+  return `${name} — Virtual Tour
+Generated by Conchitect
+${'='.repeat(60)}
+
+HOW TO PUBLISH
+--------------
+
+OPTION A — Apache / cPanel / OVH
+  1. Upload all files to your web server root (FTP/SFTP)
+  2. The .htaccess file handles URL routing automatically
+
+OPTION B — Netlify
+  1. Drag this folder into app.netlify.com/drop
+  2. Or: connect your repo, set publish dir to this folder
+  The _redirects file is pre-configured.
+
+OPTION C — Vercel
+  Run: npx vercel --prod (from this folder)
+  vercel.json is pre-configured.
+
+OPTION D — GitHub Pages
+  Push this folder to a "docs/" subfolder in your repo,
+  then enable Pages in Settings → Pages → "docs/" source.
+
+KRPANO LICENSE
+--------------
+${licenseSection}
+
+FILE STRUCTURE
+--------------
+  index.html         — main tour viewer
+  tour.xml           — krpano scene configuration
+  skin/              — krpano vtour skin
+  krpano/            — krpano runtime (krpano.js)
+  media/             — equirectangular panorama images
+  panos/             — cube tile sets (if generated)
+  scene/             — per-scene deep-link pages
+  sitemap.xml        — search engine sitemap
+  robots.txt         — crawler rules
+  .htaccess          — Apache URL routing
+  _redirects         — Netlify routing
+  vercel.json        — Vercel routing
+  web.config         — IIS routing
+`;
+}
+
+function generateBat(krpanoPath: string): string {
+  return `@echo off
+cd /d "%~dp0"
+start "" "${krpanoPath}\\krpano Testing Server.exe"
+`;
 }
 
 ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: string) => {
@@ -680,6 +896,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
   const project = projectData as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scenes: any[] = project.scenes || [];
+  const settings = await readSettings();
 
   function progress(msg: string, status: 'running' | 'ok' | 'error' | 'info') {
     event.sender.send('compile:progress', { msg, status });
@@ -688,53 +905,146 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
   try {
     progress('Starting compile…', 'running');
 
-    await fs.mkdir(outputDir, { recursive: true });
+    // ── Create output structure ─────────────────────────────────────────────
     await fs.mkdir(path.join(outputDir, 'media'), { recursive: true });
+    await fs.mkdir(path.join(outputDir, 'krpano'), { recursive: true });
     progress('Output folder ready', 'ok');
 
-    // Copy krpano runtime
-    const krpanoSrc = isDev
-      ? path.join(process.cwd(), 'assets', 'krpano')
-      : path.join(process.resourcesPath, 'assets', 'krpano');
+    // ── krpano runtime from installation ───────────────────────────────────
+    const kPath = settings.krpanoPath;
+    const viewerJs = path.join(kPath, 'viewer', 'krpano.js');
+    const skinSrc  = path.join(kPath, 'templates', 'xml', 'skin');
+    const licenseFile = path.join(kPath, 'krpanolicense.xml');
+    const testServerExe = path.join(kPath, 'krpano Testing Server.exe');
 
     try {
-      await fs.access(krpanoSrc);
-      const count = await copyDir(krpanoSrc, path.join(outputDir, 'krpano'));
-      progress(`krpano runtime copied (${count} files)`, 'ok');
+      await fs.access(viewerJs);
+      await fs.copyFile(viewerJs, path.join(outputDir, 'krpano', 'krpano.js'));
+      progress('krpano.js copied from installation', 'ok');
     } catch {
-      progress('krpano folder not found in assets/ — add files to dist/krpano/ manually', 'info');
+      // Fallback to bundled assets/krpano/
+      const assetSrc = isDev
+        ? path.join(process.cwd(), 'assets', 'krpano')
+        : path.join(process.resourcesPath, 'assets', 'krpano');
+      try {
+        await fs.access(assetSrc);
+        const count = await copyDir(assetSrc, path.join(outputDir, 'krpano'));
+        progress(`krpano runtime from assets/ (${count} files)`, 'info');
+      } catch {
+        progress('krpano.js not found — add viewer/krpano.js to krpano/ folder manually', 'info');
+      }
     }
 
-    // Copy scene images
-    let copied = 0;
-    let skipped = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // ── vtour skin ─────────────────────────────────────────────────────────
+    try {
+      await fs.access(skinSrc);
+      const skinCount = await copyDir(skinSrc, path.join(outputDir, 'skin'));
+      progress(`Skin copied (${skinCount} files)`, 'ok');
+    } catch {
+      progress('vtour skin not found — tour.xml skin include may fail', 'info');
+    }
+
+    // ── License (opt-in) ───────────────────────────────────────────────────
+    if (settings.includeLicense) {
+      try {
+        await fs.access(licenseFile);
+        await fs.copyFile(licenseFile, path.join(outputDir, 'krpano', 'krpanolicense.xml'));
+        progress('krpanolicense.xml included', 'ok');
+      } catch {
+        progress('krpanolicense.xml not found at krpano installation path', 'info');
+      }
+    }
+
+    // ── Copy scene images (sphere) ─────────────────────────────────────────
+    let mediaCopied = 0;
+    let mediaSkipped = 0;
     for (const scene of scenes) {
       const src: string | undefined = scene.media?.sourcePath;
-      if (!src) { skipped++; continue; }
+      if (!src) { mediaSkipped++; continue; }
       try {
         await fs.access(src);
         const ext = path.extname(src) || '.jpg';
         await fs.copyFile(src, path.join(outputDir, 'media', `${scene.slug}${ext}`));
-        copied++;
+        mediaCopied++;
       } catch {
         progress(`Warning: media not found for "${scene.slug}"`, 'info');
-        skipped++;
+        mediaSkipped++;
       }
     }
-    progress(`Scene images: ${copied} copied${skipped > 0 ? `, ${skipped} skipped` : ''}`, copied > 0 ? 'ok' : 'info');
+    progress(`Scene images: ${mediaCopied} copied${mediaSkipped > 0 ? `, ${mediaSkipped} skipped` : ''}`, mediaCopied > 0 ? 'ok' : 'info');
 
-    // Generate tour.xml
-    const tourXml = generateKrpanoXml(project);
+    // ── Tile generation via krpanotools ────────────────────────────────────
+    const tiledSlugs = new Set<string>();
+    if (settings.useKrpanoTiles) {
+      const toolPath = path.join(kPath, 'krpanotools.exe');
+      let toolOk = false;
+      try { await fs.access(toolPath); toolOk = true; } catch { /* */ }
+
+      if (toolOk) {
+        const panosDir = path.join(outputDir, 'panos');
+        await fs.mkdir(panosDir, { recursive: true });
+        const tmpBase = path.join(os.tmpdir(), `conchitect-${Date.now()}`);
+        await fs.mkdir(tmpBase, { recursive: true });
+
+        for (const scene of scenes) {
+          const src: string | undefined = scene.media?.sourcePath;
+          if (!src) continue;
+          progress(`Generating tiles for "${scene.slug}"…`, 'running');
+          try {
+            const ext = path.extname(src) || '.jpg';
+            const tmpImg = path.join(tmpBase, `${scene.slug}${ext}`);
+            await fs.copyFile(src, tmpImg);
+
+            await new Promise<void>((resolve, reject) => {
+              const proc = spawn(toolPath, ['makepano', tmpImg], {
+                cwd: outputDir,
+                windowsHide: true,
+              });
+              proc.stdout?.on('data', (chunk: Buffer) => {
+                const lines = chunk.toString().split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+                for (const line of lines) {
+                  event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' });
+                }
+              });
+              proc.stderr?.on('data', (chunk: Buffer) => {
+                const line = chunk.toString().trim();
+                if (line) event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' });
+              });
+              proc.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(`krpanotools exited with code ${code}`));
+              });
+              proc.on('error', reject);
+            });
+
+            tiledSlugs.add(scene.slug);
+            progress(`Tiles ready for "${scene.slug}"`, 'ok');
+            await fs.unlink(tmpImg).catch(() => {});
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            progress(`Tile generation failed for "${scene.slug}": ${msg}`, 'info');
+          }
+        }
+        await fs.rm(tmpBase, { recursive: true, force: true }).catch(() => {});
+      } else {
+        progress('krpanotools.exe not found — skipping tile generation', 'info');
+      }
+    }
+
+    // ── tour.xml ───────────────────────────────────────────────────────────
+    const tourXml = generateKrpanoXml(project, tiledSlugs);
     await fs.writeFile(path.join(outputDir, 'tour.xml'), tourXml, 'utf8');
     progress('tour.xml generated', 'ok');
 
-    // Generate root index.html (tour viewer, default start scene)
+    // ── index.html ─────────────────────────────────────────────────────────
     const indexHtml = generateHtml(project);
     await fs.writeFile(path.join(outputDir, 'index.html'), indexHtml, 'utf8');
-    progress('index.html generated', 'ok');
 
-    // Generate per-scene deep-link pages: scene/<slug>/index.html
+    // 404.html = copy of index.html (SPA routing fallback)
+    await fs.copyFile(path.join(outputDir, 'index.html'), path.join(outputDir, '404.html'));
+    progress('index.html + 404.html generated', 'ok');
+
+    // ── Per-scene deep-link pages ──────────────────────────────────────────
     const sceneOutDir = path.join(outputDir, 'scene');
     await fs.mkdir(sceneOutDir, { recursive: true });
     for (const scene of scenes) {
@@ -742,17 +1052,62 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'index.html'), generateScenePageHtml(project, scene), 'utf8');
     }
-    progress(`Per-scene pages: ${scenes.length} generated in scene/`, 'ok');
+    progress(`Per-scene pages: ${scenes.length} in scene/`, 'ok');
 
-    // Sitemap (always generate when we have scene/* pages; seo.imageSitemap gates image annotations)
+    // ── Rewrite configs ────────────────────────────────────────────────────
+    await fs.writeFile(path.join(outputDir, '.htaccess'),   generateHtaccess(),     'utf8');
+    await fs.writeFile(path.join(outputDir, '_redirects'),  generateRedirects(),    'utf8');
+    await fs.writeFile(path.join(outputDir, 'vercel.json'), generateVercelJson(),   'utf8');
+    await fs.writeFile(path.join(outputDir, 'web.config'),  generateWebConfig(),    'utf8');
+    progress('Rewrite configs generated (.htaccess, _redirects, vercel.json, web.config)', 'ok');
+
+    // ── Sitemap + robots.txt ───────────────────────────────────────────────
     const sitemap = generateSitemap(project);
     if (sitemap) {
       await fs.writeFile(path.join(outputDir, 'sitemap.xml'), sitemap, 'utf8');
       progress('sitemap.xml generated', 'ok');
     }
+    await fs.writeFile(path.join(outputDir, 'robots.txt'), generateRobotsTxt(project), 'utf8');
 
-    progress('Compile complete!', 'ok');
-    return { ok: true, outputDir };
+    // ── README.txt ─────────────────────────────────────────────────────────
+    await fs.writeFile(path.join(outputDir, 'README.txt'), generateReadmeTxt(project, settings.includeLicense, kPath), 'utf8');
+    progress('README.txt generated', 'ok');
+
+    // ── Optional testing server ────────────────────────────────────────────
+    if (settings.includeTestServer) {
+      try {
+        await fs.access(testServerExe);
+        await fs.copyFile(testServerExe, path.join(outputDir, 'krpano Testing Server.exe'));
+        await fs.writeFile(path.join(outputDir, 'START_TESTING_SERVER.bat'), generateBat(kPath), 'utf8');
+        progress('Testing server included', 'ok');
+      } catch {
+        progress('krpano Testing Server.exe not found — skipped', 'info');
+      }
+    }
+
+    // ── Count output files + size ──────────────────────────────────────────
+    let totalFiles = 0;
+    let totalBytes = 0;
+    async function countDir(dir: string) {
+      try {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.isDirectory()) { await countDir(path.join(dir, e.name)); }
+          else {
+            totalFiles++;
+            try {
+              const st = await fs.stat(path.join(dir, e.name));
+              totalBytes += st.size;
+            } catch { /* */ }
+          }
+        }
+      } catch { /* */ }
+    }
+    await countDir(outputDir);
+    const sizeMb = (totalBytes / 1048576).toFixed(1);
+    progress(`Done — ${totalFiles} files, ${sizeMb} MB`, 'ok');
+
+    return { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     progress(`Error: ${msg}`, 'error');

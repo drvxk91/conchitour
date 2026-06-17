@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { FolderOpen, Play, CheckCircle, AlertTriangle, Circle, Loader2, ExternalLink, Copy } from 'lucide-react';
+import {
+  FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
+  Loader2, ExternalLink, Copy, Settings, RotateCw,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
-import type { CompileResult } from '../../electron/preload';
+import type { CompileResult, ConchitectSettings, KrpanoValidationResult } from '../../electron/preload';
 
 interface LogEntry {
   msg: string;
@@ -12,27 +15,59 @@ interface LogEntry {
 
 export function CompileScreen() {
   const { project } = useProject();
-  const [outputDir, setOutputDir] = useState('');
-  const [log, setLog] = useState<LogEntry[]>([]);
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<CompileResult | null>(null);
-  const [copied, setCopied] = useState(false);
+
+  // Settings state
+  const [settings, setSettings] = useState<ConchitectSettings | null>(null);
+  const [krpanoPathDraft, setKrpanoPathDraft]   = useState('');
+  const [validation, setValidation]             = useState<KrpanoValidationResult | null>(null);
+  const [validating, setValidating]             = useState(false);
+
+  // Compile state
+  const [outputDir, setOutputDir]   = useState('');
+  const [log, setLog]               = useState<LogEntry[]>([]);
+  const [running, setRunning]       = useState(false);
+  const [result, setResult]         = useState<CompileResult | null>(null);
+  const [copied, setCopied]         = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll log to bottom on each new entry
+  // Load settings on mount
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
+    window.conchitect.settingsGet().then((s) => {
+      setSettings(s);
+      setKrpanoPathDraft(s.krpanoPath);
+      // Auto-validate on load
+      window.conchitect.krpanoValidate(s.krpanoPath).then(setValidation);
+    });
+  }, []);
+
+  // Auto-scroll log
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
-  // Subscribe to progress events from the main process
+  // Subscribe to compile progress events
   useEffect(() => {
     const unsub = window.conchitect.onCompileProgress((msg, status) => {
       setLog((prev) => [...prev, { msg, status: status as LogEntry['status'] }]);
     });
     return unsub;
   }, []);
+
+  // Persist a settings field
+  const patchSettings = useCallback((patch: Partial<ConchitectSettings>) => {
+    setSettings((prev) => prev ? { ...prev, ...patch } : prev);
+    window.conchitect.settingsSet(patch);
+  }, []);
+
+  const handleValidate = useCallback(async () => {
+    if (!krpanoPathDraft) return;
+    setValidating(true);
+    setValidation(null);
+    patchSettings({ krpanoPath: krpanoPathDraft });
+    const r = await window.conchitect.krpanoValidate(krpanoPathDraft);
+    setValidation(r);
+    setValidating(false);
+  }, [krpanoPathDraft, patchSettings]);
 
   const handlePickFolder = useCallback(async () => {
     const dir = await window.conchitect.showFolderDialog();
@@ -61,11 +96,14 @@ export function CompileScreen() {
   }, [result]);
 
   const sceneCount = project.scenes.length;
+  const krpanoOk   = validation?.valid ?? false;
   const canCompile = outputDir.length > 0 && sceneCount > 0 && !running;
 
   const checks = [
     {
-      label: sceneCount > 0 ? `${sceneCount} scene${sceneCount !== 1 ? 's' : ''} ready` : 'No scenes — add scenes first',
+      label: sceneCount > 0
+        ? `${sceneCount} scene${sceneCount !== 1 ? 's' : ''} ready`
+        : 'No scenes — add scenes first',
       ok: sceneCount > 0,
     },
     {
@@ -73,16 +111,78 @@ export function CompileScreen() {
       ok: outputDir.length > 0,
     },
     {
-      label: 'krpano runtime — checked at compile time',
-      ok: null as boolean | null,
+      label: validation
+        ? (krpanoOk
+            ? 'krpano installation detected'
+            : `krpano incomplete — missing: ${validation.missing.join(', ')}`)
+        : 'krpano installation not validated yet',
+      ok: validation ? krpanoOk : null,
     },
   ];
+
+  if (!settings) {
+    return (
+      <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
+        <div className="flex items-center gap-2 text-sm text-ink-faded">
+          <Loader2 size={14} className="animate-spin" />
+          Loading settings…
+        </div>
+      </ScreenShell>
+    );
+  }
 
   return (
     <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
       <div className="max-w-2xl space-y-8">
 
-        {/* Output folder picker */}
+        {/* ── krpano Installation ──────────────────────────────────────── */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Settings size={14} className="text-ink-soft" />
+            <span className="text-sm font-medium text-ink-base">krpano installation</span>
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={krpanoPathDraft}
+              onChange={(e) => setKrpanoPathDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleValidate()}
+              placeholder="C:\Users\...\krpano"
+              className="flex-1 px-3 py-2 rounded-md border border-line-strong bg-paper-soft text-sm font-mono text-ink-base min-w-0 focus:outline-none focus:border-blue-400"
+            />
+            <button
+              onClick={handleValidate}
+              disabled={validating || !krpanoPathDraft}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-line-strong bg-white text-sm text-ink-base hover:bg-paper-soft transition-colors shrink-0 disabled:opacity-50"
+            >
+              {validating
+                ? <Loader2 size={13} className="animate-spin" />
+                : <RotateCw size={13} />}
+              Detect
+            </button>
+          </div>
+
+          {validation && (
+            <div className={clsx(
+              'rounded-md px-3 py-2 text-xs',
+              validation.valid
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-amber-50 text-amber-700'
+            )}>
+              {validation.valid
+                ? 'krpano installation OK — vtour skin, viewer runtime, and tools found.'
+                : <>
+                    Missing files:{' '}
+                    {validation.missing.map((m, i) => (
+                      <span key={m}><code className="font-mono bg-amber-100 px-0.5 rounded">{m}</code>{i < validation.missing.length - 1 ? ', ' : ''}</span>
+                    ))}
+                  </>}
+            </div>
+          )}
+        </section>
+
+        {/* ── Output folder ────────────────────────────────────────────── */}
         <section className="space-y-2">
           <label className="text-sm font-medium text-ink-base">Output folder</label>
           <div className="flex gap-2">
@@ -101,18 +201,63 @@ export function CompileScreen() {
           </div>
         </section>
 
-        {/* Pre-flight checklist */}
+        {/* ── Options ──────────────────────────────────────────────────── */}
+        <section className="space-y-2">
+          <p className="text-sm font-medium text-ink-base">Options</p>
+          <div className="space-y-2.5">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={settings.useKrpanoTiles}
+                onChange={(e) => patchSettings({ useKrpanoTiles: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                <span className="font-medium text-ink-base">Generate cube tiles</span>
+                <span className="text-ink-faded ml-1.5">Runs krpanotools per scene (~1–3 min each). Better quality and loading performance.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={settings.includeLicense}
+                onChange={(e) => patchSettings({ includeLicense: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                <span className="font-medium text-ink-base">Include krpano license</span>
+                <span className="text-ink-faded ml-1.5">Copies krpanolicense.xml — removes the "Not licensed" watermark.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={settings.includeTestServer}
+                onChange={(e) => patchSettings({ includeTestServer: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                <span className="font-medium text-ink-base">Include testing server</span>
+                <span className="text-ink-faded ml-1.5">Bundles "krpano Testing Server.exe" + a START_TESTING_SERVER.bat for local preview.</span>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        {/* ── Pre-flight checklist ─────────────────────────────────────── */}
         <section className="space-y-2">
           <p className="text-sm font-medium text-ink-base">Pre-flight</p>
           <ul className="space-y-1.5">
             {checks.map((c, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm">
+              <li key={i} className="flex items-start gap-2 text-sm">
                 {c.ok === null
-                  ? <Circle size={14} className="text-line-strong shrink-0" />
+                  ? <Circle size={14} className="text-line-strong shrink-0 mt-0.5" />
                   : c.ok
-                    ? <CheckCircle size={14} className="text-emerald-500 shrink-0" />
-                    : <AlertTriangle size={14} className="text-amber-400 shrink-0" />}
-                <span className={clsx(!c.ok && c.ok !== null ? 'text-amber-600' : 'text-ink-soft')}>
+                    ? <CheckCircle size={14} className="text-emerald-500 shrink-0 mt-0.5" />
+                    : <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />}
+                <span className={clsx(
+                  !c.ok && c.ok !== null ? 'text-amber-600' : 'text-ink-soft'
+                )}>
                   {c.label}
                 </span>
               </li>
@@ -120,7 +265,7 @@ export function CompileScreen() {
           </ul>
         </section>
 
-        {/* Compile button */}
+        {/* ── Compile button ───────────────────────────────────────────── */}
         <button
           onClick={handleCompile}
           disabled={!canCompile}
@@ -136,7 +281,7 @@ export function CompileScreen() {
             : <><Play size={15} />Compile tour</>}
         </button>
 
-        {/* Progress log */}
+        {/* ── Progress log ─────────────────────────────────────────────── */}
         {log.length > 0 && (
           <section className="space-y-2">
             <p className="text-xs font-medium text-ink-faded uppercase tracking-wider">Output</p>
@@ -168,7 +313,7 @@ export function CompileScreen() {
           </section>
         )}
 
-        {/* Result banner */}
+        {/* ── Result banner ────────────────────────────────────────────── */}
         {result && (
           <section className={clsx(
             'rounded-lg border px-4 py-3',
@@ -176,8 +321,15 @@ export function CompileScreen() {
           )}>
             {result.ok ? (
               <div className="space-y-3">
-                <p className="text-sm font-semibold text-emerald-700">Tour compiled successfully!</p>
-                <div className="flex gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-emerald-700">Tour compiled successfully!</p>
+                  {result.fileCount != null && result.sizeBytes != null && (
+                    <p className="text-xs text-emerald-600 mt-0.5">
+                      {result.fileCount} files — {(result.sizeBytes / 1048576).toFixed(1)} MB
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => window.conchitect.openFolder(result.outputDir!)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors"
