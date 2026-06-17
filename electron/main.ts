@@ -256,6 +256,68 @@ ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
   const projSheet = XLSX.utils.aoa_to_sheet([projHeader, [projRow].flat()]);
   XLSX.utils.book_append_sheet(wb, projSheet, 'Project');
 
+  // ── Sheet: Hotspots ──
+  const hsHeader = [
+    'scene_slug', 'hotspot_id', 'type', 'ath', 'atv', 'target_scene_slug',
+    'url', 'mailto',
+    ...langs.flatMap((l: string) => [`title_${l}`, `label_${l}`, `body_${l}`, `subject_${l}`]),
+  ];
+  const hsRows: unknown[][] = [];
+  for (const scene of (proj.scenes ?? [])) {
+    for (const hs of (scene.hotspots ?? [])) {
+      const targetSlug = hs.type === 'link'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (proj.scenes ?? []).find((s: any) => s.id === hs.targetSceneId)?.slug ?? ''
+        : '';
+      hsRows.push([
+        scene.slug, hs.id, hs.type,
+        hs.ath ?? 0, hs.atv ?? 0,
+        targetSlug,
+        hs.url ?? '',
+        hs.mailto ?? '',
+        ...langs.flatMap((l: string) => [
+          hs.title?.[l] ?? '',
+          hs.label?.[l] ?? '',
+          hs.body?.[l] ?? '',
+          hs.subject?.[l] ?? '',
+        ]),
+      ]);
+    }
+  }
+  const hsSheet = XLSX.utils.aoa_to_sheet([hsHeader, ...hsRows]);
+  XLSX.utils.book_append_sheet(wb, hsSheet, 'Hotspots');
+
+  // ── Sheet: SEO ──
+  const seo = proj.seo ?? {};
+  const seoHeader = ['meta_title', 'meta_description', 'keywords', 'schema_type', 'image_sitemap'];
+  const seoRow = [
+    seo.metaTitle ?? '', seo.metaDescription ?? '',
+    (seo.keywords ?? []).join(', '),
+    seo.schemaType ?? 'Place',
+    seo.imageSitemap ? 'true' : 'false',
+  ];
+  const seoSheet = XLSX.utils.aoa_to_sheet([seoHeader, seoRow]);
+  XLSX.utils.book_append_sheet(wb, seoSheet, 'SEO');
+
+  // ── Sheet: Branding ──
+  const branding = proj.branding ?? {};
+  const brandingHeader = ['primary_color', 'accent_color', 'start_scene_slug'];
+  const startSceneSlug = (proj.scenes ?? []).find((s: any) => s.id === branding.startSceneId)?.slug ?? '';
+  const brandingRow = [branding.primaryColor ?? '', branding.accentColor ?? '', startSceneSlug];
+  const brandingSheet = XLSX.utils.aoa_to_sheet([brandingHeader, brandingRow]);
+  XLSX.utils.book_append_sheet(wb, brandingSheet, 'Branding');
+
+  // ── Sheet: Modules ──
+  const modules = proj.modules ?? {};
+  const modHeader = ['gyro', 'vr', 'deepl_key'];
+  const modRow = [
+    modules.gyro ? 'true' : 'false',
+    modules.vr ? 'true' : 'false',
+    modules.deeplKey ?? '',
+  ];
+  const modSheet = XLSX.utils.aoa_to_sheet([modHeader, modRow]);
+  XLSX.utils.book_append_sheet(wb, modSheet, 'Modules');
+
   XLSX.writeFile(wb, result.filePath);
   return { canceled: false, path: result.filePath };
 });
