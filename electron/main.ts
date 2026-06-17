@@ -1483,20 +1483,20 @@ var ROOT    = __dirname;
 // Strict routing: /en and /en/ are distinct routes (prevents redirect loops)
 app.set('strict routing', true);
 
-// Long-lived static assets
-['panos','krpano','skin','media'].forEach(function(dir) {
-  app.use('/' + dir, express.static(path.join(ROOT, dir), { maxAge: '365d' }));
+// Long-lived static assets — redirect:false so only our explicit routes issue redirects
+['panos','krpano','skin','media','plugins'].forEach(function(dir) {
+  app.use('/' + dir, express.static(path.join(ROOT, dir), { maxAge: '365d', redirect: false }));
 });
-// tour.xml, sitemap.xml, robots.txt — no cache
-app.use(express.static(ROOT, { index: false, maxAge: 0 }));
+// tour.xml, sitemap.xml, robots.txt — no cache, no auto-redirects
+app.use(express.static(ROOT, { index: false, maxAge: 0, redirect: false }));
 
 // Root → default language
-app.get('/', function(_req, res) { res.redirect(301, '/' + DEFAULT + '/'); });
+app.get('/', function(_req, res) { res.redirect(302, '/' + DEFAULT + '/'); });
 
 // /:lang  (no trailing slash) → add trailing slash
 app.get('/:lang', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
-  res.redirect(301, '/' + req.params.lang + '/');
+  res.redirect(302, '/' + req.params.lang + '/');
 });
 
 // /:lang/
@@ -1510,7 +1510,7 @@ app.get('/:lang/', function(req, res, next) {
 // /scene/:slug/:lang  (no trailing slash) → add trailing slash
 app.get('/scene/:slug/:lang', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
-  res.redirect(301, '/scene/' + req.params.slug + '/' + req.params.lang + '/');
+  res.redirect(302, '/scene/' + req.params.slug + '/' + req.params.lang + '/');
 });
 
 // /scene/:slug/:lang/
@@ -1520,7 +1520,7 @@ app.get('/scene/:slug/:lang/', function(req, res, next) {
   if (fs.existsSync(file)) return res.sendFile(file);
   // Scene not found in this lang → try default lang
   var fb = path.join(ROOT, DEFAULT, 'scene', req.params.slug, 'index.html');
-  if (fs.existsSync(fb)) return res.redirect(301, '/scene/' + req.params.slug + '/' + DEFAULT + '/');
+  if (fs.existsSync(fb)) return res.redirect(302, '/scene/' + req.params.slug + '/' + DEFAULT + '/');
   next();
 });
 
@@ -1686,7 +1686,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     // and a bare catch {} was swallowing that error silently.
     const pluginsSrc = path.join(kPath, 'viewer', 'plugins');
     try {
-      const pluginCount = await copyDir(pluginsSrc, path.join(outputDir, 'krpano', 'plugins'));
+      const pluginCount = await copyDir(pluginsSrc, path.join(outputDir, 'plugins'));
       if (pluginCount > 0) {
         progress(`Plugins copied (${pluginCount} files)`, 'ok');
       } else {
