@@ -2,10 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { v4 as uuid } from 'uuid';
-import { Zap, Check, MapPin, Undo2, Link2, X, Maximize2 } from 'lucide-react';
+import { Zap, Check, MapPin, Undo2, Link2, X, Maximize2, Layers } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { haversineDistance, bearingBetween, bearingToAth, elevationToAtv } from '@/lib/geo';
 import type { GeoCoord, LinkHotspot, Scene, Category } from '@/types';
+
+// Inject pulse keyframes once (M2)
+let pulseStyleInjected = false;
+function injectPulseStyle() {
+  if (pulseStyleInjected || typeof document === 'undefined') return;
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes map-pin-pulse {
+      0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,0.45), 0 0 0 0 rgba(255,255,255,0.6); }
+      50%       { box-shadow: 0 2px 6px rgba(0,0,0,0.45), 0 0 0 6px rgba(255,255,255,0); }
+    }
+    .map-pin-active { animation: map-pin-pulse 2s ease-in-out infinite; }
+  `;
+  document.head.appendChild(style);
+  pulseStyleInjected = true;
+}
+
+type TileType = 'osm' | 'satellite';
 
 // Fix Leaflet's default icon path (broken by Vite's asset hashing)
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -29,18 +47,20 @@ interface MapViewProps {
   activeSceneId: string | null;
   showLines: boolean;
   showRadii: boolean;
+  tileType: TileType;
   onDragEnd: (sceneId: string, lat: number, lng: number) => void;
   onSelect: (sceneId: string) => void;
   onMapClick: (lat: number, lng: number) => void;
   autoFitRef?: React.MutableRefObject<() => void>;
 }
 
-function MapView({ scenes, categories, activeSceneId, showLines, showRadii, onDragEnd, onSelect, onMapClick, autoFitRef }: MapViewProps) {
+function MapView({ scenes, categories, activeSceneId, showLines, showRadii, tileType, onDragEnd, onSelect, onMapClick, autoFitRef }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const linesLayerRef = useRef<L.LayerGroup | null>(null);
   const circlesLayerRef = useRef<L.LayerGroup | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const didFitRef = useRef(false);
   const scenesRef = useRef<Scene[]>(scenes);
   useEffect(() => { scenesRef.current = scenes; }, [scenes]);
@@ -59,11 +79,12 @@ function MapView({ scenes, categories, activeSceneId, showLines, showRadii, onDr
   }
 
   function makeIcon(color: string, isActive: boolean) {
+    injectPulseStyle();
     return L.divIcon({
       className: '',
       iconSize: [28, 28],
       iconAnchor: [14, 14],
-      html: `<div style="
+      html: `<div class="${isActive ? 'map-pin-active' : ''}" style="
         width:28px;height:28px;border-radius:50%;
         background:${color};
         border:3px solid ${isActive ? 'white' : 'rgba(255,255,255,0.55)'};
@@ -78,8 +99,11 @@ function MapView({ scenes, categories, activeSceneId, showLines, showRadii, onDr
     if (!containerRef.current || mapRef.current) return;
     let map: L.Map;
     try {
-      map = L.map(containerRef.current, { zoomControl: true, center: [20, 0], zoom: 2 });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      map = L.map(containerRef.current, { zoomControl: false, center: [20, 0], zoom: 2 });
+      // M5: zoom control at bottom-left so it doesn't overlap the toggle buttons
+      L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+      tileLayerRef.current = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(map);
@@ -221,6 +245,45 @@ function MapView({ scenes, categories, activeSceneId, showLines, showRadii, onDr
     }
   }, [scenes, showRadii]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // M3: Re-fit when GPS coords change (debounced 300 ms)
+  const refitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geoKey = scenes.filter(hasGeo).map((s) => `${s.id}:${s.geo.lat},${s.geo.lng}`).join('|');
+  useEffect(() => {
+    if (refitTimerRef.current) clearTimeout(refitTimerRef.current);
+    refitTimerRef.current = setTimeout(() => {
+      const map = mapRef.current;
+      if (!map) return;
+      const geo = scenesRef.current.filter(hasGeo);
+      if (geo.length === 0) return;
+      try {
+        if (geo.length === 1) { map.setView([geo[0].geo.lat, geo[0].geo.lng], 16); return; }
+        map.fitBounds(L.latLngBounds(geo.map((s): L.LatLngExpression => [s.geo.lat, s.geo.lng])), { padding: [50, 50] });
+      } catch { /* ignore */ }
+    }, 300);
+    return () => { if (refitTimerRef.current) clearTimeout(refitTimerRef.current); };
+  }, [geoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // M4: Tile layer switch
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (tileLayerRef.current) { map.removeLayer(tileLayerRef.current); }
+    const layer = tileType === 'satellite'
+      ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
+          maxZoom: 19,
+        })
+      : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 19,
+        });
+    layer.addTo(map);
+    tileLayerRef.current = layer;
+    // Bring layers to front after tile change
+    linesLayerRef.current?.bringToFront();
+    circlesLayerRef.current?.bringToFront();
+  }, [tileType]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div
       ref={containerRef}
@@ -237,6 +300,7 @@ export function MapScreen() {
   const [autoResult, setAutoResult] = useState<string | null>(null);
   const [showLines, setShowLines] = useState(true);
   const [showRadii, setShowRadii] = useState(true);
+  const [tileType, setTileType] = useState<TileType>('osm');
   const [linkMode, setLinkMode] = useState(false);
   const [linkSourceId, setLinkSourceId] = useState<string | null>(null);
   const [bidir, setBidir] = useState(true);
@@ -381,31 +445,47 @@ export function MapScreen() {
           activeSceneId={activeSceneId}
           showLines={showLines}
           showRadii={showRadii}
+          tileType={tileType}
           onDragEnd={handleDragEnd}
           onSelect={setActiveScene}
           onMapClick={handleMapClick}
           autoFitRef={autoFitRef}
         />
 
-        {/* Auto-fit button — top-right */}
-        <button
-          onClick={() => autoFitRef.current()}
-          title="Auto-fit map to GPS points"
-          className="absolute top-3 right-3 z-[1000] flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full backdrop-blur-sm border bg-white/80 text-zinc-700 border-zinc-300 hover:bg-white shadow-sm transition-colors"
-        >
-          <Maximize2 size={11} />
-          Auto-fit
-        </button>
+        {/* M5: Top-right controls — auto-fit + tile selector */}
+        <div className="absolute top-3 right-3 z-[1000] flex items-center gap-1.5">
+          <button
+            onClick={() => autoFitRef.current()}
+            title="Auto-fit map to GPS points"
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 shadow-sm transition-colors"
+          >
+            <Maximize2 size={11} />
+            Auto-fit
+          </button>
+          {/* M4: Tile layer selector */}
+          <button
+            onClick={() => setTileType((t) => t === 'osm' ? 'satellite' : 'osm')}
+            title="Switch tile layer"
+            className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border shadow-sm transition-colors ${
+              tileType === 'satellite'
+                ? 'bg-blue-500 text-white border-blue-400 hover:bg-blue-600'
+                : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+            }`}
+          >
+            <Layers size={11} />
+            {tileType === 'satellite' ? 'Satellite' : 'Map'}
+          </button>
+        </div>
 
-        {/* Toggle overlay — top-left */}
+        {/* M5: Toggle overlay — top-left, white style consistent with other controls */}
         <div className="absolute top-3 left-3 z-[1000] flex gap-1.5">
           <button
             onClick={() => setShowLines((v) => !v)}
             title="Toggle connection lines"
-            className={`text-[11px] px-2.5 py-1 rounded-full backdrop-blur-sm border transition-colors ${
+            className={`text-[11px] px-2.5 py-1 rounded-full border shadow-sm transition-colors ${
               showLines
-                ? 'bg-blue-500/80 text-white border-blue-400'
-                : 'bg-black/50 text-white/60 border-white/20 hover:bg-black/70'
+                ? 'bg-blue-500 text-white border-blue-400 hover:bg-blue-600'
+                : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
             }`}
           >
             ↔ Connections
@@ -413,10 +493,10 @@ export function MapScreen() {
           <button
             onClick={() => setShowRadii((v) => !v)}
             title="Toggle visibility radius circles"
-            className={`text-[11px] px-2.5 py-1 rounded-full backdrop-blur-sm border transition-colors ${
+            className={`text-[11px] px-2.5 py-1 rounded-full border shadow-sm transition-colors ${
               showRadii
-                ? 'bg-blue-500/80 text-white border-blue-400'
-                : 'bg-black/50 text-white/60 border-white/20 hover:bg-black/70'
+                ? 'bg-blue-500 text-white border-blue-400 hover:bg-blue-600'
+                : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
             }`}
           >
             ○ Radii
