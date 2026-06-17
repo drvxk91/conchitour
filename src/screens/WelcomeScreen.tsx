@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ArrowRight, FolderOpen, Plus, X } from 'lucide-react';
+import { ArrowRight, FolderOpen, Plus } from 'lucide-react';
 import { useProject } from '@/store/project';
 import type { Project } from '@/types';
 
@@ -41,35 +41,32 @@ export function WelcomeScreen() {
       </div>
 
       {naming ? (
-        <div className="flex flex-col items-center gap-3 w-80">
-          <p className="text-sm text-ink-soft">Project name</p>
-          <input
-            ref={inputRef}
-            autoFocus
-            value={nameValue}
-            onChange={(e) => setNameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') confirmNew();
-              if (e.key === 'Escape') setNaming(false);
-            }}
-            className="w-full px-3 py-2 rounded-lg border border-line bg-paper text-sm text-ink-base outline-none focus:border-ink-soft"
-            placeholder="My Tour"
-          />
-          <div className="flex gap-2 w-full">
-            <button
-              onClick={() => setNaming(false)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-line text-xs text-ink-soft hover:bg-paper transition-colors"
-            >
-              <X size={13} /> Cancel
-            </button>
-            <button
-              onClick={confirmNew}
-              disabled={!nameValue.trim()}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-ink-base text-paper text-xs font-medium hover:bg-ink-soft disabled:opacity-40 transition-colors"
-            >
-              Choose folder <ArrowRight size={13} />
-            </button>
+        <div className="flex flex-col items-center gap-4 w-72">
+          <div className="w-full">
+            <label className="block text-xs text-ink-soft mb-1.5">Project name</label>
+            <input
+              ref={inputRef}
+              autoFocus
+              value={nameValue}
+              onChange={(e) => setNameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmNew();
+                if (e.key === 'Escape') setNaming(false);
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-line bg-paper text-sm text-ink-base outline-none focus:border-ink-soft"
+              placeholder="My Tour"
+            />
           </div>
+          <button
+            onClick={confirmNew}
+            disabled={!nameValue.trim()}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 border-ink-base text-sm font-semibold text-ink-base hover:bg-ink-base hover:text-paper disabled:opacity-40 transition-colors"
+          >
+            Choose folder <ArrowRight size={15} />
+          </button>
+          <button onClick={() => setNaming(false)} className="text-xs text-ink-faded hover:text-ink-soft transition-colors">
+            Cancel
+          </button>
         </div>
       ) : (
         <div className="flex gap-4">
