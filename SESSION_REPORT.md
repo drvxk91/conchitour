@@ -219,10 +219,52 @@ after the tile switch to keep lines/circles visible.
 
 **Part 4 (tile progress)**: `tileableScenes` is computed before the loop with `scenes.filter(s => s.media?.sourcePath)`. The per-scene index (`tileSceneIdx`) increments only on scenes with a source path. Progress bar clears to `null` when the `tiles` step completes (received via `onCompileProgress` with `status: 'ok'`).
 
+## Sprint M — Compile hang fix + Excel rework + code health check (2026-06-17)
+
+| Part | Status | Notes | Commit |
+|------|--------|-------|--------|
+| M1 — krpanotools hang fix | DONE | 3-part fix: -xml=false/-html=false, tmp cleanup, 30s hang timeout | 6608112 |
+| M2 — Excel export fix + template | DONE | Fixed field names, error handling, added downloadExcelTemplate IPC + button | e9aca07 |
+| M3 — Code health audit | DONE | All 6 items verified in code — no regressions found | (no commit needed) |
+
+### Sprint M Part 1 — Technical details
+
+**Which flags fixed it**: `-xml=false -html=false` passed to `makepano` with `-config=<kPath>/templates/multires.config` and `-outputpath=<panosDir>`. The xml suppression eliminates the "WARNING: overwrite xml file" prompt. The `stdio: ['ignore', 'pipe', 'pipe']` ensures stdin is closed so no blocking read is possible.
+
+**Second bug fixed**: The default `vtour-multires.config` puts tiles at `%INPUTPATH%/vtour/panos/<slug>.tiles` (relative to the tmp image), not `outputDir/panos/<slug>.tiles`. The code expected them in `outputDir`. Fix: use `multires.config` with explicit `-outputpath=<panosDir>` so tiles land exactly where the code reads them.
+
+### Sprint M Part 2 — Technical details
+
+**Export bugs fixed**:
+- `modules.gyro` → `modules.gyroscope`
+- `modules.deeplKey` → `modules.deeplApiKey`
+- Missing: `fullscreen`, `feedbackMailto`, `formsEnabled` — now all included
+- Branding sheet: added `intro_text_<lang>` columns per language
+- `XLSX.writeFile` wrapped in try/catch; returns `{ error }` on failure
+- `handleExportExcel` in CategoriesScreen now catches IPC errors + shows failure toast
+
+**Template**: `excel:download-template` IPC generates a 7-sheet blank workbook with one example row per sheet. Language-aware (uses `project.languages.available`, defaults to `['en']`). Saves to user-chosen path with save dialog.
+
+### Sprint M Part 3 — Code health audit
+
+| Item | Status | Code reference |
+|------|--------|---------------|
+| 3.1 Preview hotspots | ✓ verified | `App.tsx:86` cssClass `preview-hs preview-hs-${h.type}`; `App.tsx:142` CSS `.pnlm-hotspot-base.preview-hs { ... }` |
+| 3.2 Parcours-dot navigation | ✓ verified | `ParcoursGraph.tsx:59` `onClick={() => setActiveScene(scene.id)}` |
+| 3.3 Localized fields per scene | ✓ verified | `MetaTab.tsx:17` `scene.title[lang]`, `MetaTab.tsx:38` `{ ...scene.title, [lang]: title }` — fixed Sprint L |
+| 3.4 Set View icon | ✓ verified | `SceneToolbar.tsx:6` `Bookmark` imported; `SceneToolbar.tsx:161` `<Bookmark size={13} />` |
+| 3.5 Map active pin animation | ✓ verified | `MapScreen.tsx:87` class `map-pin-active` on active; `MapScreen.tsx:92` `opacity:${isActive ? '1' : '0.6'}` |
+| 3.6 Compile state persists | ✓ verified | `CompileScreen.tsx:74` `compileGetState()` on mount; lines 80-91 step restoration from log; lines 95-103 `compile:done` subscription |
+
+### Sprint M — Test results
+
+- **Type errors:** 0
+- **Unit tests:** 98 / 98 passed
+
 ## Suggested Next Sprint
 
-- Part 5: Live preview server with hot-reload (ws package)
-- Part 6: Semver project versioning with HistoryScreen
+- Live preview server with hot-reload (ws package, Sprint L Part 5)
+- Semver project versioning with HistoryScreen (Sprint L Part 6)
 - DeepL auto-translation wiring in Languages screen
 - ImportScreen: copy photos to `sources/` when projectDir is set (uses project:copy-source IPC)
 - Playwright E2E tests for the full compile flow
