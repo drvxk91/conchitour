@@ -1269,6 +1269,25 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
         await fs.mkdir(panosDir, { recursive: true });
         const cacheDir = currentProjectDir ? path.join(currentProjectDir, 'cache', 'tiles') : null;
         if (cacheDir) await fs.mkdir(cacheDir, { recursive: true });
+
+        // Clean leftover temp folders from crashed/canceled prior compiles
+        try {
+          const tmpDirEntries = await fs.readdir(os.tmpdir());
+          let cleaned = 0;
+          for (const entry of tmpDirEntries) {
+            if (entry.startsWith('conchitect-')) {
+              const fp = path.join(os.tmpdir(), entry);
+              try {
+                const stat = await fs.stat(fp);
+                if (stat.isDirectory()) await fs.rm(fp, { recursive: true, force: true });
+                else await fs.unlink(fp);
+                cleaned++;
+              } catch { /* ignore */ }
+            }
+          }
+          if (cleaned > 0) progress(`Cleaned ${cleaned} leftover temp folder(s)`, 'info');
+        } catch { /* ignore */ }
+
         const tmpBase = path.join(os.tmpdir(), `conchitect-${Date.now()}`);
         await fs.mkdir(tmpBase, { recursive: true });
 
@@ -1300,12 +1319,33 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
             const sceneIndex = tileSceneIdx;
             const totalScenes = tileableScenes.length;
 
+            const configPath = path.join(kPath, 'templates', 'multires.config');
+            const HANG_TIMEOUT_MS = 30_000;
             await new Promise<void>((resolve, reject) => {
-              const proc = spawn(toolPath, ['makepano', tmpImg], {
+              const proc = spawn(toolPath, [
+                'makepano',
+                `-config=${configPath}`,
+                `-outputpath=${panosDir}`,  // tiles land directly in outputDir/panos/
+                '-xml=false',               // no xml → no "overwrite xml" prompt
+                '-html=false',              // no html output needed
+                tmpImg,
+              ], {
                 cwd: outputDir,
                 windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe'],  // no stdin → can't block on prompts
               });
+
+              let lastOutputAt = Date.now();
+              const hangChecker = setInterval(() => {
+                if (Date.now() - lastOutputAt > HANG_TIMEOUT_MS) {
+                  clearInterval(hangChecker);
+                  proc.kill('SIGKILL');
+                  progress(`krpanotools stuck for "${sceneSlug}" — no output for 30s, killed`, 'error');
+                }
+              }, 5000);
+
               proc.stdout?.on('data', (chunk: Buffer) => {
+                lastOutputAt = Date.now();
                 const lines = chunk.toString().split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
                 for (const line of lines) {
                   try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
@@ -1318,14 +1358,16 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
                 }
               });
               proc.stderr?.on('data', (chunk: Buffer) => {
+                lastOutputAt = Date.now();
                 const line = chunk.toString().trim();
                 if (line) try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
               });
               proc.on('close', (code) => {
+                clearInterval(hangChecker);
                 if (code === 0) resolve();
                 else reject(new Error(`krpanotools exited with code ${code}`));
               });
-              proc.on('error', reject);
+              proc.on('error', (err) => { clearInterval(hangChecker); reject(err); });
             });
 
             const generatedTilesDir = path.join(panosDir, `${scene.slug}.tiles`);
