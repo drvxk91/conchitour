@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
-import { Check, X, MapPin } from 'lucide-react';
+import { Check, X, MapPin, Globe } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { isValidSlug } from '@/lib/slug';
 import { normalizeHeading } from '@/lib/heading';
@@ -9,16 +9,20 @@ import type { Scene } from '@/types';
 export function MetaTab({ scene }: { scene: Scene }) {
   const { project, updateScene } = useProject();
 
-  const [slug, setSlug]   = useState(scene.slug);
-  const [title, setTitle] = useState(scene.title.en ?? '');
-  const [desc, setDesc]   = useState(scene.description.en ?? '');
+  const langs = project.languages.available.length ? project.languages.available : ['en'];
+  const defaultLang = project.languages.default || 'en';
+  const [lang, setLang] = useState(langs.includes(defaultLang) ? defaultLang : langs[0]);
 
-  // Sync when active scene changes
+  const [slug, setSlug]   = useState(scene.slug);
+  const [title, setTitle] = useState(scene.title[lang] ?? '');
+  const [desc, setDesc]   = useState(scene.description[lang] ?? '');
+
+  // Sync when active scene or editing language changes
   useEffect(() => {
     setSlug(scene.slug);
-    setTitle(scene.title.en ?? '');
-    setDesc(scene.description.en ?? '');
-  }, [scene.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setTitle(scene.title[lang] ?? '');
+    setDesc(scene.description[lang] ?? '');
+  }, [scene.id, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const otherSlugs = project.scenes.filter((s) => s.id !== scene.id).map((s) => s.slug);
   const slugValid  = isValidSlug(slug);
@@ -31,11 +35,11 @@ export function MetaTab({ scene }: { scene: Scene }) {
   }
 
   function saveTitle() {
-    updateScene(scene.id, { title: { ...scene.title, en: title } });
+    updateScene(scene.id, { title: { ...scene.title, [lang]: title } });
   }
 
   function saveDesc() {
-    updateScene(scene.id, { description: { ...scene.description, en: desc } });
+    updateScene(scene.id, { description: { ...scene.description, [lang]: desc } });
   }
 
   function toggleCategory(catId: string) {
@@ -80,9 +84,24 @@ export function MetaTab({ scene }: { scene: Scene }) {
         )}
       </div>
 
+      {/* Language selector (only when project has multiple languages) */}
+      {langs.length > 1 && (
+        <div className="flex items-center gap-1.5 text-xs text-ink-faded">
+          <Globe size={11} />
+          <span>Editing:</span>
+          <select
+            className="bg-paper-strong border border-line-soft rounded px-1.5 py-0.5 text-xs focus:outline-none"
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+          >
+            {langs.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
+          </select>
+        </div>
+      )}
+
       {/* Title */}
       <div>
-        <label className="label-sm">Title (en)</label>
+        <label className="label-sm">Title [{lang.toUpperCase()}]</label>
         <input
           data-testid="title-input"
           className="input"
@@ -94,7 +113,7 @@ export function MetaTab({ scene }: { scene: Scene }) {
 
       {/* Description */}
       <div>
-        <label className="label-sm">Description (en)</label>
+        <label className="label-sm">Description [{lang.toUpperCase()}]</label>
         <textarea
           className="input resize-none h-20"
           value={desc}
