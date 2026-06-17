@@ -1101,11 +1101,6 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     xml += '  </action>\n\n';
   }
 
-  // JS bridge: fires window.onSceneLoaded(xmlSceneName) on every scene change
-  xml += '  <action name="_conchitect_scene_loaded">\n';
-  xml += "    jscall(window.onSceneLoaded('%xml.scene%'));\n";
-  xml += '  </action>\n';
-  xml += '  <events name="conchitect" keep="true" onloadscene="_conchitect_scene_loaded();"/>\n\n';
 
   // Custom hotspot styles (text, external, video — link uses skin default arrow)
   xml += '  <style name="hs_text" type="text"\n';
@@ -1290,10 +1285,10 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     shareBar = `  <div id="share-bar">${links.join('')}</div>\n`;
   }
 
-  // krpano onready: for scene-specific pages, load the target scene after init
-  const onready = startSceneSlug
-    ? `function(krp){_krpano=krp;_ready=true;krp.call("loadscene(${sceneXmlName(startSceneSlug)},null,MERGE,BLEND(0.5));");}`
-    : `function(krp){_krpano=krp;_ready=true;}`;
+  // For scene-specific deep-link pages, jump to the target scene on load
+  const loadSceneCall = startSceneSlug
+    ? `krp.call("loadscene(${sceneXmlName(startSceneSlug)},null,MERGE,BLEND(0.5));");`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
@@ -1360,8 +1355,9 @@ ${description ? `  <meta name="description" content="${description}">\n` : ''}${
   <button id="panel-toggle">Info</button>
 ${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.35);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script>
   var TOUR = ${tourDataJson};
-  var _krpano = null;
-  var _ready  = false;
+  var _krpano    = null;
+  var _curScene  = '';
+  var _firstDone = false;
 
   function _showPanel(slug) {
     var scene = TOUR.scenes[slug];
@@ -1383,16 +1379,20 @@ ${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;trans
     document.getElementById('panel-toggle').classList.add('open');
   }
 
-  window.onSceneLoaded = function(xmlName) {
+  function _onScene(xmlName) {
     var slug = (xmlName || '').replace(/^scene_/, '');
-    if (!slug || !TOUR.scenes[slug]) return;
+    if (!slug || !TOUR.scenes[slug] || slug === _curScene) return;
+    _curScene = slug;
     _showPanel(slug);
-    if (!_ready) return;
     var newPath = '/scene/' + slug + '/' + TOUR.lang + '/';
     if (window.location.pathname !== newPath) {
-      try { history.pushState({ scene: slug }, '', newPath); } catch(e) {}
+      try {
+        if (!_firstDone) { history.replaceState({ scene: slug }, '', newPath); }
+        else             { history.pushState  ({ scene: slug }, '', newPath); }
+      } catch(e) {}
     }
-  };
+    _firstDone = true;
+  }
 
   window.addEventListener('popstate', function(e) {
     var slug = e.state && e.state.scene;
@@ -1409,7 +1409,11 @@ ${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;trans
   });
   </script>
   <script src="/krpano/krpano.js"></script>
-  <script>embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:${onready}});</script>
+  <script>embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){
+    _krpano = krp;
+    ${loadSceneCall}
+    setInterval(function(){ var s=krp.get('xml.scene'); if(s&&s!==_curScene) _onScene(s); }, 250);
+  }});</script>
 </body>
 </html>`;
 }
