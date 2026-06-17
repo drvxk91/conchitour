@@ -6,7 +6,7 @@ import {
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
-import type { CompileResult, ConchitectSettings, KrpanoValidationResult } from '../../electron/preload';
+import type { CompileResult, ConchitectSettings, KrpanoValidationResult, TileProgressData } from '../../electron/preload';
 
 interface LogEntry {
   msg: string;
@@ -59,6 +59,7 @@ export function CompileScreen() {
   const [copied, setCopied]               = useState(false);
   const [forceRegenTiles, setForceRegenTiles] = useState(false);
   const [currentStep, setCurrentStep]     = useState<StepId | null>(null);
+  const [tileProgress, setTileProgress]   = useState<TileProgressData | null>(null);
   const completedStepsRef = useRef<Set<StepId>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -113,8 +114,19 @@ export function CompileScreen() {
       const step = msgToStep(msg);
       if (step) {
         setCurrentStep(step);
-        if (status === 'ok') completedStepsRef.current.add(step);
+        if (status === 'ok') {
+          completedStepsRef.current.add(step);
+          if (step === 'tiles') setTileProgress(null);
+        }
       }
+    });
+    return unsub;
+  }, []);
+
+  // Subscribe to per-tile % progress
+  useEffect(() => {
+    const unsub = window.conchitect.onTileProgress((data) => {
+      setTileProgress(data);
     });
     return unsub;
   }, []);
@@ -391,18 +403,34 @@ export function CompileScreen() {
                 const isDone    = completedStepsRef.current.has(step.id) || (!running && result?.ok);
                 const isCurrent = currentStep === step.id && running;
                 const isWaiting = !isDone && !isCurrent;
+                const showTileProgress = step.id === 'tiles' && isCurrent && tileProgress;
                 return (
-                  <div key={step.id} className={clsx('flex items-center gap-2.5 py-0.5 text-sm', isWaiting && 'opacity-35')}>
-                    {isDone
-                      ? <CheckCircle size={13} className="text-emerald-500 shrink-0" />
-                      : isCurrent
-                        ? <Loader2 size={13} className="text-blue-500 animate-spin shrink-0" />
-                        : <Circle size={13} className="text-line-strong shrink-0" />}
-                    <span className={clsx(
-                      isDone && 'text-ink',
-                      isCurrent && 'text-ink font-medium',
-                      isWaiting && 'text-ink-soft',
-                    )}>{step.label}</span>
+                  <div key={step.id} className={clsx('flex flex-col gap-0.5 py-0.5', isWaiting && 'opacity-35')}>
+                    <div className="flex items-center gap-2.5 text-sm">
+                      {isDone
+                        ? <CheckCircle size={13} className="text-emerald-500 shrink-0" />
+                        : isCurrent
+                          ? <Loader2 size={13} className="text-blue-500 animate-spin shrink-0" />
+                          : <Circle size={13} className="text-line-strong shrink-0" />}
+                      <span className={clsx(
+                        isDone && 'text-ink',
+                        isCurrent && 'text-ink font-medium',
+                        isWaiting && 'text-ink-soft',
+                      )}>{step.label}</span>
+                      {showTileProgress && (
+                        <span className="ml-auto text-[11px] text-ink-faded font-mono">
+                          {tileProgress.sceneIndex}/{tileProgress.totalScenes} · {tileProgress.percent}%
+                        </span>
+                      )}
+                    </div>
+                    {showTileProgress && (
+                      <div className="ml-[21px] h-1 rounded-full bg-line overflow-hidden">
+                        <div
+                          className="h-full bg-blue-400 rounded-full transition-all duration-150"
+                          style={{ width: `${tileProgress.percent}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}

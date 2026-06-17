@@ -1272,10 +1272,14 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
         const tmpBase = path.join(os.tmpdir(), `conchitect-${Date.now()}`);
         await fs.mkdir(tmpBase, { recursive: true });
 
+        const tileableScenes = scenes.filter((s: { media?: { sourcePath?: string } }) => s.media?.sourcePath);
+        let tileSceneIdx = 0;
+
         for (const scene of scenes) {
           const src: string | undefined = scene.media?.sourcePath;
           if (!src) continue;
           checkCancel();
+          tileSceneIdx++;
           try {
             const ext = path.extname(src) || '.jpg';
             const srcHash = await fileHash(src).catch(() => '');
@@ -1292,6 +1296,10 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
             const tmpImg = path.join(tmpBase, `${scene.slug}${ext}`);
             await fs.copyFile(src, tmpImg);
 
+            const sceneSlug = scene.slug;
+            const sceneIndex = tileSceneIdx;
+            const totalScenes = tileableScenes.length;
+
             await new Promise<void>((resolve, reject) => {
               const proc = spawn(toolPath, ['makepano', tmpImg], {
                 cwd: outputDir,
@@ -1301,6 +1309,12 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
                 const lines = chunk.toString().split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
                 for (const line of lines) {
                   try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
+                  const pctMatch = line.match(/(\d+)%/);
+                  if (pctMatch) {
+                    try { event.sender.send('compile:tile-progress', {
+                      sceneSlug, sceneIndex, totalScenes, percent: parseInt(pctMatch[1], 10),
+                    }); } catch { /* */ }
+                  }
                 }
               });
               proc.stderr?.on('data', (chunk: Buffer) => {

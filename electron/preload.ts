@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('conchitect', {
     ipcRenderer.on('compile:done', handler as Parameters<typeof ipcRenderer.on>[1]);
     return () => ipcRenderer.removeListener('compile:done', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
   },
+  onTileProgress: (cb: (data: TileProgressData) => void): (() => void) => {
+    const handler = (_event: unknown, data: TileProgressData) => cb(data);
+    ipcRenderer.on('compile:tile-progress', handler as Parameters<typeof ipcRenderer.on>[1]);
+    return () => ipcRenderer.removeListener('compile:tile-progress', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
+  },
   openFolder: (folderPath: string): Promise<void> => ipcRenderer.invoke('shell:openFolder', folderPath),
 });
 
@@ -104,6 +109,13 @@ export interface CompileResult {
   error?: string;
 }
 
+export interface TileProgressData {
+  sceneSlug: string;
+  sceneIndex: number;
+  totalScenes: number;
+  percent: number;
+}
+
 export interface CompileRunState {
   running: boolean;
   log: Array<{ msg: string; status: 'running' | 'ok' | 'error' | 'info' }>;
@@ -150,6 +162,7 @@ declare global {
       compileGetState: () => Promise<CompileRunState | null>;
       compileCancel: () => Promise<boolean>;
       onCompileDone: (cb: (result: CompileResult) => void) => () => void;
+      onTileProgress: (cb: (data: TileProgressData) => void) => () => void;
       openFolder: (folderPath: string) => Promise<void>;
     };
   }
