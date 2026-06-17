@@ -46,29 +46,26 @@ export function ScenesScreen() {
   const pannellumGetPitch = useRef<() => number>(() => 0);
   const pannellumGetFov   = useRef<() => number>(() => 75);
   const pannellumSetYaw   = useRef<(yaw: number) => void>(() => {});
+  const pannellumSetPitch = useRef<(pitch: number) => void>(() => {});
+  const pannellumSetFov   = useRef<(fov: number) => void>(() => {});
 
   // Entry snapshot for north mode: restore yaw on Cancel
   const northEntryYaw = useRef<number>(0);
 
-  // rAF loop: poll live yaw from Pannellum during north mode for the toolbar display
-  const northRafRef = useRef<number | null>(null);
+  // Capture entry yaw when entering north mode (northDraft is now pushed by SceneViewer)
   useEffect(() => {
-    if (mode !== 'north') {
-      if (northRafRef.current !== null) { cancelAnimationFrame(northRafRef.current); northRafRef.current = null; }
-      return;
-    }
+    if (mode !== 'north') return;
     northEntryYaw.current = pannellumGetYaw.current();
-    setNorthDraft(pannellumGetYaw.current());
-    let alive = true;
-    function tick() {
-      if (!alive) return;
-      const yaw = pannellumGetYaw.current();
-      setNorthDraft(yaw);
-      northRafRef.current = requestAnimationFrame(tick);
-    }
-    northRafRef.current = requestAnimationFrame(tick);
-    return () => { alive = false; if (northRafRef.current !== null) cancelAnimationFrame(northRafRef.current); };
   }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply defaultView to Pannellum when the active scene changes
+  useEffect(() => {
+    const dv = activeScene?.defaultView;
+    if (!dv) return;
+    pannellumSetYaw.current(dv.hlookat);
+    pannellumSetPitch.current(dv.vlookat);
+    pannellumSetFov.current(dv.fov);
+  }, [activeSceneId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select first scene
   useEffect(() => {
@@ -170,7 +167,11 @@ export function ScenesScreen() {
         northDraftHeading={northDraft}
         onPreview={() => {
           if (activeScene) {
-            window.conchitect.openPreview(activeScene.media.sourcePath, activeScene.heading);
+            window.conchitect.openPreview(
+              activeScene.media.sourcePath,
+              activeScene.heading,
+              { scenes: project.scenes, activeSceneId: activeScene.id }
+            );
           }
         }}
       />
@@ -181,10 +182,13 @@ export function ScenesScreen() {
           mode={mode}
           onAddHotspot={handleAddHotspotAt}
           northDraft={northDraft}
+          onNorthDraftChange={setNorthDraft}
           pannellumGetYaw={pannellumGetYaw}
           pannellumGetPitch={pannellumGetPitch}
           pannellumGetFov={pannellumGetFov}
           pannellumSetYaw={pannellumSetYaw}
+          pannellumSetPitch={pannellumSetPitch}
+          pannellumSetFov={pannellumSetFov}
         />
         <SceneInspector onDeleteScene={handleDeleteScene} />
       </div>

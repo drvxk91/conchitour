@@ -6,7 +6,6 @@ import {
 import { useProject } from '@/store/project';
 import { toPercent, fromPercent } from '@/lib/projection';
 import { toLocalUrl } from '@/lib/local-url';
-import { normalizeHeading } from '@/lib/heading';
 import { PanoViewer } from '@/components/PanoViewer';
 import type { EditorMode } from './ScenesScreen';
 import type { Hotspot, LinkHotspot, Project } from '@/types';
@@ -20,6 +19,8 @@ type Props = {
   pannellumGetPitch?: React.MutableRefObject<() => number>;
   pannellumGetFov?: React.MutableRefObject<() => number>;
   pannellumSetYaw?: React.MutableRefObject<(yaw: number) => void>;
+  pannellumSetPitch?: React.MutableRefObject<(pitch: number) => void>;
+  pannellumSetFov?: React.MutableRefObject<(fov: number) => void>;
 };
 
 function HotspotIcon({ hotspot }: { hotspot: Hotspot }) {
@@ -40,12 +41,53 @@ function categoryColor(sceneId: string, hotspot: Hotspot, project: Project) {
   return project.categories.find((c) => c.id === catId)?.color ?? '#6b6b68';
 }
 
-export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, pannellumGetPitch, pannellumGetFov, pannellumSetYaw }: Props) {
+// Simple compass rose for north mode
+function CompassRose({ heading }: { heading: number }) {
+  const size = 76;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = cx - 5;
+  const dirs = [
+    { label: 'N', deg: 0, color: '#ef4444' },
+    { label: 'E', deg: 90, color: 'rgba(255,255,255,0.65)' },
+    { label: 'S', deg: 180, color: 'rgba(255,255,255,0.65)' },
+    { label: 'W', deg: 270, color: 'rgba(255,255,255,0.65)' },
+  ];
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-shrink-0">
+      <circle cx={cx} cy={cy} r={r} fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
+      {dirs.map(({ label, deg, color }) => {
+        const rad = ((deg - heading + 360) % 360) * Math.PI / 180;
+        const tx = cx + (r - 11) * Math.sin(rad);
+        const ty = cy - (r - 11) * Math.cos(rad);
+        return (
+          <text key={label} x={tx} y={ty} textAnchor="middle" dominantBaseline="central"
+            fill={color} fontSize="9" fontWeight="bold" fontFamily="sans-serif">
+            {label}
+          </text>
+        );
+      })}
+      {/* North needle */}
+      {(() => {
+        const rad = ((0 - heading + 360) % 360) * Math.PI / 180;
+        return (
+          <line x1={cx} y1={cy}
+            x2={cx + (r - 4) * Math.sin(rad)}
+            y2={cy - (r - 4) * Math.cos(rad)}
+            stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        );
+      })()}
+    </svg>
+  );
+}
+
+export function SceneViewer({
+  mode, onAddHotspot, northDraft: _northDraft, onNorthDraftChange,
+  pannellumGetYaw, pannellumGetPitch, pannellumGetFov,
+  pannellumSetYaw, pannellumSetPitch, pannellumSetFov,
+}: Props) {
   const { project, activeSceneId, activeHotspotId, setActiveHotspot, updateHotspot } = useProject();
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Ref exposed from PanoViewer for coordinate conversion during drag
-  const pannellumGetMouseCoordsRef = useRef<((e: MouseEvent) => [number, number]) | null>(null);
 
   // Drag state for hotspot repositioning
   const draggingRef = useRef<string | null>(null);
@@ -59,6 +101,17 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
   const [navView, setNavView] = useState({ yaw: 0, pitch: 0, fov: 75 });
   const rafRef = useRef<number | null>(null);
 
+  // North mode v2: compass direction that the center of the view faces
+  const [northDir, setNorthDir] = useState(0);
+  // Keep onNorthDraftChange fresh without being in effect deps
+  const onNorthDraftChangeRef = useRef(onNorthDraftChange);
+  useEffect(() => { onNorthDraftChangeRef.current = onNorthDraftChange; });
+
+  const scene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+
+  // rAF loop: track live Pannellum state in navigate + north mode
   useEffect(() => {
     if (mode !== 'navigate' && mode !== 'north') {
       if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -77,9 +130,23 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
     return () => { alive = false; if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
   }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const scene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
+  // Initialize northDir when entering north mode so finalHeading = scene.heading
+  useEffect(() => {
+    if (mode !== 'north') return;
+    const currentYaw = pannellumGetYaw?.current?.() ?? 0;
+    const heading = sceneRef.current?.heading ?? 0;
+    // northDir chosen so that ((northDir - currentYaw) % 360) == heading
+    setNorthDir(((heading + currentYaw) % 360 + 360) % 360);
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Flat mode = equirectangular image overlay; navigate + north = Pannellum sphere
+  // Push finalHeading to parent whenever yaw or northDir changes during north mode
+  useEffect(() => {
+    if (mode !== 'north') return;
+    const finalHeading = ((northDir - navView.yaw + 360) % 360 + 360) % 360;
+    onNorthDraftChangeRef.current?.(finalHeading);
+  }, [navView.yaw, northDir, mode]);
+
+  // Flat mode = equirectangular image overlay on top of always-mounted PanoViewer
   const isFlat = mode === 'hotspot';
 
   function getXY(e: React.MouseEvent): { x: number; y: number } {
@@ -119,17 +186,24 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
     setLivePos(null);
   }
 
-  // Navigate-mode drag capture handlers (runs on the transparent overlay)
+  // Navigate-mode drag capture handlers — compute coords from cursor % + current view state
+  // (avoids the broken mouseEventToCoords which fails on non-Pannellum event targets)
   function handleCaptureMouseMove(e: React.MouseEvent) {
-    if (!draggingRef.current) return;
+    if (!draggingRef.current || !containerRef.current) return;
     draggedRef.current = true;
-    const coords = pannellumGetMouseCoordsRef.current?.(e.nativeEvent);
-    if (coords) {
-      const [pitch, yaw] = coords;
-      const pos = { id: draggingRef.current, ath: yaw, atv: pitch };
-      livePosRef.current = pos;
-      setLivePos(pos);
-    }
+    const rect = containerRef.current.getBoundingClientRect();
+    const xPct = (e.clientX - rect.left) / rect.width;
+    const yPct = (e.clientY - rect.top)  / rect.height;
+    const currentYaw   = pannellumGetYaw?.current?.()   ?? 0;
+    const currentPitch = pannellumGetPitch?.current?.() ?? 0;
+    const fovH = pannellumGetFov?.current?.() ?? 75;
+    const aspect = rect.width / rect.height;
+    const fovV = fovH / aspect;
+    const ath = currentYaw   + (xPct - 0.5) * fovH;
+    const atv = currentPitch - (yPct - 0.5) * fovV;
+    const pos = { id: draggingRef.current, ath, atv };
+    livePosRef.current = pos;
+    setLivePos(pos);
   }
 
   function handleCaptureMouseUp() {
@@ -152,10 +226,13 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
     );
   }
 
-  // Cardinal positions for the persistent N badge (flat mode only)
-  const activeHeading = (mode === 'north' && northDraft !== undefined) ? northDraft : scene.heading;
+  // Cardinal N badge position (flat mode only)
+  const activeHeading = scene.heading;
   const northAth = ((0 - activeHeading + 180 + 3600) % 360) - 180;
   const northX = toPercent(northAth, 0).x;
+
+  // finalHeading: the heading that will be saved when Confirm is pressed
+  const finalHeading = ((northDir - navView.yaw + 360) % 360 + 360) % 360;
 
   // Pre-compute hotspot category colors
   const hotspotColors = Object.fromEntries(
@@ -178,26 +255,30 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
       onMouseLeave={isFlat ? handleContainerMouseUp : undefined}
       data-testid="scene-viewer"
     >
-      {/* ── Navigate / North mode: real 360° Pannellum viewer ── */}
-      {!isFlat && (
-        <PanoViewer
-          imageUrl={toLocalUrl(scene.media.sourcePath)}
-          heading={scene.heading}
-          getYaw={pannellumGetYaw}
-          getPitch={pannellumGetPitch}
-          getFov={pannellumGetFov}
-          setYaw={pannellumSetYaw}
-          getMouseCoords={pannellumGetMouseCoordsRef}
-          onDoubleClick={(ath, atv) => {
-            const { x, y } = toPercent(ath, atv);
-            onAddHotspot(x, y);
-          }}
-        />
-      )}
+      {/* ── Always-mounted Pannellum viewer (R2 fix: never unmount) ── */}
+      <PanoViewer
+        imageUrl={toLocalUrl(scene.media.sourcePath)}
+        heading={scene.heading}
+        initialView={scene.defaultView
+          ? { yaw: scene.defaultView.hlookat, pitch: scene.defaultView.vlookat, hfov: scene.defaultView.fov }
+          : undefined}
+        getYaw={pannellumGetYaw}
+        getPitch={pannellumGetPitch}
+        getFov={pannellumGetFov}
+        setYaw={pannellumSetYaw}
+        setPitch={pannellumSetPitch}
+        setFov={pannellumSetFov}
+        className={clsx('absolute inset-0', isFlat && 'pointer-events-none')}
+        onDoubleClick={(ath, atv) => {
+          if (isFlat) return;
+          const { x, y } = toPercent(ath, atv);
+          onAddHotspot(x, y);
+        }}
+      />
 
-      {/* ── Flat mode: equirectangular image ── */}
+      {/* ── Flat mode: equirectangular overlay (pointer-events-none → events hit container) ── */}
       {isFlat && (
-        <>
+        <div className="absolute inset-0 z-10 pointer-events-none">
           <img
             src={toLocalUrl(scene.media.sourcePath)}
             alt={scene.title.en}
@@ -212,54 +293,97 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
           <div className="absolute inset-0 hidden items-center justify-center bg-zinc-800 pointer-events-none">
             <span className="text-white/30 text-sm select-none">Image unavailable</span>
           </div>
-        </>
+        </div>
       )}
 
       {/* Horizon line (flat mode only) */}
       {isFlat && (
         <div
-          className="absolute inset-x-0 border-t border-white/20 pointer-events-none"
+          className="absolute inset-x-0 border-t border-white/20 pointer-events-none z-20"
           style={{ top: '50%' }}
         />
       )}
 
       {/* 360° hint (navigate mode, no hotspots) */}
       {mode === 'navigate' && !scene.hotspots.length && (
-        <div className="absolute bottom-3 left-3 text-[10px] text-white/50 pointer-events-none select-none bg-black/30 px-2 py-1 rounded">
+        <div className="absolute bottom-3 left-3 text-[10px] text-white/50 pointer-events-none select-none bg-black/30 px-2 py-1 rounded z-10">
           360° view — switch to Hotspot mode (H) to place hotspots
         </div>
       )}
 
-      {/* ── North mode overlay (on top of Pannellum) ── */}
+      {/* ── North mode v2: center crosshair + bottom control panel ── */}
       {mode === 'north' && (
-        <div className="absolute inset-0 pointer-events-none z-10 bg-black/20">
-          {/* Center target crosshair with N marker */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative w-8 h-8">
-              <div className="absolute top-1/2 w-full h-px bg-red-500 -translate-y-1/2" />
-              <div className="absolute left-1/2 h-full w-px bg-red-500 -translate-x-1/2" />
-              <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
-                N
+        <>
+          {/* Semi-transparent overlay + center N crosshair */}
+          <div className="absolute inset-0 pointer-events-none z-10 bg-black/20">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative w-8 h-8">
+                <div className="absolute top-1/2 w-full h-px bg-red-500 -translate-y-1/2" />
+                <div className="absolute left-1/2 h-full w-px bg-red-500 -translate-x-1/2" />
+                <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow">
+                  ↑
+                </div>
               </div>
             </div>
           </div>
-          {/* Instruction */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[11px] px-3 py-1.5 rounded-full backdrop-blur-sm whitespace-nowrap">
-            Pan until the N crosshair points True North · {(northDraft ?? navView.yaw).toFixed(1)}°
+
+          {/* Bottom control panel */}
+          <div className="absolute bottom-0 left-0 right-0 z-20 bg-black/85 backdrop-blur-sm pointer-events-auto select-none">
+            <div className="flex items-center gap-4 px-4 py-3">
+              {/* Compass rose */}
+              <CompassRose heading={finalHeading} />
+
+              {/* Slider + info */}
+              <div className="flex-1 min-w-0 space-y-2">
+                <p className="text-[10px] text-white/60 leading-snug">
+                  Pan until you see a landmark, then set its compass direction below.
+                </p>
+                <div className="flex items-center gap-2 text-[10px] text-white/40">
+                  <span>Current view pan: <span className="text-white/70 font-mono">{navView.yaw.toFixed(1)}°</span></span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] text-white/70">Center view faces</label>
+                    <span className="text-[11px] text-white font-mono tabular-nums">{northDir.toFixed(1)}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={0.5}
+                    value={northDir}
+                    onChange={(e) => setNorthDir(Number(e.target.value))}
+                    className="w-full accent-red-500 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-white/30 mt-0.5">
+                    <span>N 0°</span><span>E 90°</span><span>S 180°</span><span>W 270°</span><span>N 360°</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Heading readout */}
+              <div className="flex-shrink-0 text-center">
+                <div className="text-[9px] text-white/50 uppercase tracking-wide mb-0.5">Heading</div>
+                <div className="text-2xl font-bold text-white font-mono tabular-nums leading-none">{Math.round(finalHeading)}°</div>
+                <div className="text-[9px] text-white/40 mt-0.5">from North</div>
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Compass (top-right) */}
-      <div className="absolute top-3 right-3 pointer-events-none flex items-center gap-1 bg-black/40 text-white text-[10px] rounded px-2 py-1 backdrop-blur-sm z-10">
-        <Crosshair size={11} />
-        <span>{Math.round(mode === 'north' ? (northDraft ?? navView.yaw) : activeHeading)}° N</span>
-      </div>
+      {/* Compass (top-right, non-north modes) */}
+      {mode !== 'north' && (
+        <div className="absolute top-3 right-3 pointer-events-none flex items-center gap-1 bg-black/40 text-white text-[10px] rounded px-2 py-1 backdrop-blur-sm z-10">
+          <Crosshair size={11} />
+          <span>{Math.round(activeHeading)}° N</span>
+        </div>
+      )}
 
       {/* Persistent N badge (flat mode only, when heading is set) */}
       {isFlat && scene.heading !== 0 && (
         <div
-          className="absolute top-0 -translate-x-1/2 pointer-events-none"
+          className="absolute top-0 -translate-x-1/2 pointer-events-none z-20"
           style={{ left: `${northX}%` }}
         >
           <div className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-b shadow">
@@ -297,7 +421,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
             key={h.id}
             data-testid={`hotspot-${h.id}`}
             className={clsx(
-              'absolute flex flex-col items-center pointer-events-auto group',
+              'absolute flex flex-col items-center pointer-events-auto group z-30',
               !isDraggingThis && 'transition-transform hover:scale-110',
             )}
             style={{
@@ -453,7 +577,7 @@ export function SceneViewer({ mode, onAddHotspot, northDraft, pannellumGetYaw, p
 
       {/* Hint — hotspot mode only */}
       {mode === 'hotspot' && (
-        <div className="absolute bottom-3 right-3 text-[10px] text-white/50 pointer-events-none select-none">
+        <div className="absolute bottom-3 right-3 text-[10px] text-white/50 pointer-events-none select-none z-30">
           Double-click to add a hotspot
         </div>
       )}

@@ -12,6 +12,8 @@ interface PanViewer {
   getPitch: () => number;
   getHfov: () => number;
   setYaw: (yaw: number, animated?: boolean) => void;
+  setPitch: (pitch: number, animated?: boolean) => void;
+  setHfov: (fov: number, animated?: boolean) => void;
   mouseEventToCoords: (e: MouseEvent) => [number, number]; // [pitch, yaw]
   on: (event: string, cb: (...a: unknown[]) => void) => PanViewer;
 }
@@ -24,13 +26,19 @@ interface Props {
   getYaw?: React.MutableRefObject<() => number>;
   getPitch?: React.MutableRefObject<() => number>;
   getFov?: React.MutableRefObject<() => number>;
-  /** Exposed to allow callers to programmatically pan the viewer */
+  /** Exposed to allow callers to programmatically pan/tilt/zoom the viewer */
   setYaw?: React.MutableRefObject<(yaw: number) => void>;
+  setPitch?: React.MutableRefObject<(pitch: number) => void>;
+  setFov?: React.MutableRefObject<(fov: number) => void>;
+  /** Initial camera position applied at load time (used when switching scenes with a saved defaultView) */
+  initialView?: { yaw: number; pitch: number; hfov: number };
+  /** CSS class for the container div — default "w-full h-full" */
+  className?: string;
   /** Exposed to allow callers to get 360° coords from a native MouseEvent */
   getMouseCoords?: React.MutableRefObject<((e: MouseEvent) => [number, number]) | null>;
 }
 
-export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch, getFov, setYaw, getMouseCoords }: Props) {
+export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch, getFov, setYaw, setPitch, setFov, initialView, className, getMouseCoords }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewerRef     = useRef<PanViewer | null>(null);
   const lastClickRef  = useRef<{ t: number; pitch: number; yaw: number } | null>(null);
@@ -69,6 +77,9 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch,
         mouseZoom: true,
         keyboardZoom: false,
         disableKeyboardCtrl: true,
+        yaw: initialView?.yaw ?? 0,
+        pitch: initialView?.pitch ?? 0,
+        hfov: initialView?.hfov ?? 75,
       });
     } catch (err) {
       console.warn('[PanoViewer] PANOVIEWER_INIT_GUARD pannellum init threw:', err);
@@ -87,6 +98,12 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch,
     }
     if (setYaw) {
       setYaw.current = (yaw: number) => { try { viewerRef.current?.setYaw(yaw, false); } catch { /* ignore */ } };
+    }
+    if (setPitch) {
+      setPitch.current = (pitch: number) => { try { viewerRef.current?.setPitch(pitch, false); } catch { /* ignore */ } };
+    }
+    if (setFov) {
+      setFov.current = (fov: number) => { try { viewerRef.current?.setHfov(fov, false); } catch { /* ignore */ } };
     }
     if (getMouseCoords) {
       getMouseCoords.current = (e: MouseEvent) => { try { return viewer.mouseEventToCoords(e); } catch { return [0, 0]; } };
@@ -121,7 +138,7 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch,
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
+      className={className ?? 'w-full h-full'}
       data-testid="pano-viewer"
       onContextMenu={(e) => e.preventDefault()}
     />
