@@ -1963,6 +1963,15 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       progress(`Preview server: ${previewUrl}`, 'ok');
     } catch { /* preview server is optional */ }
 
+    // Persist output dir in the project lock file (per-project, not global)
+    if (currentProjectDir) {
+      try {
+        const lockPath = path.join(currentProjectDir, 'conchitect.lock');
+        const existing = JSON.parse(await fs.readFile(lockPath, 'utf-8').catch(() => '{}')).valueOf() as Record<string, unknown>;
+        await fs.writeFile(lockPath, JSON.stringify({ ...existing, lastOutputDir: outputDir }, null, 2), 'utf-8');
+      } catch { /* non-fatal */ }
+    }
+
     const result = { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes, previewUrl };
     if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
     try { event.sender.send('compile:done', result); } catch { /* window closed */ }
@@ -1997,6 +2006,12 @@ ipcMain.handle('dialog:openProjectFolder', async () => {
 
 ipcMain.handle('project:default-output-dir', async () => {
   if (!currentProjectDir) return null;
+  // Check lock file for a previously used output dir for this project
+  try {
+    const lockPath = path.join(currentProjectDir, 'conchitect.lock');
+    const lock = JSON.parse(await fs.readFile(lockPath, 'utf-8')) as Record<string, unknown>;
+    if (lock.lastOutputDir && typeof lock.lastOutputDir === 'string') return lock.lastOutputDir;
+  } catch { /* fall through */ }
   // Suggest a sibling folder: <parent>/<projectSlug>-web
   const parent = path.dirname(currentProjectDir);
   const base   = path.basename(currentProjectDir).replace(/\.conchitect$/, '');

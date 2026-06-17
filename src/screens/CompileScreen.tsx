@@ -120,12 +120,8 @@ export function CompileScreen() {
     window.conchitect.settingsGet().then((s) => {
       setSettings(s);
       setKrpanoPathDraft(s.krpanoPath);
-      if (s.lastOutputDir) {
-        setOutputDir(s.lastOutputDir);
-      } else {
-        // No previous output dir — suggest a default based on the project folder
-        window.conchitect.getDefaultOutputDir().then((d) => { if (d) setOutputDir(d); });
-      }
+      // Always derive output dir from the project (per-project, not global settings)
+      window.conchitect.getDefaultOutputDir().then((d) => { if (d) setOutputDir(d); });
       window.conchitect.krpanoValidate(s.krpanoPath).then(setValidation);
       if (s.krpanoPath) window.conchitect.krpanoLicenseStatus(s.krpanoPath).then(setLicenseStatus);
     });
