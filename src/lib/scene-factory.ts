@@ -30,6 +30,7 @@ export function newScene(sourcePath: string, meta: PhotoMeta, existingSlugs: Set
     geo: meta.exif?.gps ?? { lat: 0, lng: 0 },
     heading: meta.exif?.direction ?? 0,
     captureHeightMeters: 1.6,
+    visibilityRadius: 150,
     hotspots: [],
     media: {
       sourcePath,

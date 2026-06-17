@@ -15,6 +15,15 @@ contextBridge.exposeInMainWorld('conchitect', {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Synchronous: returns the port of the localhost file server started in main.
   getFileServerPort: () => ipcRenderer.sendSync('file-server:port') as number,
+  // Compile pipeline
+  showFolderDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
+  compileRun: (projectData: unknown, outputDir: string): Promise<unknown> => ipcRenderer.invoke('compile:run', projectData, outputDir),
+  onCompileProgress: (cb: (msg: string, status: string) => void): (() => void) => {
+    const handler = (_event: unknown, data: { msg: string; status: string }) => cb(data.msg, data.status);
+    ipcRenderer.on('compile:progress', handler as Parameters<typeof ipcRenderer.on>[1]);
+    return () => ipcRenderer.removeListener('compile:progress', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
+  },
+  openFolder: (folderPath: string): Promise<void> => ipcRenderer.invoke('shell:openFolder', folderPath),
 });
 
 export interface PhotoExif {
@@ -46,6 +55,12 @@ export interface ExcelExportResult {
   path?: string;
 }
 
+export interface CompileResult {
+  ok: boolean;
+  outputDir?: string;
+  error?: string;
+}
+
 declare global {
   interface Window {
     conchitect: {
@@ -61,6 +76,10 @@ declare global {
       importExcel: (projectData: unknown) => Promise<ExcelImportResult>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
+      showFolderDialog: () => Promise<string | null>;
+      compileRun: (projectData: unknown, outputDir: string) => Promise<CompileResult>;
+      onCompileProgress: (cb: (msg: string, status: string) => void) => () => void;
+      openFolder: (folderPath: string) => Promise<void>;
     };
   }
 }

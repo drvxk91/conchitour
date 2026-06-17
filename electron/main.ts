@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -405,4 +405,310 @@ ipcMain.handle('preview:getData', async () => {
   const data = pendingPreviewData;
   pendingPreviewData = null;
   return data;
+});
+
+// ── Compile pipeline ──────────────────────────────────────────────────────────
+
+function xmlEsc(s: string | undefined | null): string {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function sceneXmlName(slug: string): string {
+  return 'scene_' + slug.replace(/-/g, '_');
+}
+
+function hotspotXmlName(id: string): string {
+  return 'hs_' + id.replace(/-/g, '');
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function loc(record: Record<string, string> | undefined | null, lang: string): string {
+  if (!record) return '';
+  return record[lang] || record['en'] || Object.values(record)[0] || '';
+}
+
+async function copyDir(src: string, dest: string): Promise<number> {
+  let count = 0;
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      count += await copyDir(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+      count++;
+    }
+  }
+  return count;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateKrpanoXml(project: any): string {
+  const lang: string = project.languages?.default || 'en';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scenes: any[] = project.scenes || [];
+  const startSceneId: string | undefined = project.branding?.startSceneId;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startScene = scenes.find((s: any) => s.id === startSceneId) ?? scenes[0];
+  const startName: string = startScene ? sceneXmlName(startScene.slug) : '';
+  const projectTitle = xmlEsc(project.meta?.name || 'Virtual Tour');
+
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += `<krpano version="1.23" title="${projectTitle}"${startName ? ` onstart="loadscene(${startName});"` : ''}>\n\n`;
+
+  // Hotspot styles
+  xml += '<style name="hs_link" type="text"\n';
+  xml += '  css="font-family:sans-serif; color:#fff; font-size:14px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
+  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
+  xml += '<style name="hs_text" type="text"\n';
+  xml += '  css="font-family:sans-serif; color:#fff; font-size:13px; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px;"\n';
+  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
+  xml += '<style name="hs_external" type="text"\n';
+  xml += '  css="font-family:sans-serif; color:#93c5fd; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
+  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
+  xml += '<style name="hs_video" type="text"\n';
+  xml += '  css="font-family:sans-serif; color:#fbbf24; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
+  xml += '  edge="bottom" zoom="false" distorted="false"/>\n\n';
+
+  // Scenes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const scene of scenes) {
+    const sName = sceneXmlName(scene.slug);
+    const sTitle = xmlEsc(loc(scene.title, lang) || scene.slug);
+    const dv = scene.defaultView;
+    const hlookat: number = dv?.hlookat ?? 0;
+    const vlookat: number = dv?.vlookat ?? 0;
+    const fov: number = dv?.fov ?? 90;
+    const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
+    const heading: number = scene.heading ?? 0;
+
+    xml += `<scene name="${sName}" title="${sTitle}">\n`;
+    xml += `  <view hlookat="${hlookat.toFixed(1)}" vlookat="${vlookat.toFixed(1)}" fov="${fov.toFixed(1)}" maxpixelzoom="2.0" fovmin="50" fovmax="140"/>\n`;
+    xml += `  <image><sphere url="media/${xmlEsc(scene.slug)}${xmlEsc(ext)}" northoffset="${heading}"/></image>\n`;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hs of (scene.hotspots as any[])) {
+      const hsName = hotspotXmlName(hs.id);
+      const ath: string = (hs.ath as number).toFixed(2);
+      const atv: string = (hs.atv as number).toFixed(2);
+
+      if (hs.type === 'link') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const targetScene = scenes.find((s: any) => s.id === hs.targetSceneId);
+        if (!targetScene) continue;
+        const linkedScene = sceneXmlName(targetScene.slug);
+        const label = xmlEsc(loc(hs.title, lang) || `→ ${loc(targetScene.title, lang) || targetScene.slug}`);
+        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_link" text="${label}" linkedscene="${linkedScene}"/>\n`;
+      } else if (hs.type === 'text') {
+        const label = xmlEsc(loc(hs.title, lang) || 'Info');
+        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_text" text="${label}"/>\n`;
+      } else if (hs.type === 'external') {
+        const label = xmlEsc(loc(hs.label, lang) || 'Link');
+        const url = xmlEsc(hs.url || '');
+        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_external" text="${label}" onclick="openurl(${url}, _blank);"/>\n`;
+      } else if (hs.type === 'video') {
+        const label = xmlEsc(`▶ ${loc(hs.title, lang) || 'Video'}`);
+        const url = xmlEsc(hs.url || '');
+        xml += `  <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_video" text="${label}"${url ? ` onclick="openurl(${url}, _blank);"` : ''}/>\n`;
+      }
+      // form hotspots: omitted in static export (no server)
+    }
+
+    xml += '</scene>\n\n';
+  }
+
+  xml += '</krpano>\n';
+  return xml;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateHtml(project: any): string {
+  const meta = project.meta || {};
+  const seo = project.seo || {};
+  const branding = project.branding || {};
+  const share = project.share || {};
+  const lang: string = project.languages?.default || 'en';
+
+  const title = xmlEsc(seo.metaTitle || meta.name || 'Virtual Tour');
+  const description = xmlEsc(seo.metaDescription || meta.shortDescription || '');
+  const keywords: string[] = seo.keywords || [];
+  const publicUrl = String(meta.publicationUrl || '');
+  const primaryColor: string = branding.primaryColor || '#1a1a1a';
+  const accentColor: string = branding.accentColor || '#3b82f6';
+  const copyright = xmlEsc(meta.copyright || '');
+
+  const hasShare: boolean = !!(share.facebook || share.twitter || share.whatsapp || share.linkedin || share.email);
+
+  let ogTags = '';
+  if (publicUrl) {
+    ogTags += `  <meta property="og:url" content="${xmlEsc(publicUrl)}">\n`;
+    ogTags += `  <meta property="og:title" content="${title}">\n`;
+    if (description) ogTags += `  <meta property="og:description" content="${description}">\n`;
+    ogTags += `  <meta property="og:type" content="website">\n`;
+  }
+
+  let shareStyles = '';
+  let shareBar = '';
+  if (hasShare) {
+    shareStyles = `\n    #share-bar{position:fixed;bottom:16px;right:16px;z-index:100;display:flex;gap:8px}` +
+      `#share-bar a{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;text-decoration:none;font-size:13px;font-family:sans-serif;transition:background .2s}` +
+      `#share-bar a:hover{background:${accentColor}}`;
+    const url = encodeURIComponent(publicUrl);
+    const text = encodeURIComponent(meta.name || '');
+    const links: string[] = [];
+    if (share.facebook) links.push(`<a href="https://facebook.com/sharer/sharer.php?u=${url}" target="_blank" rel="noopener" title="Facebook">f</a>`);
+    if (share.twitter)  links.push(`<a href="https://x.com/intent/tweet?url=${url}&amp;text=${text}" target="_blank" rel="noopener" title="X / Twitter">X</a>`);
+    if (share.whatsapp) links.push(`<a href="https://api.whatsapp.com/send?text=${text}%20${url}" target="_blank" rel="noopener" title="WhatsApp">W</a>`);
+    if (share.linkedin) links.push(`<a href="https://linkedin.com/sharing/share-offsite/?url=${url}" target="_blank" rel="noopener" title="LinkedIn">in</a>`);
+    if (share.email)    links.push(`<a href="mailto:?subject=${text}&amp;body=${url}" title="Email">@</a>`);
+    shareBar = `  <div id="share-bar">${links.join('')}</div>\n`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+${description ? `  <meta name="description" content="${description}">\n` : ''}${keywords.length ? `  <meta name="keywords" content="${xmlEsc(keywords.join(', '))}">\n` : ''}${ogTags}  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;overflow:hidden;background:${primaryColor}}
+    #pano{width:100%;height:100%}${shareStyles}
+  </style>
+</head>
+<body>
+  <div id="pano"></div>
+${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.4);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script src="krpano/krpano.js"></script>
+  <script>embedpano({swf:"krpano/krpano.swf",xml:"tour.xml",target:"pano",html5:"auto",mobilescale:1.0,passQueryParameters:true});</script>
+</body>
+</html>`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateSitemap(project: any): string {
+  const meta = project.meta || {};
+  const baseUrl = String(meta.publicationUrl || '').replace(/\/$/, '');
+  if (!baseUrl) return '';
+
+  const lang: string = project.languages?.default || 'en';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scenes: any[] = project.scenes || [];
+  const today = new Date().toISOString().split('T')[0];
+
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n';
+  xml += '        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n';
+  xml += '  <url>\n';
+  xml += `    <loc>${xmlEsc(baseUrl)}/</loc>\n`;
+  xml += `    <lastmod>${today}</lastmod>\n`;
+  xml += '    <changefreq>monthly</changefreq>\n';
+  xml += '    <priority>1.0</priority>\n';
+
+  for (const scene of scenes) {
+    const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
+    const imgUrl = `${xmlEsc(baseUrl)}/media/${xmlEsc(scene.slug)}${xmlEsc(ext)}`;
+    const caption = xmlEsc(loc(scene.title, lang) || scene.slug);
+    const alt = xmlEsc(loc(scene.altText, lang) || caption);
+    xml += '    <image:image>\n';
+    xml += `      <image:loc>${imgUrl}</image:loc>\n`;
+    xml += `      <image:caption>${caption}</image:caption>\n`;
+    xml += `      <image:title>${alt}</image:title>\n`;
+    xml += '    </image:image>\n';
+  }
+
+  xml += '  </url>\n';
+  xml += '</urlset>\n';
+  return xml;
+}
+
+ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const project = projectData as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scenes: any[] = project.scenes || [];
+
+  function progress(msg: string, status: 'running' | 'ok' | 'error' | 'info') {
+    event.sender.send('compile:progress', { msg, status });
+  }
+
+  try {
+    progress('Starting compile…', 'running');
+
+    await fs.mkdir(outputDir, { recursive: true });
+    await fs.mkdir(path.join(outputDir, 'media'), { recursive: true });
+    progress('Output folder ready', 'ok');
+
+    // Copy krpano runtime
+    const krpanoSrc = isDev
+      ? path.join(process.cwd(), 'assets', 'krpano')
+      : path.join(process.resourcesPath, 'assets', 'krpano');
+
+    try {
+      await fs.access(krpanoSrc);
+      const count = await copyDir(krpanoSrc, path.join(outputDir, 'krpano'));
+      progress(`krpano runtime copied (${count} files)`, 'ok');
+    } catch {
+      progress('krpano folder not found in assets/ — add files to dist/krpano/ manually', 'info');
+    }
+
+    // Copy scene images
+    let copied = 0;
+    let skipped = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const scene of scenes) {
+      const src: string | undefined = scene.media?.sourcePath;
+      if (!src) { skipped++; continue; }
+      try {
+        await fs.access(src);
+        const ext = path.extname(src) || '.jpg';
+        await fs.copyFile(src, path.join(outputDir, 'media', `${scene.slug}${ext}`));
+        copied++;
+      } catch {
+        progress(`Warning: media not found for "${scene.slug}"`, 'info');
+        skipped++;
+      }
+    }
+    progress(`Scene images: ${copied} copied${skipped > 0 ? `, ${skipped} skipped` : ''}`, copied > 0 ? 'ok' : 'info');
+
+    // Generate tour.xml
+    const tourXml = generateKrpanoXml(project);
+    await fs.writeFile(path.join(outputDir, 'tour.xml'), tourXml, 'utf8');
+    progress('tour.xml generated', 'ok');
+
+    // Generate index.html
+    const indexHtml = generateHtml(project);
+    await fs.writeFile(path.join(outputDir, 'index.html'), indexHtml, 'utf8');
+    progress('index.html generated', 'ok');
+
+    // Optional sitemap
+    if (project.seo?.imageSitemap) {
+      const sitemap = generateSitemap(project);
+      if (sitemap) {
+        await fs.writeFile(path.join(outputDir, 'sitemap.xml'), sitemap, 'utf8');
+        progress('sitemap.xml generated', 'ok');
+      }
+    }
+
+    progress('Compile complete!', 'ok');
+    return { ok: true, outputDir };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    progress(`Error: ${msg}`, 'error');
+    return { ok: false, error: msg };
+  }
+});
+
+ipcMain.handle('dialog:openFolder', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select output folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('shell:openFolder', async (_e, folderPath: string) => {
+  await shell.openPath(folderPath);
 });
