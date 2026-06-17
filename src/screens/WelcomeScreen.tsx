@@ -36,7 +36,7 @@ export function WelcomeScreen() {
   return (
     <div className="h-full flex flex-col items-center justify-center bg-paper-soft select-none">
       <div className="mb-12 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-ink-base">Conchitect</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-ink-base">Conchitour</h1>
         <p className="text-sm text-ink-soft mt-1">Architect your virtual tours.</p>
       </div>
 

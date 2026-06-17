@@ -13,7 +13,7 @@ export function TitleBar() {
         <span className="w-2.5 h-2.5 rounded-full bg-line-strong" />
       </div>
       <div className="text-xs text-ink-soft ml-2">
-        <strong className="text-ink font-medium">Conchitect</strong>
+        <strong className="text-ink font-medium">Conchitour</strong>
         <span className="text-ink-faded"> — {folderName || projectName}</span>
         {isDirty && <span className="ml-1 text-amber-500" title="Unsaved changes">•</span>}
       </div>

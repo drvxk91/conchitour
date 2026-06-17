@@ -1,8 +1,8 @@
 {
-  "name": "conchitect-app",
+  "name": "conchitour-app",
   "version": "0.1.0",
   "private": true,
-  "description": "Conchitect — desktop editor for professional 360° virtual tours. Architect your virtual tours.",
+  "description": "Conchitour — desktop editor for professional 360° virtual tours. Architect your virtual tours.",
   "author": "Conchito",
   "license": "UNLICENSED",
   "main": "dist-electron/main.js",
@@ -59,8 +59,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.conchito.conchitect",
-    "productName": "Conchitect",
+    "appId": "com.conchito.conchitour",
+    "productName": "Conchitour",
     "directories": {
       "output": "release"
     },
