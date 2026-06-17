@@ -94,11 +94,6 @@ ipcMain.handle('dialog:openFiles', async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
-ipcMain.handle('project:save', async (_e, projectPath: string, data: unknown) => {
-  await fs.writeFile(projectPath, JSON.stringify(data, null, 2), 'utf-8');
-  return true;
-});
-
 ipcMain.handle('project:load', async (_e, projectPath: string) => {
   const raw = await fs.readFile(projectPath, 'utf-8');
   return JSON.parse(raw);
