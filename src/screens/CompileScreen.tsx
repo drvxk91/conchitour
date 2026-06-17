@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
-  Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle,
+  Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
@@ -11,6 +11,35 @@ import type { CompileResult, ConchitectSettings, KrpanoValidationResult } from '
 interface LogEntry {
   msg: string;
   status: 'running' | 'ok' | 'error' | 'info';
+}
+
+// Named compile steps (matches main.ts progress messages)
+const COMPILE_STEPS = [
+  { id: 'init',     label: 'Prepare output folder' },
+  { id: 'runtime',  label: 'Copy krpano runtime' },
+  { id: 'skin',     label: 'Copy vtour skin' },
+  { id: 'media',    label: 'Copy scene images' },
+  { id: 'tiles',    label: 'Generate cube tiles' },
+  { id: 'xml',      label: 'Generate tour.xml' },
+  { id: 'html',     label: 'Generate HTML pages' },
+  { id: 'seo',      label: 'Generate SEO files' },
+  { id: 'done',     label: 'Finished' },
+] as const;
+
+type StepId = typeof COMPILE_STEPS[number]['id'];
+
+function msgToStep(msg: string): StepId | null {
+  const m = msg.toLowerCase();
+  if (m.includes('output folder'))   return 'init';
+  if (m.includes('krpano.js'))       return 'runtime';
+  if (m.includes('skin'))            return 'skin';
+  if (m.includes('scene images'))    return 'media';
+  if (m.includes('tile') || m.includes('pano')) return 'tiles';
+  if (m.includes('tour.xml'))        return 'xml';
+  if (m.includes('index.html') || m.includes('scene page')) return 'html';
+  if (m.includes('sitemap') || m.includes('robots') || m.includes('readme') || m.includes('rewrite')) return 'seo';
+  if (m.includes('done —') || m.includes('files,')) return 'done';
+  return null;
 }
 
 export function CompileScreen() {
@@ -23,12 +52,14 @@ export function CompileScreen() {
   const [validating, setValidating]             = useState(false);
 
   // Compile state
-  const [outputDir, setOutputDir]   = useState('');
-  const [log, setLog]               = useState<LogEntry[]>([]);
-  const [running, setRunning]       = useState(false);
-  const [result, setResult]         = useState<CompileResult | null>(null);
-  const [copied, setCopied]         = useState(false);
+  const [outputDir, setOutputDir]         = useState('');
+  const [log, setLog]                     = useState<LogEntry[]>([]);
+  const [running, setRunning]             = useState(false);
+  const [result, setResult]               = useState<CompileResult | null>(null);
+  const [copied, setCopied]               = useState(false);
   const [forceRegenTiles, setForceRegenTiles] = useState(false);
+  const [currentStep, setCurrentStep]     = useState<StepId | null>(null);
+  const completedStepsRef = useRef<Set<StepId>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
 
   // Load settings and restore any in-progress compile on mount
@@ -57,6 +88,11 @@ export function CompileScreen() {
   useEffect(() => {
     const unsub = window.conchitect.onCompileProgress((msg, status) => {
       setLog((prev) => [...prev, { msg, status: status as LogEntry['status'] }]);
+      const step = msgToStep(msg);
+      if (step) {
+        setCurrentStep(step);
+        if (status === 'ok') completedStepsRef.current.add(step);
+      }
     });
     return unsub;
   }, []);
@@ -86,6 +122,8 @@ export function CompileScreen() {
     if (!outputDir || running) return;
     setLog([]);
     setResult(null);
+    setCurrentStep(null);
+    completedStepsRef.current = new Set();
     setRunning(true);
     setIsCompiling(true);
     try {
@@ -322,35 +360,64 @@ export function CompileScreen() {
           )}
         </div>
 
-        {/* ── Progress log ─────────────────────────────────────────────── */}
-        {log.length > 0 && (
-          <section className="space-y-2">
-            <p className="text-xs font-medium text-ink-faded uppercase tracking-wider">Output</p>
-            <div
-              ref={logRef}
-              className="bg-zinc-900 rounded-lg px-4 py-3 space-y-1 max-h-64 overflow-y-auto font-mono text-xs"
-            >
-              {log.map((entry, i) => (
-                <div
-                  key={i}
-                  className={clsx(
-                    'flex items-start gap-2',
-                    entry.status === 'ok'      && 'text-emerald-400',
-                    entry.status === 'error'   && 'text-red-400',
-                    entry.status === 'running' && 'text-yellow-400',
-                    entry.status === 'info'    && 'text-zinc-400',
-                  )}
-                >
-                  <span className="select-none shrink-0 w-3 text-center">
-                    {entry.status === 'ok'      && '✓'}
-                    {entry.status === 'error'   && '✗'}
-                    {entry.status === 'running' && '●'}
-                    {entry.status === 'info'    && '·'}
-                  </span>
-                  <span>{entry.msg}</span>
-                </div>
-              ))}
+        {/* ── Stepped progress ─────────────────────────────────────────── */}
+        {(log.length > 0 || running) && (
+          <section className="space-y-3">
+            {/* Named steps */}
+            <div className="rounded-lg border border-line bg-paper space-y-1 p-3">
+              {COMPILE_STEPS.map((step) => {
+                const isDone    = completedStepsRef.current.has(step.id) || (!running && result?.ok);
+                const isCurrent = currentStep === step.id && running;
+                const isWaiting = !isDone && !isCurrent;
+                return (
+                  <div key={step.id} className={clsx('flex items-center gap-2.5 py-0.5 text-sm', isWaiting && 'opacity-35')}>
+                    {isDone
+                      ? <CheckCircle size={13} className="text-emerald-500 shrink-0" />
+                      : isCurrent
+                        ? <Loader2 size={13} className="text-blue-500 animate-spin shrink-0" />
+                        : <Circle size={13} className="text-line-strong shrink-0" />}
+                    <span className={clsx(
+                      isDone && 'text-ink',
+                      isCurrent && 'text-ink font-medium',
+                      isWaiting && 'text-ink-soft',
+                    )}>{step.label}</span>
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Raw log (collapsible) */}
+            <details className="group">
+              <summary className="flex items-center gap-1.5 text-xs text-ink-faded cursor-pointer select-none hover:text-ink-soft list-none">
+                <ChevronDown size={11} className="transition-transform group-open:rotate-180" />
+                Raw output ({log.length} lines)
+              </summary>
+              <div
+                ref={logRef}
+                className="mt-2 bg-zinc-900 rounded-lg px-4 py-3 space-y-0.5 max-h-48 overflow-y-auto font-mono text-[11px]"
+              >
+                {log.map((entry, i) => (
+                  <div
+                    key={i}
+                    className={clsx(
+                      'flex items-start gap-2',
+                      entry.status === 'ok'      && 'text-emerald-400',
+                      entry.status === 'error'   && 'text-red-400',
+                      entry.status === 'running' && 'text-yellow-400',
+                      entry.status === 'info'    && 'text-zinc-400',
+                    )}
+                  >
+                    <span className="select-none shrink-0 w-3 text-center">
+                      {entry.status === 'ok'      && '✓'}
+                      {entry.status === 'error'   && '✗'}
+                      {entry.status === 'running' && '●'}
+                      {entry.status === 'info'    && '·'}
+                    </span>
+                    <span>{entry.msg}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           </section>
         )}
 
