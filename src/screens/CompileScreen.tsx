@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
   Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown, Key,
@@ -6,7 +6,25 @@ import {
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
-import type { CompileResult, ConchitectSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData } from '../../electron/preload';
+import type { CompileResult, ConchitectSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
+
+// Parse human-readable fields from a krpano registration code block.
+// krpano purchase emails contain lines like "Name: ...", "Domain: ...", etc.
+function parseLicenseCode(code: string): LicenseInfo | null {
+  const result: LicenseInfo = {};
+  for (const line of code.split(/\r?\n/)) {
+    const m = line.match(/^\s*([\w][\w\s\-]*?)\s*:\s*(.+?)\s*$/);
+    if (!m) continue;
+    const key = m[1].trim().toLowerCase().replace(/[\s-]+/g, '');
+    const val = m[2].trim();
+    if (['name', 'user', 'registeredto'].includes(key)) result.name = val;
+    else if (['email', 'mail', 'email'].includes(key)) result.email = val;
+    else if (key === 'domain') result.domain = val;
+    else if (['license', 'licensetype', 'type', 'edition'].includes(key)) result.type = val;
+    else if (['valid', 'validuntil', 'validthrough', 'expires'].includes(key)) result.validUntil = val;
+  }
+  return (result.name || result.domain || result.email) ? result : null;
+}
 
 interface LogEntry {
   msg: string;
@@ -42,6 +60,31 @@ function msgToStep(msg: string): StepId | null {
   return null;
 }
 
+function LicenseInfoCard({ info, preview = false }: { info: LicenseInfo; preview?: boolean }) {
+  const rows = [
+    { label: 'Name',    value: info.name },
+    { label: 'Email',   value: info.email },
+    { label: 'Domain',  value: info.domain },
+    { label: 'Type',    value: info.type },
+    { label: 'Valid',   value: info.validUntil },
+  ].filter(r => r.value);
+  if (rows.length === 0) return null;
+  return (
+    <div className={clsx(
+      'rounded-md px-3 py-2 text-xs space-y-0.5',
+      preview ? 'bg-blue-50 border border-blue-100' : 'bg-emerald-50 border border-emerald-100'
+    )}>
+      {preview && <p className="text-blue-600 font-medium mb-1">License found in code:</p>}
+      {rows.map(r => (
+        <div key={r.label} className="flex gap-2">
+          <span className={clsx('w-14 shrink-0 font-medium', preview ? 'text-blue-500' : 'text-emerald-600')}>{r.label}</span>
+          <span className={preview ? 'text-blue-700' : 'text-emerald-800'}>{r.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function CompileScreen() {
   const { project, setIsCompiling } = useProject();
 
@@ -69,11 +112,15 @@ export function CompileScreen() {
   const completedStepsRef = useRef<Set<StepId>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
 
+  // License code parsed preview (computed from textarea)
+  const parsedLicense = useMemo(() => parseLicenseCode(licenseCode), [licenseCode]);
+
   // Load settings and restore any in-progress compile on mount
   useEffect(() => {
     window.conchitect.settingsGet().then((s) => {
       setSettings(s);
       setKrpanoPathDraft(s.krpanoPath);
+      if (s.lastOutputDir) setOutputDir(s.lastOutputDir);
       window.conchitect.krpanoValidate(s.krpanoPath).then(setValidation);
       if (s.krpanoPath) window.conchitect.krpanoLicenseStatus(s.krpanoPath).then(setLicenseStatus);
     });
@@ -165,15 +212,21 @@ export function CompileScreen() {
     if (res.ok) {
       const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
       setLicenseStatus(ls);
+      // Persist whatever we could extract from the code so we can show it to the client
+      const info = parseLicenseCode(licenseCode);
+      if (info) patchSettings({ licenseInfo: info });
       setLicenseCode('');
     }
     setActivating(false);
-  }, [settings?.krpanoPath, licenseCode]);
+  }, [settings?.krpanoPath, licenseCode, patchSettings]);
 
   const handlePickFolder = useCallback(async () => {
     const dir = await window.conchitect.showFolderDialog();
-    if (dir) setOutputDir(dir);
-  }, []);
+    if (dir) {
+      setOutputDir(dir);
+      patchSettings({ lastOutputDir: dir });
+    }
+  }, [patchSettings]);
 
   const handleCompile = useCallback(async () => {
     if (!outputDir || running) return;
@@ -311,6 +364,12 @@ export function CompileScreen() {
               </span>
             </div>
 
+            {/* Activated: show stored license info */}
+            {licenseStatus.present && settings.licenseInfo && (
+              <LicenseInfoCard info={settings.licenseInfo} />
+            )}
+
+            {/* Not activated: registration form */}
             {!licenseStatus.present && (
               <div className="space-y-2 pl-5">
                 <p className="text-xs text-ink-faded">
@@ -323,6 +382,8 @@ export function CompileScreen() {
                   rows={5}
                   className="w-full px-3 py-2 rounded-md border border-line-strong bg-paper-soft text-xs font-mono text-ink-base focus:outline-none focus:border-blue-400 resize-none"
                 />
+                {/* Preview of parsed info while typing */}
+                {parsedLicense && <LicenseInfoCard info={parsedLicense} preview />}
                 <div className="flex items-center gap-3">
                   <button
                     onClick={handleActivateLicense}

@@ -93,11 +93,21 @@ export interface ExcelExportResult {
   error?: string;
 }
 
+export interface LicenseInfo {
+  name?: string;
+  email?: string;
+  domain?: string;
+  type?: string;
+  validUntil?: string;
+}
+
 export interface ConchitectSettings {
   krpanoPath: string;
   includeLicense: boolean;
   includeTestServer: boolean;
   useKrpanoTiles: boolean;
+  lastOutputDir: string;
+  licenseInfo?: LicenseInfo;
 }
 
 export interface KrpanoValidationResult {

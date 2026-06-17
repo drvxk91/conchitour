@@ -562,6 +562,8 @@ interface ConchitectSettings {
   includeLicense: boolean;
   includeTestServer: boolean;
   useKrpanoTiles: boolean;
+  lastOutputDir: string;
+  licenseInfo?: { name?: string; email?: string; domain?: string; type?: string; validUntil?: string };
 }
 
 const DEFAULT_SETTINGS: ConchitectSettings = {
@@ -569,6 +571,7 @@ const DEFAULT_SETTINGS: ConchitectSettings = {
   includeLicense: false,
   includeTestServer: false,
   useKrpanoTiles: false,
+  lastOutputDir: '',
 };
 
 async function readSettings(): Promise<ConchitectSettings> {
