@@ -601,27 +601,78 @@ function generateSitemap(project: any): string {
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n';
   xml += '        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n';
+
+  // Root URL
   xml += '  <url>\n';
   xml += `    <loc>${xmlEsc(baseUrl)}/</loc>\n`;
   xml += `    <lastmod>${today}</lastmod>\n`;
   xml += '    <changefreq>monthly</changefreq>\n';
   xml += '    <priority>1.0</priority>\n';
+  xml += '  </url>\n';
 
+  // Per-scene URLs with image annotations
   for (const scene of scenes) {
     const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
+    const sceneUrl = `${xmlEsc(baseUrl)}/scene/${xmlEsc(scene.slug)}/`;
     const imgUrl = `${xmlEsc(baseUrl)}/media/${xmlEsc(scene.slug)}${xmlEsc(ext)}`;
     const caption = xmlEsc(loc(scene.title, lang) || scene.slug);
     const alt = xmlEsc(loc(scene.altText, lang) || caption);
+    xml += '  <url>\n';
+    xml += `    <loc>${sceneUrl}</loc>\n`;
+    xml += `    <lastmod>${today}</lastmod>\n`;
+    xml += '    <changefreq>monthly</changefreq>\n';
+    xml += '    <priority>0.8</priority>\n';
     xml += '    <image:image>\n';
     xml += `      <image:loc>${imgUrl}</image:loc>\n`;
     xml += `      <image:caption>${caption}</image:caption>\n`;
     xml += `      <image:title>${alt}</image:title>\n`;
     xml += '    </image:image>\n';
+    xml += '  </url>\n';
   }
 
-  xml += '  </url>\n';
   xml += '</urlset>\n';
   return xml;
+}
+
+// Generates a per-scene deep-link page at scene/<slug>/index.html (depth 2 from root).
+// Assets use ../../ prefix. The krpano onready callback loads the specific scene.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateScenePageHtml(project: any, scene: any): string {
+  const meta = project.meta || {};
+  const seo = project.seo || {};
+  const branding = project.branding || {};
+  const lang: string = project.languages?.default || 'en';
+
+  const sceneTitle = xmlEsc(loc(scene.title, lang) || scene.slug);
+  const projectTitle = xmlEsc(meta.name || 'Virtual Tour');
+  const pageTitle = `${sceneTitle} — ${projectTitle}`;
+  const description = xmlEsc(loc(scene.description, lang) || seo.metaDescription || '');
+  const publicUrl = String(meta.publicationUrl || '').replace(/\/$/, '');
+  const canonicalUrl = publicUrl ? `${xmlEsc(publicUrl)}/scene/${xmlEsc(scene.slug)}/` : '';
+  const primaryColor: string = branding.primaryColor || '#1a1a1a';
+  const copyright = xmlEsc(meta.copyright || '');
+  const xmlName = sceneXmlName(scene.slug);
+
+  return `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${pageTitle}</title>
+${description ? `  <meta name="description" content="${description}">\n` : ''}${canonicalUrl ? `  <link rel="canonical" href="${canonicalUrl}">\n  <meta property="og:url" content="${canonicalUrl}">\n` : ''}  <meta property="og:title" content="${sceneTitle}">
+  <meta property="og:type" content="website">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;overflow:hidden;background:${primaryColor}}
+    #pano{width:100%;height:100%}
+  </style>
+</head>
+<body>
+  <div id="pano"></div>
+${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.4);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script src="../../krpano/krpano.js"></script>
+  <script>embedpano({swf:"../../krpano/krpano.swf",xml:"../../tour.xml",target:"pano",html5:"auto",mobilescale:1.0,passQueryParameters:false,onready:function(krp){krp.call("loadscene(${xmlName},null,MERGE,BLEND(0.5));");}});</script>
+</body>
+</html>`;
 }
 
 ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: string) => {
@@ -678,18 +729,26 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     await fs.writeFile(path.join(outputDir, 'tour.xml'), tourXml, 'utf8');
     progress('tour.xml generated', 'ok');
 
-    // Generate index.html
+    // Generate root index.html (tour viewer, default start scene)
     const indexHtml = generateHtml(project);
     await fs.writeFile(path.join(outputDir, 'index.html'), indexHtml, 'utf8');
     progress('index.html generated', 'ok');
 
-    // Optional sitemap
-    if (project.seo?.imageSitemap) {
-      const sitemap = generateSitemap(project);
-      if (sitemap) {
-        await fs.writeFile(path.join(outputDir, 'sitemap.xml'), sitemap, 'utf8');
-        progress('sitemap.xml generated', 'ok');
-      }
+    // Generate per-scene deep-link pages: scene/<slug>/index.html
+    const sceneOutDir = path.join(outputDir, 'scene');
+    await fs.mkdir(sceneOutDir, { recursive: true });
+    for (const scene of scenes) {
+      const dir = path.join(sceneOutDir, scene.slug);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'index.html'), generateScenePageHtml(project, scene), 'utf8');
+    }
+    progress(`Per-scene pages: ${scenes.length} generated in scene/`, 'ok');
+
+    // Sitemap (always generate when we have scene/* pages; seo.imageSitemap gates image annotations)
+    const sitemap = generateSitemap(project);
+    if (sitemap) {
+      await fs.writeFile(path.join(outputDir, 'sitemap.xml'), sitemap, 'utf8');
+      progress('sitemap.xml generated', 'ok');
     }
 
     progress('Compile complete!', 'ok');
