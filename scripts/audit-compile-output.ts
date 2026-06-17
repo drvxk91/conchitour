@@ -37,6 +37,14 @@ function checkDir(outputDir: string, rel: string): number {
   }
 }
 
+// Given the cube URL template from tour.xml, synthesize a concrete sample path.
+// Returns null if the URL is the old single-cube format (pano_%s.jpg) or unparseable.
+function sampleTilePath(urlTemplate: string): string | null {
+  if (urlTemplate.includes('pano_%s')) return null; // old format
+  // Substitute %s=f, %v=1, %h=1
+  return urlTemplate.replace(/%s/g, 'f').replace(/%v/g, '1').replace(/%h/g, '1');
+}
+
 async function main() {
   const outputDir = process.argv[2];
   if (!outputDir) {
@@ -83,12 +91,12 @@ async function main() {
 
   // --- Per-scene pano tiles (parsed from tour.xml) ---
   const tourXmlPath = path.join(outputDir, 'tour.xml');
+  let tourXmlContent = '';
   let sceneNames: string[] = [];
   if (fs.existsSync(tourXmlPath)) {
     try {
-      const xml = fs.readFileSync(tourXmlPath, 'utf8');
-      // Quick regex parse to avoid xml2js dependency at runtime
-      const matches = [...xml.matchAll(/<scene\s+name="([^"]+)"/g)];
+      tourXmlContent = fs.readFileSync(tourXmlPath, 'utf8');
+      const matches = [...tourXmlContent.matchAll(/<scene\s+name="([^"]+)"/g)];
       sceneNames = matches.map(m => m[1]);
     } catch {
       console.log(`${YELLOW}Could not parse tour.xml for scene names${RESET}`);
@@ -96,7 +104,6 @@ async function main() {
   }
 
   for (const name of sceneNames) {
-    // krpano scene names are "scene_<slug>" — strip the prefix for the panos path
     const slug = name.replace(/^scene_/, '');
     const tileDir = `panos/${slug}.tiles`;
     const previewRel = `${tileDir}/preview.jpg`;
@@ -105,16 +112,45 @@ async function main() {
     if (dirCount < 0) {
       console.log(fail(tileDir + '/  (tiles directory)'));
       missing++;
-    } else if (dirCount === 0) {
+      continue;
+    }
+    if (dirCount === 0) {
       console.log(warn(tileDir + '/  (tiles directory empty)'));
       missing++;
+      continue;
+    }
+
+    const previewResult = checkFile(outputDir, previewRel);
+    if (previewResult === 'ok') {
+      console.log(ok(`${previewRel}`));
     } else {
-      const previewResult = checkFile(outputDir, previewRel);
-      if (previewResult === 'ok') {
-        console.log(ok(`${previewRel}  (+ ${dirCount - 1} other tile files)`));
-      } else {
-        console.log(warn(`${tileDir}/  (${dirCount} files but preview.jpg missing)`));
-        missing++;
+      console.log(warn(`${tileDir}/  (${dirCount} entries but preview.jpg missing)`));
+      missing++;
+    }
+
+    // Extract cube URL for this scene from tour.xml and verify the format + a sample tile
+    const sceneBlock = tourXmlContent.match(
+      new RegExp(`<scene\\s+name="${name}"[\\s\\S]*?</scene>`)
+    );
+    const cubeUrlMatch = sceneBlock?.[0]?.match(/<cube\s+url="([^"]+)"/);
+    const cubeUrl = cubeUrlMatch?.[1] ?? null;
+
+    if (!cubeUrl) {
+      console.log(`${YELLOW}⚠️  ${slug}: no <cube url> found in tour.xml${RESET}`);
+    } else if (cubeUrl.includes('pano_%s')) {
+      console.log(`${RED}❌ ${slug}: tour.xml still uses old single-cube format (pano_%s.jpg) — tiles won't load${RESET}`);
+      missing++;
+    } else {
+      // New multires format — verify a concrete tile exists
+      const sample = sampleTilePath(cubeUrl);
+      if (sample) {
+        const tileResult = checkFile(outputDir, sample);
+        if (tileResult === 'ok') {
+          console.log(ok(`${sample}  (sample tile)`));
+        } else {
+          console.log(fail(`${sample}  (sample tile from tour.xml URL)`));
+          missing++;
+        }
       }
     }
   }
