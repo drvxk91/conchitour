@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -608,6 +609,48 @@ ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
   return { valid: missing.length === 0, missing };
 });
 
+// ── Tile cache helpers ────────────────────────────────────────────────────────
+
+async function fileHash(filePath: string): Promise<string> {
+  const data = await fs.readFile(filePath);
+  return crypto.createHash('md5').update(data).digest('hex');
+}
+
+async function hasValidCache(cacheDir: string, slug: string, srcHash: string): Promise<boolean> {
+  try {
+    const metaPath = path.join(cacheDir, slug, 'cache.json');
+    const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+    return meta.srcHash === srcHash;
+  } catch {
+    return false;
+  }
+}
+
+async function copyCacheTo(cacheDir: string, slug: string, destPanosDir: string): Promise<void> {
+  const src = path.join(cacheDir, slug, 'tiles');
+  const dest = path.join(destPanosDir, `${slug}.tiles`);
+  await copyDir(src, dest);
+}
+
+async function buildCacheFor(
+  cacheDir: string,
+  slug: string,
+  tilesDir: string,
+  srcHash: string,
+): Promise<void> {
+  const cacheSlugDir = path.join(cacheDir, slug);
+  await fs.mkdir(cacheSlugDir, { recursive: true });
+  // Copy tiles into cache
+  const cacheTilesDir = path.join(cacheSlugDir, 'tiles');
+  await copyDir(tilesDir, cacheTilesDir);
+  // Write metadata
+  await fs.writeFile(
+    path.join(cacheSlugDir, 'cache.json'),
+    JSON.stringify({ slug, srcHash, cachedAt: new Date().toISOString() }, null, 2),
+    'utf-8',
+  );
+}
+
 // ── Compile state (survives renderer navigation) ──────────────────────────────
 
 interface CompileLogEntry {
@@ -1067,6 +1110,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scenes: any[] = project.scenes || [];
   const settings = await readSettings();
+  const forceRegenTiles: boolean = (projectData as Record<string, unknown>)?.__forceRegenTiles === true;
 
   compileRunState = { running: true, log: [], startedAt: Date.now() };
   compileCancelToken = { canceled: false };
@@ -1166,15 +1210,28 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       if (toolOk) {
         const panosDir = path.join(outputDir, 'panos');
         await fs.mkdir(panosDir, { recursive: true });
+        const cacheDir = currentProjectDir ? path.join(currentProjectDir, 'cache', 'tiles') : null;
+        if (cacheDir) await fs.mkdir(cacheDir, { recursive: true });
         const tmpBase = path.join(os.tmpdir(), `conchitect-${Date.now()}`);
         await fs.mkdir(tmpBase, { recursive: true });
 
         for (const scene of scenes) {
           const src: string | undefined = scene.media?.sourcePath;
           if (!src) continue;
-          progress(`Generating tiles for "${scene.slug}"…`, 'running');
+          checkCancel();
           try {
             const ext = path.extname(src) || '.jpg';
+            const srcHash = await fileHash(src).catch(() => '');
+
+            // Check cache first (unless force-regen)
+            if (!forceRegenTiles && cacheDir && srcHash && await hasValidCache(cacheDir, scene.slug, srcHash)) {
+              progress(`Tiles for "${scene.slug}" — from cache`, 'ok');
+              await copyCacheTo(cacheDir, scene.slug, panosDir);
+              tiledSlugs.add(scene.slug);
+              continue;
+            }
+
+            progress(`Generating tiles for "${scene.slug}"…`, 'running');
             const tmpImg = path.join(tmpBase, `${scene.slug}${ext}`);
             await fs.copyFile(src, tmpImg);
 
@@ -1186,12 +1243,12 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
               proc.stdout?.on('data', (chunk: Buffer) => {
                 const lines = chunk.toString().split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
                 for (const line of lines) {
-                  event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' });
+                  try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
                 }
               });
               proc.stderr?.on('data', (chunk: Buffer) => {
                 const line = chunk.toString().trim();
-                if (line) event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' });
+                if (line) try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
               });
               proc.on('close', (code) => {
                 if (code === 0) resolve();
@@ -1200,8 +1257,14 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
               proc.on('error', reject);
             });
 
+            const generatedTilesDir = path.join(panosDir, `${scene.slug}.tiles`);
             tiledSlugs.add(scene.slug);
             progress(`Tiles ready for "${scene.slug}"`, 'ok');
+
+            // Cache the result
+            if (cacheDir && srcHash) {
+              await buildCacheFor(cacheDir, scene.slug, generatedTilesDir, srcHash).catch(() => {});
+            }
             await fs.unlink(tmpImg).catch(() => {});
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

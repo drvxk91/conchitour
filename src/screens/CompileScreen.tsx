@@ -28,6 +28,7 @@ export function CompileScreen() {
   const [running, setRunning]       = useState(false);
   const [result, setResult]         = useState<CompileResult | null>(null);
   const [copied, setCopied]         = useState(false);
+  const [forceRegenTiles, setForceRegenTiles] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   // Load settings and restore any in-progress compile on mount
@@ -88,13 +89,15 @@ export function CompileScreen() {
     setRunning(true);
     setIsCompiling(true);
     try {
-      const res = await window.conchitect.compileRun(project, outputDir);
+      // Pass __forceRegenTiles as a side-channel flag on the project object
+      const projectData = forceRegenTiles ? { ...project, __forceRegenTiles: true } : project;
+      const res = await window.conchitect.compileRun(projectData, outputDir);
       setResult(res);
     } finally {
       setRunning(false);
       setIsCompiling(false);
     }
-  }, [outputDir, running, project, setIsCompiling]);
+  }, [outputDir, running, project, setIsCompiling, forceRegenTiles]);
 
   const handleCancel = useCallback(() => {
     window.conchitect.compileCancel();
@@ -254,6 +257,20 @@ export function CompileScreen() {
                 <span className="text-ink-faded ml-1.5">Bundles "krpano Testing Server.exe" + a START_TESTING_SERVER.bat for local preview.</span>
               </span>
             </label>
+            {settings.useKrpanoTiles && (
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={forceRegenTiles}
+                  onChange={(e) => setForceRegenTiles(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-ink-base">Force regenerate tiles</span>
+                  <span className="text-ink-faded ml-1.5">Ignores cache — re-runs krpanotools for every scene even if unchanged.</span>
+                </span>
+              </label>
+            )}
           </div>
         </section>
 
