@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('conchitect', {
   openPreview: (sourcePath: string, heading: number, sceneData?: unknown) => ipcRenderer.invoke('preview:open', sourcePath, heading, sceneData),
   getPreviewData: () => ipcRenderer.invoke('preview:getData'),
   exportExcel: (projectData: unknown) => ipcRenderer.invoke('excel:export', projectData),
+  downloadExcelTemplate: (projectData: unknown) => ipcRenderer.invoke('excel:download-template', projectData),
   importExcel: (projectData: unknown) => ipcRenderer.invoke('excel:import', projectData),
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
@@ -87,6 +88,7 @@ export interface ExcelImportResult {
 export interface ExcelExportResult {
   canceled: boolean;
   path?: string;
+  error?: string;
 }
 
 export interface ConchitectSettings {
@@ -150,6 +152,7 @@ declare global {
       openPreview: (sourcePath: string, heading: number, sceneData?: unknown) => Promise<boolean>;
       getPreviewData: () => Promise<unknown>;
       exportExcel: (projectData: unknown) => Promise<ExcelExportResult>;
+      downloadExcelTemplate: (projectData: unknown) => Promise<ExcelExportResult>;
       importExcel: (projectData: unknown) => Promise<ExcelImportResult>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;

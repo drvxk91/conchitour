@@ -297,8 +297,25 @@ export function CategoriesScreen() {
   }
 
   async function handleExportExcel() {
-    const result = await window.conchitect.exportExcel(project);
-    if (!result.canceled) showToast('Exported to ' + result.path);
+    try {
+      const result = await window.conchitect.exportExcel(project);
+      if (result.canceled) return;
+      if (result.error) showToast('Export failed: ' + result.error);
+      else showToast('Exported ✓ ' + result.path);
+    } catch (err) {
+      showToast('Export failed: ' + String(err));
+    }
+  }
+
+  async function handleDownloadTemplate() {
+    try {
+      const result = await window.conchitect.downloadExcelTemplate(project);
+      if (result.canceled) return;
+      if (result.error) showToast('Template error: ' + result.error);
+      else showToast('Template saved ✓ ' + result.path);
+    } catch (err) {
+      showToast('Template error: ' + String(err));
+    }
   }
 
   async function handleImportExcel() {
@@ -338,13 +355,22 @@ export function CategoriesScreen() {
         </p>
         <div className="flex gap-2">
           <button
+            onClick={handleDownloadTemplate}
+            className="btn text-xs gap-1.5"
+            title="Download a blank Excel template"
+            data-testid="template-excel-btn"
+          >
+            <Download size={12} />
+            Template
+          </button>
+          <button
             onClick={handleExportExcel}
             className="btn text-xs gap-1.5"
-            title="Export project to Excel"
+            title="Export current project to Excel"
             data-testid="export-excel-btn"
           >
             <Download size={12} />
-            Export Excel
+            Export
           </button>
           <button
             onClick={handleImportExcel}
@@ -353,7 +379,7 @@ export function CategoriesScreen() {
             data-testid="import-excel-btn"
           >
             <Upload size={12} />
-            Import Excel
+            Import
           </button>
           <button
             onClick={() => setModalOpen('new')}

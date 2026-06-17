@@ -296,25 +296,111 @@ ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
 
   // ── Sheet: Branding ──
   const branding = proj.branding ?? {};
-  const brandingHeader = ['primary_color', 'accent_color', 'start_scene_slug'];
   const startSceneSlug = (proj.scenes ?? []).find((s: any) => s.id === branding.startSceneId)?.slug ?? '';
-  const brandingRow = [branding.primaryColor ?? '', branding.accentColor ?? '', startSceneSlug];
+  const brandingHeader = [
+    'primary_color', 'accent_color', 'start_scene_slug',
+    ...langs.map((l: string) => `intro_text_${l}`),
+  ];
+  const brandingRow = [
+    branding.primaryColor ?? '', branding.accentColor ?? '', startSceneSlug,
+    ...langs.map((l: string) => branding.introText?.[l] ?? ''),
+  ];
   const brandingSheet = XLSX.utils.aoa_to_sheet([brandingHeader, brandingRow]);
   XLSX.utils.book_append_sheet(wb, brandingSheet, 'Branding');
 
   // ── Sheet: Modules ──
   const modules = proj.modules ?? {};
-  const modHeader = ['gyro', 'vr', 'deepl_key'];
+  const modHeader = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled', 'deepl_api_key'];
   const modRow = [
-    modules.gyro ? 'true' : 'false',
     modules.vr ? 'true' : 'false',
-    modules.deeplKey ?? '',
+    modules.gyroscope ? 'true' : 'false',
+    modules.fullscreen ? 'true' : 'false',
+    modules.feedbackMailto ?? '',
+    modules.formsEnabled ? 'true' : 'false',
+    modules.deeplApiKey ?? '',
   ];
   const modSheet = XLSX.utils.aoa_to_sheet([modHeader, modRow]);
   XLSX.utils.book_append_sheet(wb, modSheet, 'Modules');
 
-  XLSX.writeFile(wb, result.filePath);
-  return { canceled: false, path: result.filePath };
+  try {
+    XLSX.writeFile(wb, result.filePath);
+    return { canceled: false, path: result.filePath };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { canceled: false, path: '', error: msg };
+  }
+});
+
+// ── Excel template download ────────────────────────────────────────────────────
+
+ipcMain.handle('excel:download-template', async (_e, projectData: unknown) => {
+  const result = await dialog.showSaveDialog({
+    title: 'Download Excel template',
+    defaultPath: 'conchitect-template.xlsx',
+    filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proj = projectData as any;
+  const langs: string[] = (proj?.languages?.available?.length ? proj.languages.available : ['en']);
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Scenes ──
+  const scenesH = [
+    'scene_id', 'slug', 'lat', 'lng', 'altitude', 'heading', 'capture_height', 'category_slugs',
+    ...langs.flatMap((l: string) => [`title_${l}`, `description_${l}`, `alt_text_${l}`]),
+  ];
+  const scenesEx = [
+    '(scene-uuid)', 'lobby', 48.8584, 2.2945, 0, 0, 1.6, 'exterior',
+    ...langs.flatMap(() => ['Lobby', 'Main entrance hall', 'Lobby panorama']),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([scenesH, scenesEx]), 'Scenes');
+
+  // ── Categories ──
+  const catH = ['slug', 'color', 'icon_svg_path', ...langs.map((l: string) => `name_${l}`)];
+  const catEx = ['exterior', '#3B82F6', '', ...langs.map(() => 'Exterior')];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([catH, catEx]), 'Categories');
+
+  // ── Project ──
+  const projH = ['name', 'creator', 'contact_email', 'copyright', 'publication_url', 'short_description'];
+  const projEx = ['My Tour', 'Studio Name', 'contact@studio.com', '© 2026 Studio', 'https://example.com', 'A virtual 360° tour'];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([projH, projEx]), 'Project');
+
+  // ── Hotspots ──
+  const hsH = [
+    'scene_slug', 'hotspot_id', 'type', 'ath', 'atv', 'target_scene_slug', 'url', 'mailto',
+    ...langs.flatMap((l: string) => [`title_${l}`, `label_${l}`, `body_${l}`, `subject_${l}`]),
+  ];
+  const hsEx = [
+    'lobby', '(hotspot-uuid)', 'link', 45, 0, 'garden', '', '',
+    ...langs.flatMap(() => ['To garden', '', '', '']),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hsH, hsEx]), 'Hotspots');
+
+  // ── SEO ──
+  const seoH = ['meta_title', 'meta_description', 'keywords', 'schema_type', 'image_sitemap'];
+  const seoEx = ['My Tour | Virtual Visit', 'Take a virtual tour of...', 'virtual tour, 360, panorama', 'Place', 'true'];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([seoH, seoEx]), 'SEO');
+
+  // ── Branding ──
+  const brandH = ['primary_color', 'accent_color', 'start_scene_slug', ...langs.map((l: string) => `intro_text_${l}`)];
+  const brandEx = ['#1e293b', '#3b82f6', 'lobby', ...langs.map(() => 'Welcome to our tour')];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([brandH, brandEx]), 'Branding');
+
+  // ── Modules ──
+  const modH = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled', 'deepl_api_key'];
+  const modEx = ['false', 'true', 'true', 'contact@example.com', 'false', ''];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([modH, modEx]), 'Modules');
+
+  try {
+    XLSX.writeFile(wb, result.filePath);
+    return { canceled: false, path: result.filePath };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { canceled: false, path: '', error: msg };
+  }
 });
 
 // ── Excel import ──────────────────────────────────────────────────────────────
