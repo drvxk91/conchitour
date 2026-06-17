@@ -151,11 +151,52 @@ after the tile switch to keep lines/circles visible.
 - `onCompileProgress` in preload returns an unsub function so CompileScreen can clean up on unmount
 - `process.resourcesPath` used for krpano path in production builds
 
+## Sprint J — Full krpano integration (a5d2bce)
+
+| Subtask | Status | Notes |
+|---------|--------|-------|
+| Settings persist | DONE | conchitect-settings.json in userData |
+| krpano:validate IPC | DONE | checks 4 required files |
+| compile:run IPC | DONE | copies from installation, tile gen via krpanotools, vtour skin |
+| generateKrpanoXml | DONE | vtour skin, sphere/cube, link/text/external/video hotspots |
+| .htaccess, _redirects, vercel.json, web.config | DONE | |
+| 404.html, per-scene deep-link pages | DONE | |
+| CompileScreen | DONE | krpano path, validation, pre-flight, progress log, result |
+
+## Sprint K — Project format + tile cache + bugs + Excel + progress UI (2026-06-17)
+
+| Part | Subtask | Status | Notes | Commit |
+|------|---------|--------|-------|--------|
+| 6.1 | Preview hotspot CSS | DONE | Selectors changed from `.preview-hs span.pnlm-hotspot-base` (wrong) to `.pnlm-hotspot-base.preview-hs` (compound class on div) | 37ba0f6 |
+| 6.2 | Navigate mode link hotspot navigation | DONE | Click now calls `setActiveScene(targetSceneId)`; added `setActiveScene` to SceneViewer destructure | 37ba0f6 |
+| 6.3 | Set View (bookmark) | DONE | Already fixed in Sprint I | — |
+| 6.4 | Map pin opacity | DONE | Non-active pins dimmed to 60% opacity, thinner border | 37ba0f6 |
+| 4 | Compile robustness | DONE | `backgroundThrottling:false`; CompileRunState in main; compile:get-state + compile:cancel IPC; CompileScreen restores on mount; Cancel button; isCompiling badge in Sidebar | f86dc4d |
+| 1 | .conchitect project format | DONE | `sourceFile?` in SceneMedia; project:new/open/save/save-as IPC; Electron File menu; isDirty + projectDir in store; TitleBar dirty indicator; App.tsx menu handlers | 7db2912 |
+| 2 | Tile cache | DONE | fileHash (MD5), hasValidCache, copyCacheTo, buildCacheFor; compile:run uses .conchitect/cache/tiles/; Force regenerate checkbox | 96ecc1e |
+| 5 | Stepped progress UI | DONE | 9 named steps (COMPILE_STEPS), CheckCircle/Loader/Circle per step, raw log in collapsible details | 34a3a13 |
+| 3 | Excel multi-sheet | DONE | Added Hotspots, SEO, Branding, Modules sheets to export | 9f6fe85 |
+
+### Sprint K — Test results
+
+- **Type errors:** 0
+- **Unit tests:** 98 / 98 passed
+- **check:no-js:** (inherited from Sprint I, still valid)
+
+### Sprint K — Technical decisions
+
+**Part 1 (project format)**: `saveProject` IPC signature changed from `(path, data)` to `(data)` — currentProjectDir is now server-side state. The old `loadProject(path)` binding is kept for backward compat but project:open now does the dialog + resolution internally. `withHistory` returns `isDirty: true` — one place to mark mutations instead of touching every action individually.
+
+**Part 2 (tile cache)**: Cache keyed by MD5 of source file. `__forceRegenTiles` passed as a side-channel key on the project object to avoid adding a new IPC argument. Cache stored at `<projectDir>/cache/tiles/<slug>/`.
+
+**Part 4 (compile cancel)**: `compileCancelToken` is a plain object ref that the tile generation loop checks between scenes. Canceling mid-tile-generation waits for the current scene to finish before stopping (krpanotools process is not killed).
+
+**Part 5 (stepped UI)**: `msgToStep()` maps substring matches from progress messages to step IDs. This is fragile if progress messages change but avoids coupling main.ts and renderer with an explicit step enum. Steps show as done when their `ok` message is received; the `completedStepsRef` is not reactive (avoiding re-renders on every log line).
+
 ## Suggested Next Sprint
 
-All 11 screens now have functional implementations. Suggested work:
-- End-to-end manual test of the full compile → upload → view flow
-- Tile generation integration (sharp pipeline, currently returns placeholder)
-- Deep-link support: `?scene=slug` query param parsed by the compiled tour's HTML
 - DeepL auto-translation wiring in Languages screen
-- Playwright E2E tests for the compile flow
+- ImportScreen: copy photos to `sources/` when projectDir is set (uses project:copy-source IPC)
+- Playwright E2E tests for the full compile flow
+- Manual test: open a real project file, verify sourceFile round-trip
+- Tile cache invalidation test: change a photo, re-compile, verify cache miss
