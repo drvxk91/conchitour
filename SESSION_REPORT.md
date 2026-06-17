@@ -104,11 +104,58 @@ Esri World Imagery used for satellite (public CDN, no API key). The tile layer r
 stored to allow removal before adding the new one. Overlay layers are brought to front
 after the tile switch to keep lines/circles visible.
 
-## Suggested Next Sprint: H — Compile Pipeline
+## Sprint I — Bugs + Deep Links (2026-06-17)
 
-The last major stub is `CompileScreen.tsx`. Generates the static output folder:
-1. krpano XML from project data (scenes, hotspots, defaultView, heading)
-2. HTML shell with branding colors, OG meta, share bar, lang switcher
-3. Copy media files + tiles
-4. `compile:run` IPC handler with progress streaming
-5. Output structure: `dist/index.html`, `dist/tour.xml`, `dist/media/`, `dist/tiles/`, `dist/krpano/`
+| Section | Subtask | Status | Notes | Commit |
+|---------|---------|--------|-------|--------|
+| 1 | MapScreen crash on mount | DONE | `bringToFront()` doesn't exist on `L.LayerGroup`; removed both calls — Leaflet panes handle z-order automatically | 43a4cd8 |
+| 2 | Remove .js shadow files | DONE | Deleted all src/**/*.js; added gitignore rule; added `check:no-js` script | 33b2a44 |
+| 3 | Set as default view | DONE | Bookmark button in toolbar captures yaw/pitch/fov → scene.defaultView; toast overlay; preview window now opens at defaultView | e8a615a |
+| 4 | Deep links /scene/slug | DONE | `generateScenePageHtml()` produces depth-2 HTML using `onready` to load specific scene; sitemap lists all /scene/<slug>/ URLs | bf63521 |
+| 5.1 | DeepL wiring | SKIPPED | Out of scope for this sprint |  |
+| 5.2 | Tile generation (sharp) | SKIPPED | Out of scope for this sprint |  |
+| 5.3 | E2E smoke tests | SKIPPED | Out of scope for this sprint |  |
+
+### Sprint I — Technical details
+
+**Section 1 root cause**: `linesLayerRef` and `circlesLayerRef` are `L.LayerGroup` instances. `bringToFront()` is defined only on `L.Path` and `L.FeatureGroup`. Leaflet's internal pane system (`overlayPane`, z-index 400 > `tilePane`, z-index 200) already ensures vector layers stay above tile layers regardless of insertion order.
+
+**Section 2**: ~45 stale `.js` files existed in `src/` as untracked files. Vite's module resolution picks `.js` before `.tsx` when both exist at the same path, causing compiled placeholder screens to shadow real implementations. The `.gitignore` rule `src/**/*.js` + `check:no-js` script prevents recurrence.
+
+**Section 3**: `handleSetDefaultView` in `ScenesScreen` reads `pannellumGetYaw/Pitch/Fov` refs and calls `updateScene({ defaultView: {hlookat, vlookat, fov} })`. Apply-on-scene-switch was already implemented in a prior sprint. `PreviewMode` in `App.tsx` now spreads `{ yaw: dv.hlookat, pitch: dv.vlookat, hfov: dv.fov }` into the Pannellum config.
+
+**Section 4**: Per-scene HTML uses `onready: function(krp){ krp.call("loadscene(scene_NAME,null,MERGE,BLEND(0.5));") }` — this overrides the default `onstart` scene from `tour.xml` without requiring any change to the XML format. No query params needed. Asset paths use `../../` prefix (depth 2 from output root).
+
+### Test results — Sprint I
+
+- **Type errors:** 0
+- **Unit tests:** 98 / 98 passed
+- **check:no-js:** PASS
+
+## Sprint H — Compile Pipeline (d7be581)
+
+| Subtask | Status | Notes |
+|---------|--------|-------|
+| compile:run IPC | DONE | copies krpano, images, generates xml+html+sitemap, streams progress |
+| tour.xml generation | DONE | scenes, views, hotspots (link/text/external/video), northoffset, styles |
+| index.html generation | DONE | OG meta, share bar, copyright, embedpano call |
+| sitemap.xml | DONE | generated when seo.imageSitemap is true + publicationUrl set |
+| dialog:openFolder IPC | DONE | native folder picker dialog |
+| shell:openFolder IPC | DONE | opens output folder in Explorer/Finder |
+| CompileScreen.tsx | DONE | folder picker, pre-flight checklist, progress log, result banner |
+
+### Technical decisions
+- `generateKrpanoXml`: slugs become `scene_{slug_with_underscores}`, hotspot IDs become `hs_{uuid_no_dashes}`
+- `northoffset` on `<sphere>` uses `scene.heading` directly (our `heading` = krpano `northoffset`)
+- Form hotspots omitted from XML export (require server-side handling)
+- `onCompileProgress` in preload returns an unsub function so CompileScreen can clean up on unmount
+- `process.resourcesPath` used for krpano path in production builds
+
+## Suggested Next Sprint
+
+All 11 screens now have functional implementations. Suggested work:
+- End-to-end manual test of the full compile → upload → view flow
+- Tile generation integration (sharp pipeline, currently returns placeholder)
+- Deep-link support: `?scene=slug` query param parsed by the compiled tour's HTML
+- DeepL auto-translation wiring in Languages screen
+- Playwright E2E tests for the compile flow
