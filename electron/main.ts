@@ -894,8 +894,104 @@ async function copyDir(src: string, dest: string): Promise<number> {
   return count;
 }
 
+// ── Multires tile detection ───────────────────────────────────────────────────
+
+function readJpegDimensions(data: Buffer): { width: number; height: number } {
+  if (data.length < 2 || data[0] !== 0xFF || data[1] !== 0xD8) return { width: 0, height: 0 };
+  let i = 2;
+  while (i + 3 < data.length) {
+    if (data[i] !== 0xFF) break;
+    const marker = data[i + 1];
+    const segLen = data.readUInt16BE(i + 2);
+    if (marker >= 0xC0 && marker <= 0xC3 && i + 8 < data.length) {
+      return { height: data.readUInt16BE(i + 5), width: data.readUInt16BE(i + 7) };
+    }
+    i += 2 + segLen;
+  }
+  return { width: 0, height: 0 };
+}
+
+interface TileLevel {
+  num: number;
+  tiledimagewidth: number;
+  tiledimageheight: number;
+  url: string;
+}
+
+interface TileInfo {
+  tileSize: number;
+  levels: TileLevel[]; // highest level first (full-res → preview)
+}
+
+// Inspects the tile directory produced by krpanotools and returns multires params.
+// File layout: <slug>.tiles/<face>/l<N>/<row>/l<N>_<face>_<row>_<col>.jpg
+// Edge tiles are smaller than tileSize, so we sum actual tile dimensions.
+async function detectTileInfo(panosDir: string, slug: string): Promise<TileInfo | null> {
+  const facesDir = path.join(panosDir, `${slug}.tiles`, 'f');
+  try { await fs.access(facesDir); } catch { return null; }
+
+  const levelDirs = (await fs.readdir(facesDir))
+    .filter(d => /^l\d+$/.test(d))
+    .sort((a, b) => parseInt(b.slice(1)) - parseInt(a.slice(1))); // highest level first
+  if (levelDirs.length === 0) return null;
+
+  // Detect tileSize from the first interior tile (top-left is always full-size)
+  let tileSize = 512;
+  try {
+    const rows0 = (await fs.readdir(path.join(facesDir, levelDirs[0]))).filter(r => /^\d+$/.test(r)).sort();
+    if (rows0.length > 0) {
+      const files0 = (await fs.readdir(path.join(facesDir, levelDirs[0], rows0[0]))).filter(f => f.endsWith('.jpg')).sort();
+      if (files0.length > 0) {
+        const data = await fs.readFile(path.join(facesDir, levelDirs[0], rows0[0], files0[0]));
+        const dims = readJpegDimensions(data);
+        if (dims.width > 0) tileSize = dims.width;
+      }
+    }
+  } catch { /* keep default 512 */ }
+
+  const levels: TileLevel[] = [];
+  for (const levelDir of levelDirs) {
+    const levelNum = parseInt(levelDir.slice(1));
+    try {
+      const rows = (await fs.readdir(path.join(facesDir, levelDir)))
+        .filter(r => /^\d+$/.test(r))
+        .sort((a, b) => +a - +b);
+      if (rows.length === 0) continue;
+
+      const firstRowFiles = (await fs.readdir(path.join(facesDir, levelDir, rows[0])))
+        .filter(f => f.endsWith('.jpg')).sort();
+      if (firstRowFiles.length === 0) continue;
+
+      // totalWidth = (numCols-1)*tileSize + lastColWidth (edge tile may be smaller)
+      const lastColData = await fs.readFile(
+        path.join(facesDir, levelDir, rows[0], firstRowFiles[firstRowFiles.length - 1]),
+      );
+      const lastColDims = readJpegDimensions(lastColData);
+      const totalWidth = (firstRowFiles.length - 1) * tileSize + (lastColDims.width > 0 ? lastColDims.width : tileSize);
+
+      // totalHeight = (numRows-1)*tileSize + lastRowHeight (edge row may be shorter)
+      const lastRowFiles = (await fs.readdir(path.join(facesDir, levelDir, rows[rows.length - 1])))
+        .filter(f => f.endsWith('.jpg')).sort();
+      const lastRowData = await fs.readFile(
+        path.join(facesDir, levelDir, rows[rows.length - 1], lastRowFiles[0]),
+      );
+      const lastRowDims = readJpegDimensions(lastRowData);
+      const totalHeight = (rows.length - 1) * tileSize + (lastRowDims.height > 0 ? lastRowDims.height : tileSize);
+
+      levels.push({
+        num: levelNum,
+        tiledimagewidth: totalWidth,
+        tiledimageheight: totalHeight,
+        url: `panos/${slug}.tiles/%s/${levelDir}/%v/${levelDir}_%s_%v_%h.jpg`,
+      });
+    } catch { /* skip this level */ }
+  }
+
+  return levels.length > 0 ? { tileSize, levels } : null;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function generateKrpanoXml(project: any, tiledSlugs: Set<string>): string {
+function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | null>): string {
   const lang: string = project.languages?.default || 'en';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scenes: any[] = project.scenes || [];
@@ -952,10 +1048,11 @@ function generateKrpanoXml(project: any, tiledSlugs: Set<string>): string {
     const vlookat: number = dv?.vlookat ?? 0;
     const fov: number = dv?.fov ?? 90;
     const heading: number = scene.heading ?? 0;
-    const useTiles = tiledSlugs.has(scene.slug);
+    const useTiles = tiledScenes.has(scene.slug);
+    const tileInfo = useTiles ? (tiledScenes.get(scene.slug) ?? null) : null;
     const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
 
-    const thumbAttr = useTiles ? ` thumburl="panos/${scene.slug}.tiles/thumb.jpg"` : '';
+    const thumbAttr = useTiles ? ` thumburl="panos/${scene.slug}.tiles/preview.jpg"` : '';
     const latAttr   = scene.geo?.lat != null ? ` lat="${scene.geo.lat}"` : '';
     const lngAttr   = scene.geo?.lng != null ? ` lng="${scene.geo.lng}"` : '';
 
@@ -964,7 +1061,17 @@ function generateKrpanoXml(project: any, tiledSlugs: Set<string>): string {
 
     if (useTiles) {
       xml += `    <preview url="panos/${scene.slug}.tiles/preview.jpg"/>\n`;
-      xml += `    <image><cube url="panos/${scene.slug}.tiles/pano_%s.jpg"/></image>\n`;
+      if (tileInfo && tileInfo.levels.length > 0) {
+        xml += `    <image type="CUBE" multires="true" tilesize="${tileInfo.tileSize}" baseindex="1">\n`;
+        for (const lvl of tileInfo.levels) {
+          xml += `      <level tiledimagewidth="${lvl.tiledimagewidth}" tiledimageheight="${lvl.tiledimageheight}">\n`;
+          xml += `        <cube url="${lvl.url}"/>\n`;
+          xml += `      </level>\n`;
+        }
+        xml += `    </image>\n`;
+      } else {
+        xml += `    <image><cube url="panos/${scene.slug}.tiles/pano_%s.jpg"/></image>\n`;
+      }
     } else {
       xml += `    <image><sphere url="media/${xmlEsc(scene.slug)}${xmlEsc(ext)}" northoffset="${heading}"/></image>\n`;
     }
@@ -1396,7 +1503,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
 
     // ── Tile generation via krpanotools ────────────────────────────────────
     checkCancel();
-    const tiledSlugs = new Set<string>();
+    const tiledScenes = new Map<string, TileInfo | null>();
     if (settings.useKrpanoTiles) {
       const toolPath = path.join(kPath, 'krpanotools.exe');
       let toolOk = false;
@@ -1445,7 +1552,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
             if (!forceRegenTiles && cacheDir && srcHash && await hasValidCache(cacheDir, scene.slug, srcHash)) {
               progress(`Tiles for "${scene.slug}" — from cache`, 'ok');
               await copyCacheTo(cacheDir, scene.slug, panosDir);
-              tiledSlugs.add(scene.slug);
+              tiledScenes.set(scene.slug, await detectTileInfo(panosDir, scene.slug));
               continue;
             }
 
@@ -1509,7 +1616,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
             });
 
             const generatedTilesDir = path.join(panosDir, `${scene.slug}.tiles`);
-            tiledSlugs.add(scene.slug);
+            tiledScenes.set(scene.slug, await detectTileInfo(panosDir, scene.slug));
             progress(`Tiles ready for "${scene.slug}"`, 'ok');
 
             // Cache the result
@@ -1529,7 +1636,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     }
 
     // ── tour.xml ───────────────────────────────────────────────────────────
-    const tourXml = generateKrpanoXml(project, tiledSlugs);
+    const tourXml = generateKrpanoXml(project, tiledScenes);
     await fs.writeFile(path.join(outputDir, 'tour.xml'), tourXml, 'utf8');
     progress('tour.xml generated', 'ok');
 
