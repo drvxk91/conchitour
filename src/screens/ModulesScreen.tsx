@@ -79,8 +79,8 @@ export function ModulesScreen() {
           Icon={MessageSquare}
           label="Feedback button"
           description="Shows a feedback/contact button that opens a mailto: link."
-          enabled={!!m.feedbackMailto}
-          onChange={(v) => updateModules({ feedbackMailto: v ? '' : undefined })}
+          enabled={m.feedbackMailto !== undefined}
+          onChange={(v) => updateModules({ feedbackMailto: v ? (m.feedbackMailto ?? '') : undefined })}
         >
           <div className="space-y-1">
             <label className="text-[10px] uppercase tracking-wide text-ink-faded font-medium">Email address</label>
