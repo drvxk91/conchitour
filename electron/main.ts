@@ -752,6 +752,44 @@ ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
   return { valid: missing.length === 0, missing };
 });
 
+ipcMain.handle('krpano:license-status', async (_e, krpanoPath: string) => {
+  const licensePath = path.join(krpanoPath, 'krpanolicense.xml');
+  try {
+    await fs.access(licensePath);
+    return { present: true, path: licensePath };
+  } catch {
+    return { present: false, path: licensePath };
+  }
+});
+
+ipcMain.handle('krpano:register', async (_e, krpanoPath: string, code: string) => {
+  const toolPath = path.join(krpanoPath, 'krpanotools.exe');
+  // Concatenate the multiline code into one string (krpanotools expects no linebreaks)
+  const cleanCode = code.replace(/\s+/g, '');
+  if (!cleanCode) return { ok: false, message: 'Registration code is empty.' };
+
+  return new Promise<{ ok: boolean; message: string }>((resolve) => {
+    const proc = spawn(toolPath, ['register', cleanCode], {
+      cwd: krpanoPath,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let output = '';
+    proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
+    proc.stderr.on('data', (d: Buffer) => { output += d.toString(); });
+
+    proc.on('close', (exitCode) => {
+      const msg = output.trim() || (exitCode === 0 ? 'License activated.' : 'Registration failed — check your code.');
+      resolve({ ok: exitCode === 0, message: msg });
+    });
+
+    proc.on('error', (err) => {
+      resolve({ ok: false, message: `Could not launch krpanotools: ${err.message}` });
+    });
+  });
+});
+
 // ── Tile cache helpers ────────────────────────────────────────────────────────
 
 async function fileHash(filePath: string): Promise<string> {

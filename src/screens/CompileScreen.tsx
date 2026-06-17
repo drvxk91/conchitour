@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
-  Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown,
+  Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown, Key,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
-import type { CompileResult, ConchitectSettings, KrpanoValidationResult, TileProgressData } from '../../electron/preload';
+import type { CompileResult, ConchitectSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData } from '../../electron/preload';
 
 interface LogEntry {
   msg: string;
@@ -51,6 +51,12 @@ export function CompileScreen() {
   const [validation, setValidation]             = useState<KrpanoValidationResult | null>(null);
   const [validating, setValidating]             = useState(false);
 
+  // License state
+  const [licenseStatus, setLicenseStatus]       = useState<KrpanoLicenseStatus | null>(null);
+  const [licenseCode, setLicenseCode]           = useState('');
+  const [activating, setActivating]             = useState(false);
+  const [licenseResult, setLicenseResult]       = useState<KrpanoRegisterResult | null>(null);
+
   // Compile state
   const [outputDir, setOutputDir]         = useState('');
   const [log, setLog]                     = useState<LogEntry[]>([]);
@@ -69,6 +75,7 @@ export function CompileScreen() {
       setSettings(s);
       setKrpanoPathDraft(s.krpanoPath);
       window.conchitect.krpanoValidate(s.krpanoPath).then(setValidation);
+      if (s.krpanoPath) window.conchitect.krpanoLicenseStatus(s.krpanoPath).then(setLicenseStatus);
     });
 
     window.conchitect.compileGetState().then((state) => {
@@ -144,8 +151,24 @@ export function CompileScreen() {
     patchSettings({ krpanoPath: krpanoPathDraft });
     const r = await window.conchitect.krpanoValidate(krpanoPathDraft);
     setValidation(r);
+    const ls = await window.conchitect.krpanoLicenseStatus(krpanoPathDraft);
+    setLicenseStatus(ls);
     setValidating(false);
   }, [krpanoPathDraft, patchSettings]);
+
+  const handleActivateLicense = useCallback(async () => {
+    if (!settings?.krpanoPath || !licenseCode.trim()) return;
+    setActivating(true);
+    setLicenseResult(null);
+    const res = await window.conchitect.krpanoRegister(settings.krpanoPath, licenseCode);
+    setLicenseResult(res);
+    if (res.ok) {
+      const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
+      setLicenseStatus(ls);
+      setLicenseCode('');
+    }
+    setActivating(false);
+  }, [settings?.krpanoPath, licenseCode]);
 
   const handlePickFolder = useCallback(async () => {
     const dir = await window.conchitect.showFolderDialog();
@@ -269,6 +292,61 @@ export function CompileScreen() {
             </div>
           )}
         </section>
+
+        {/* ── License ──────────────────────────────────────────────────── */}
+        {settings?.krpanoPath && licenseStatus !== null && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key size={14} className="text-ink-soft" />
+                <span className="text-sm font-medium text-ink-base">krpano license</span>
+              </div>
+              <span className={clsx(
+                'text-xs px-2 py-0.5 rounded-full font-medium',
+                licenseStatus.present
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-amber-50 text-amber-700'
+              )}>
+                {licenseStatus.present ? '✓ Activated' : 'Not activated'}
+              </span>
+            </div>
+
+            {!licenseStatus.present && (
+              <div className="space-y-2 pl-5">
+                <p className="text-xs text-ink-faded">
+                  Paste your registration code from the krpano purchase email to remove the watermark.
+                </p>
+                <textarea
+                  value={licenseCode}
+                  onChange={(e) => setLicenseCode(e.target.value)}
+                  placeholder="Paste your registration code here…"
+                  rows={5}
+                  className="w-full px-3 py-2 rounded-md border border-line-strong bg-paper-soft text-xs font-mono text-ink-base focus:outline-none focus:border-blue-400 resize-none"
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleActivateLicense}
+                    disabled={activating || !licenseCode.trim()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {activating
+                      ? <Loader2 size={13} className="animate-spin" />
+                      : <Key size={13} />}
+                    Activate
+                  </button>
+                  {licenseResult && (
+                    <span className={clsx(
+                      'text-xs',
+                      licenseResult.ok ? 'text-emerald-600' : 'text-red-500'
+                    )}>
+                      {licenseResult.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* ── Output folder ────────────────────────────────────────────── */}
         <section className="space-y-2">

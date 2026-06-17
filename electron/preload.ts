@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   settingsGet: (): Promise<ConchitectSettings> => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch: Partial<ConchitectSettings>): Promise<boolean> => ipcRenderer.invoke('settings:set', patch),
   krpanoValidate: (krpanoPath: string): Promise<KrpanoValidationResult> => ipcRenderer.invoke('krpano:validate', krpanoPath),
+  krpanoLicenseStatus: (krpanoPath: string): Promise<KrpanoLicenseStatus> => ipcRenderer.invoke('krpano:license-status', krpanoPath),
+  krpanoRegister: (krpanoPath: string, code: string): Promise<KrpanoRegisterResult> => ipcRenderer.invoke('krpano:register', krpanoPath, code),
   // Compile pipeline
   showFolderDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
   compileRun: (projectData: unknown, outputDir: string): Promise<CompileResult> => ipcRenderer.invoke('compile:run', projectData, outputDir),
@@ -103,6 +105,16 @@ export interface KrpanoValidationResult {
   missing: string[];
 }
 
+export interface KrpanoLicenseStatus {
+  present: boolean;
+  path: string;
+}
+
+export interface KrpanoRegisterResult {
+  ok: boolean;
+  message: string;
+}
+
 export interface CompileResult {
   ok: boolean;
   outputDir?: string;
@@ -159,6 +171,8 @@ declare global {
       settingsGet: () => Promise<ConchitectSettings>;
       settingsSet: (patch: Partial<ConchitectSettings>) => Promise<boolean>;
       krpanoValidate: (krpanoPath: string) => Promise<KrpanoValidationResult>;
+      krpanoLicenseStatus: (krpanoPath: string) => Promise<KrpanoLicenseStatus>;
+      krpanoRegister: (krpanoPath: string, code: string) => Promise<KrpanoRegisterResult>;
       showFolderDialog: () => Promise<string | null>;
       compileRun: (projectData: unknown, outputDir: string) => Promise<CompileResult>;
       onCompileProgress: (cb: (msg: string, status: string) => void) => () => void;
