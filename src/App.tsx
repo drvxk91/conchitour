@@ -139,16 +139,16 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
   return (
     <div className="w-screen h-screen bg-black relative">
       <style>{`
-        .preview-hs span.pnlm-hotspot-base {
+        .pnlm-hotspot-base.preview-hs {
           background: rgba(255,255,255,0.15) !important;
           border: 2px solid rgba(255,255,255,0.7) !important;
-          border-radius: 50%;
+          border-radius: 50% !important;
           width: 24px !important; height: 24px !important;
           cursor: pointer;
         }
-        .preview-hs span.pnlm-hotspot-base:hover { background: rgba(255,255,255,0.35) !important; }
-        .preview-hs-link span.pnlm-hotspot-base { border-color: #60a5fa !important; background: rgba(96,165,250,0.25) !important; cursor: pointer; }
-        .preview-hs-link span.pnlm-hotspot-base:hover { background: rgba(96,165,250,0.5) !important; }
+        .pnlm-hotspot-base.preview-hs:hover { background: rgba(255,255,255,0.35) !important; }
+        .pnlm-hotspot-base.preview-hs-link { border-color: #60a5fa !important; background: rgba(96,165,250,0.25) !important; cursor: pointer; }
+        .pnlm-hotspot-base.preview-hs-link:hover { background: rgba(96,165,250,0.5) !important; }
         .pnlm-tooltip span { white-space: nowrap; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
       `}</style>
       <div ref={containerRef} className="w-full h-full" data-testid="preview-viewer" />

@@ -87,9 +87,11 @@ function MapView({ scenes, categories, activeSceneId, showLines, showRadii, tile
       html: `<div class="${isActive ? 'map-pin-active' : ''}" style="
         width:28px;height:28px;border-radius:50%;
         background:${color};
-        border:3px solid ${isActive ? 'white' : 'rgba(255,255,255,0.55)'};
-        box-shadow:0 2px 6px rgba(0,0,0,0.45)${isActive ? ',0 0 0 2px ' + color : ''};
+        border:3px solid ${isActive ? 'white' : 'rgba(255,255,255,0.35)'};
+        box-shadow:0 2px 6px rgba(0,0,0,0.45);
+        opacity:${isActive ? '1' : '0.6'};
         cursor:grab;
+        transition:opacity 0.15s,border-color 0.15s;
       "></div>`,
     });
   }

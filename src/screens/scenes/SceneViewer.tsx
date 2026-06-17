@@ -86,7 +86,7 @@ export function SceneViewer({
   pannellumGetYaw, pannellumGetPitch, pannellumGetFov,
   pannellumSetYaw, pannellumSetPitch, pannellumSetFov,
 }: Props) {
-  const { project, activeSceneId, activeHotspotId, setActiveHotspot, updateHotspot } = useProject();
+  const { project, activeSceneId, activeHotspotId, setActiveHotspot, setActiveScene, updateHotspot } = useProject();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Drag state for hotspot repositioning
@@ -521,7 +521,11 @@ export function SceneViewer({
             onClick={(e) => {
               e.stopPropagation();
               if (draggedRef.current) { draggedRef.current = false; return; }
-              setActiveHotspot(isSelected ? null : h.id);
+              if (h.type === 'link' && (h as LinkHotspot).targetSceneId) {
+                setActiveScene((h as LinkHotspot).targetSceneId);
+              } else {
+                setActiveHotspot(isSelected ? null : h.id);
+              }
             }}
           >
             <div
