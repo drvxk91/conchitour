@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   krpanoRegister: (krpanoPath: string, code: string): Promise<KrpanoRegisterResult> => ipcRenderer.invoke('krpano:register', krpanoPath, code),
   // Compile pipeline
   showFolderDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
+  showProjectFolderDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openProjectFolder'),
+  getDefaultOutputDir: (): Promise<string | null> => ipcRenderer.invoke('project:default-output-dir'),
   compileRun: (projectData: unknown, outputDir: string): Promise<CompileResult> => ipcRenderer.invoke('compile:run', projectData, outputDir),
   onCompileProgress: (cb: (msg: string, status: string) => void): (() => void) => {
     const handler = (_event: unknown, data: { msg: string; status: string }) => cb(data.msg, data.status);
@@ -202,6 +204,8 @@ declare global {
       krpanoLicenseStatus: (krpanoPath: string) => Promise<KrpanoLicenseStatus>;
       krpanoRegister: (krpanoPath: string, code: string) => Promise<KrpanoRegisterResult>;
       showFolderDialog: () => Promise<string | null>;
+      showProjectFolderDialog: () => Promise<string | null>;
+      getDefaultOutputDir: () => Promise<string | null>;
       compileRun: (projectData: unknown, outputDir: string) => Promise<CompileResult>;
       onCompileProgress: (cb: (msg: string, status: string) => void) => () => void;
       compileGetState: () => Promise<CompileRunState | null>;

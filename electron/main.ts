@@ -1986,6 +1986,23 @@ ipcMain.handle('dialog:openFolder', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('dialog:openProjectFolder', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select project location',
+    buttonLabel: 'Choose location',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('project:default-output-dir', async () => {
+  if (!currentProjectDir) return null;
+  // Suggest a sibling folder: <parent>/<projectSlug>-web
+  const parent = path.dirname(currentProjectDir);
+  const base   = path.basename(currentProjectDir).replace(/\.conchitect$/, '');
+  return path.join(parent, `${base}-web`);
+});
+
 ipcMain.handle('shell:openFolder', async (_e, folderPath: string) => {
   await shell.openPath(folderPath);
 });

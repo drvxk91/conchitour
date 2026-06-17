@@ -17,7 +17,7 @@ export function WelcomeScreen() {
   const confirmNew = useCallback(async () => {
     const name = nameValue.trim();
     if (!name) return;
-    const folder = await window.conchitect.showFolderDialog();
+    const folder = await window.conchitect.showProjectFolderDialog();
     if (!folder) return;
     setNaming(false);
     const result = await window.conchitect.newProject(folder, name);
