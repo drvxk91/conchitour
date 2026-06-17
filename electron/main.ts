@@ -1077,7 +1077,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const hs of (scene.hotspots as any[])) {
+    for (const hs of ((scene.hotspots ?? []) as any[])) {
       const hsName = hotspotXmlName(hs.id);
       const ath: string = (hs.ath as number).toFixed(2);
       const atv: string = (hs.atv as number).toFixed(2);
@@ -1087,8 +1087,9 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
         const targetScene = scenes.find((s: any) => s.id === hs.targetSceneId);
         if (!targetScene) continue;
         const linkedScene = sceneXmlName(targetScene.slug);
-        // No style — vtour skin applies its own arrow image to linked hotspots
-        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" linkedscene="${linkedScene}"/>\n`;
+        const tooltip = xmlEsc(loc(targetScene.title, lang) || targetScene.slug);
+        // skin_hotspotstyle provides the arrow PNG and its own onclick navigation handler
+        xml += `    <hotspot name="${hsName}" style="skin_hotspotstyle" ath="${ath}" atv="${atv}" linkedscene="${linkedScene}" tooltip="${tooltip}"/>\n`;
       } else if (hs.type === 'text') {
         const label = xmlEsc(loc(hs.title, lang) || 'Info');
         xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_text" text="${label}"/>\n`;
@@ -1550,8 +1551,16 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
 
             // Check cache first (unless force-regen)
             if (!forceRegenTiles && cacheDir && srcHash && await hasValidCache(cacheDir, scene.slug, srcHash)) {
-              progress(`Tiles for "${scene.slug}" — from cache`, 'ok');
-              await copyCacheTo(cacheDir, scene.slug, panosDir);
+              // If tiles already exist in the output folder from a previous compile, skip the copy
+              const outTilesDir = path.join(panosDir, `${scene.slug}.tiles`);
+              let alreadyInOutput = false;
+              try { await fs.access(path.join(outTilesDir, 'f')); alreadyInOutput = true; } catch { /* not there */ }
+              if (alreadyInOutput) {
+                progress(`Tiles for "${scene.slug}" — already in output, skipped`, 'ok');
+              } else {
+                progress(`Tiles for "${scene.slug}" — from cache`, 'ok');
+                await copyCacheTo(cacheDir, scene.slug, panosDir);
+              }
               tiledScenes.set(scene.slug, await detectTileInfo(panosDir, scene.slug));
               continue;
             }
