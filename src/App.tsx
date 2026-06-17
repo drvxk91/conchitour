@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { TitleBar } from '@/components/shell/TitleBar';
 import { ScreenRouter } from '@/components/shell/ScreenRouter';
+import { WelcomeScreen } from '@/screens/WelcomeScreen';
 import { toLocalUrl } from '@/lib/local-url';
 import { useProject } from '@/store/project';
 import type { Scene, LinkHotspot, ExternalHotspot, FormHotspot, Project } from '@/types';
@@ -244,6 +245,17 @@ export default function App() {
     const heading = Number(params.get('heading') ?? 0);
     return <PreviewMode initialSourcePath={previewPath} initialHeading={heading} />;
   }
+  if (activeScreen === 'welcome') {
+    return (
+      <div className="h-screen flex flex-col">
+        <TitleBar />
+        <div className="flex-1 overflow-hidden min-h-0">
+          <WelcomeScreen />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col">
       <TitleBar />

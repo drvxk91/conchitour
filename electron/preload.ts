@@ -61,6 +61,10 @@ contextBridge.exposeInMainWorld('conchitect', {
     return () => ipcRenderer.removeListener('compile:tile-progress', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
   },
   openFolder: (folderPath: string): Promise<void> => ipcRenderer.invoke('shell:openFolder', folderPath),
+  tourServerStart: (outputDir: string, defaultLang: string): Promise<TourServerResult> => ipcRenderer.invoke('tour-server:start', outputDir, defaultLang),
+  tourServerStop: (): Promise<boolean> => ipcRenderer.invoke('tour-server:stop'),
+  tourServerStatus: (): Promise<TourServerStatus | null> => ipcRenderer.invoke('tour-server:status'),
+  openUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:openUrl', url),
 });
 
 export interface PhotoExif {
@@ -130,7 +134,21 @@ export interface CompileResult {
   outputDir?: string;
   fileCount?: number;
   sizeBytes?: number;
+  previewUrl?: string;
   error?: string;
+}
+
+export interface TourServerResult {
+  ok: boolean;
+  port?: number;
+  url?: string;
+  error?: string;
+}
+
+export interface TourServerStatus {
+  port: number;
+  url: string;
+  dir: string;
 }
 
 export interface TileProgressData {
@@ -191,6 +209,10 @@ declare global {
       onCompileDone: (cb: (result: CompileResult) => void) => () => void;
       onTileProgress: (cb: (data: TileProgressData) => void) => () => void;
       openFolder: (folderPath: string) => Promise<void>;
+      tourServerStart: (outputDir: string, defaultLang: string) => Promise<TourServerResult>;
+      tourServerStop: () => Promise<boolean>;
+      tourServerStatus: () => Promise<TourServerStatus | null>;
+      openUrl: (url: string) => Promise<void>;
     };
   }
 }

@@ -625,10 +625,19 @@ export function CompileScreen() {
                       {result.fileCount} files — {(result.sizeBytes / 1048576).toFixed(1)} MB
                     </p>
                   )}
-                  <p className="text-xs text-emerald-600 mt-1 font-mono">
-                    cd &quot;{result.outputDir}&quot; &amp;&amp; npm install &amp;&amp; node server.js
-                  </p>
                 </div>
+                {result.previewUrl && (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                    <span className="text-xs text-emerald-700 font-mono flex-1 truncate">{result.previewUrl}</span>
+                    <button
+                      onClick={() => window.conchitect.openUrl(result.previewUrl!)}
+                      className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors shrink-0"
+                    >
+                      <ExternalLink size={11} />
+                      Open
+                    </button>
+                  </div>
+                )}
                 <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => window.conchitect.openFolder(result.outputDir!)}
@@ -645,6 +654,9 @@ export function CompileScreen() {
                     {copied ? 'Copied!' : 'Copy path'}
                   </button>
                 </div>
+                <p className="text-xs text-emerald-600/70 font-mono">
+                  Deploy: cd &quot;{result.outputDir}&quot; &amp;&amp; npm install &amp;&amp; node server.js
+                </p>
               </div>
             ) : (
               <p className="text-sm font-medium text-red-700">

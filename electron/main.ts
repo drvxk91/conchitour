@@ -35,6 +35,76 @@ async function createWindow() {
 
 let fileServerPort = 0;
 
+// ── Tour preview server ───────────────────────────────────────────────────────
+let tourPreviewServer: import('http').Server | null = null;
+let tourPreviewPort  = 0;
+let tourPreviewDir   = '';
+
+const TOUR_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript',
+  '.css':  'text/css',
+  '.xml':  'application/xml',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png':  'image/png',
+  '.webp': 'image/webp',
+  '.svg':  'image/svg+xml',
+  '.txt':  'text/plain',
+  '.json': 'application/json',
+};
+
+async function startTourPreviewServer(outputDir: string, defaultLang: string): Promise<number> {
+  if (tourPreviewServer) { tourPreviewServer.close(); tourPreviewServer = null; }
+
+  tourPreviewServer = http.createServer(async (req, res) => {
+    const pathname = (req.url || '/').split('?')[0];
+
+    // Route rewriting (mirrors generated server.js logic)
+    let filePath: string | null = null;
+
+    if (pathname === '/') {
+      res.writeHead(302, { Location: `/${defaultLang}/` });
+      res.end();
+      return;
+    }
+
+    const langMatch    = pathname.match(/^\/([a-z]{2})\/?$/);
+    const sceneMatch   = pathname.match(/^\/scene\/([^/]+)\/([a-z]{2})\/?$/);
+
+    if (langMatch)  filePath = path.join(outputDir, langMatch[1], 'index.html');
+    else if (sceneMatch) filePath = path.join(outputDir, sceneMatch[2], 'scene', sceneMatch[1], 'index.html');
+    else filePath = path.join(outputDir, pathname.replace(/^\//, ''));
+
+    try {
+      const data = await fs.readFile(filePath);
+      const ext  = path.extname(filePath).toLowerCase();
+      res.writeHead(200, {
+        'Content-Type': TOUR_MIME[ext] || 'application/octet-stream',
+        'Cache-Control': 'no-cache',
+      });
+      res.end(data);
+    } catch {
+      // Fallback: serve default lang index (SPA-style 404)
+      try {
+        const fb = await fs.readFile(path.join(outputDir, defaultLang, 'index.html'));
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(fb);
+      } catch {
+        res.writeHead(404).end('Not found');
+      }
+    }
+  });
+
+  return new Promise<number>((resolve) => {
+    tourPreviewServer!.listen(0, '127.0.0.1', () => {
+      tourPreviewPort = (tourPreviewServer!.address() as { port: number }).port;
+      tourPreviewDir  = outputDir;
+      resolve(tourPreviewPort);
+    });
+  });
+}
+
 app.whenReady().then(async () => {
   // A plain localhost HTTP server is the most reliable way to load local photos
   // into <img> elements in Electron. Custom protocol.handle() works for fetch()
@@ -1884,7 +1954,16 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     const sizeMb = (totalBytes / 1048576).toFixed(1);
     progress(`Done — ${totalFiles} files, ${sizeMb} MB`, 'ok');
 
-    const result = { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes };
+    // Auto-start preview server so the user can see the tour immediately
+    const defaultLang: string = project.languages?.default || 'en';
+    let previewUrl: string | undefined;
+    try {
+      const port = await startTourPreviewServer(outputDir, defaultLang);
+      previewUrl = `http://localhost:${port}/${defaultLang}/`;
+      progress(`Preview server: ${previewUrl}`, 'ok');
+    } catch { /* preview server is optional */ }
+
+    const result = { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes, previewUrl };
     if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
     try { event.sender.send('compile:done', result); } catch { /* window closed */ }
     return result;
@@ -1909,4 +1988,32 @@ ipcMain.handle('dialog:openFolder', async () => {
 
 ipcMain.handle('shell:openFolder', async (_e, folderPath: string) => {
   await shell.openPath(folderPath);
+});
+
+ipcMain.handle('shell:openUrl', async (_e, url: string) => {
+  await shell.openExternal(url);
+});
+
+ipcMain.handle('tour-server:start', async (_e, outputDir: string, defaultLang: string) => {
+  try {
+    const port = await startTourPreviewServer(outputDir, defaultLang || 'en');
+    return { ok: true, port, url: `http://localhost:${port}/${defaultLang || 'en'}/` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle('tour-server:stop', async () => {
+  if (tourPreviewServer) { tourPreviewServer.close(); tourPreviewServer = null; tourPreviewPort = 0; }
+  return true;
+});
+
+ipcMain.handle('tour-server:status', async () => {
+  if (!tourPreviewServer) return null;
+  const defaultLang = tourPreviewDir
+    ? (await fs.readdir(tourPreviewDir).then(
+        (entries) => entries.find((e) => /^[a-z]{2}$/.test(e)) ?? 'en'
+      ).catch(() => 'en'))
+    : 'en';
+  return { port: tourPreviewPort, url: `http://localhost:${tourPreviewPort}/${defaultLang}/`, dir: tourPreviewDir };
 });

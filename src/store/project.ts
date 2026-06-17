@@ -76,6 +76,7 @@ interface ProjectStore {
 }
 
 export type ScreenId =
+  | 'welcome'
   | 'import'
   | 'scenes'
   | 'map'
@@ -96,7 +97,7 @@ export const useProject = create<ProjectStore>((set) => ({
   project: _initial,
   activeSceneId: null,
   activeHotspotId: null,
-  activeScreen: 'import',
+  activeScreen: 'welcome',
   isProcessing: false,
   processingMessage: '',
   isCompiling: false,
