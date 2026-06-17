@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import {
   MousePointer2, Plus, AlignCenter, Compass,
   Undo2, Redo2, Copy, Trash2, Eye, ChevronDown,
-  Link, Video, Type, ExternalLink, ClipboardList,
+  Link, Video, Type, ExternalLink, ClipboardList, Bookmark,
 } from 'lucide-react';
 import type { EditorMode } from './ScenesScreen';
 import type { Hotspot } from '@/types';
@@ -20,6 +20,7 @@ interface Props {
   onNorthCancel: () => void;
   northDraftHeading?: number;
   onPreview: () => void;
+  onSetDefaultView?: () => void;
 }
 
 const HOTSPOT_TYPES: { type: Hotspot['type']; label: string; Icon: typeof Link }[] = [
@@ -30,7 +31,7 @@ const HOTSPOT_TYPES: { type: Hotspot['type']; label: string; Icon: typeof Link }
   { type: 'form',     label: 'Form',     Icon: ClipboardList },
 ];
 
-export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, onDelete, onAddHotspotType, onNorthConfirm, onNorthCancel, northDraftHeading, onPreview }: Props) {
+export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, onDelete, onAddHotspotType, onNorthConfirm, onNorthCancel, northDraftHeading, onPreview, onSetDefaultView }: Props) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -147,6 +148,18 @@ export function SceneToolbar({ mode, onModeChange, onUndo, onRedo, onDuplicate, 
       </button>
       <button title="Delete scene" onClick={onDelete} className="btn btn-danger text-xs gap-1">
         <Trash2 size={13} />
+      </button>
+
+      <div className="w-px h-5 bg-line mx-1" />
+
+      <button
+        title="Set current view as default (when this scene opens)"
+        onClick={onSetDefaultView}
+        className="btn text-xs gap-1"
+        disabled={!onSetDefaultView}
+      >
+        <Bookmark size={13} />
+        <span>Set view</span>
       </button>
 
       <div className="w-px h-5 bg-line mx-1" />

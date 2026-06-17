@@ -53,12 +53,14 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
     let panorama: string;
     let heading: number;
     let hotSpots: Record<string, unknown>[] = [];
+    let dv: { hlookat: number; vlookat: number; fov: number } | undefined;
 
     if (previewData && currentSceneId) {
       const scene = previewData.scenes.find((s) => s.id === currentSceneId);
       if (!scene) return;
       panorama = toLocalUrl(scene.media.sourcePath);
       heading = scene.heading;
+      dv = scene.defaultView;
       setSceneName(scene.title?.en || scene.slug || '');
 
       hotSpots = scene.hotspots.map((h) => {
@@ -120,6 +122,7 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
         mouseZoom: true,
         hotSpots,
         hotSpotDebug: false,
+        ...(dv ? { yaw: dv.hlookat, pitch: dv.vlookat, hfov: dv.fov } : {}),
       });
     } catch (err) {
       console.warn('[PreviewMode] pannellum init threw:', err);

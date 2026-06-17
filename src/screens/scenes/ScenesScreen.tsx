@@ -40,6 +40,7 @@ export function ScenesScreen() {
   const [mode, setMode] = useState<EditorMode>('navigate');
   // northDraft is the live Pannellum yaw polled during north mode (shown in toolbar)
   const [northDraft, setNorthDraft] = useState<number | undefined>(undefined);
+  const [defaultViewToast, setDefaultViewToast] = useState<string | null>(null);
   const activeScene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
 
   const pannellumGetYaw   = useRef<() => number>(() => 0);
@@ -73,6 +74,17 @@ export function ScenesScreen() {
       setActiveScene(project.scenes[0].id);
     }
   }, [project.scenes, activeSceneId, setActiveScene]);
+
+  const handleSetDefaultView = useCallback(() => {
+    if (!activeScene) return;
+    const hlookat = Math.round(pannellumGetYaw.current()   * 10) / 10;
+    const vlookat = Math.round(pannellumGetPitch.current() * 10) / 10;
+    const fov     = Math.round(pannellumGetFov.current()   * 10) / 10;
+    updateScene(activeScene.id, { defaultView: { hlookat, vlookat, fov } });
+    const msg = `Default view saved: ${hlookat}° / ${vlookat}° / fov ${fov}°`;
+    setDefaultViewToast(msg);
+    setTimeout(() => setDefaultViewToast(null), 3000);
+  }, [activeScene, updateScene]);
 
   const handleNorthConfirm = useCallback((heading: number) => {
     if (activeScene) {
@@ -165,6 +177,7 @@ export function ScenesScreen() {
         onNorthConfirm={handleNorthConfirm}
         onNorthCancel={handleNorthCancel}
         northDraftHeading={northDraft}
+        onSetDefaultView={handleSetDefaultView}
         onPreview={() => {
           if (activeScene) {
             window.conchitect.openPreview(
@@ -176,7 +189,15 @@ export function ScenesScreen() {
         }}
       />
 
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 relative">
+        {/* Default view toast */}
+        {defaultViewToast && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+            <div className="bg-zinc-900/90 text-white text-xs px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm whitespace-nowrap">
+              {defaultViewToast}
+            </div>
+          </div>
+        )}
         <SceneSidebar />
         <SceneViewer
           mode={mode}
