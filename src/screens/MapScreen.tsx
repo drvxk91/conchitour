@@ -279,9 +279,8 @@ function MapView({ scenes, categories, activeSceneId, showLines, showRadii, tile
         });
     layer.addTo(map);
     tileLayerRef.current = layer;
-    // Bring layers to front after tile change
-    linesLayerRef.current?.bringToFront();
-    circlesLayerRef.current?.bringToFront();
+    // Vector layers (lines, circles) are in overlayPane (z-index 400) and naturally
+    // sit above tile layers (tilePane, z-index 200) — no bringToFront needed.
   }, [tileType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
