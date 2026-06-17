@@ -867,7 +867,7 @@ function generateKrpanoXml(project: any, tiledSlugs: Set<string>): string {
   const startScene = scenes.find((s: any) => s.id === startSceneId) ?? scenes[0];
   const startName: string = startScene ? sceneXmlName(startScene.slug) : '';
   const projectTitle = xmlEsc(project.meta?.name || 'Virtual Tour');
-  const gyro = modules.gyro ? 'true' : 'false';
+  const gyro = modules.gyroscope ? 'true' : 'false';
   const webvr = modules.vr ? 'true' : 'false';
 
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -997,14 +997,12 @@ function generateHtml(project: any): string {
     shareStyles = `\n    #share-bar{position:fixed;bottom:16px;right:16px;z-index:100;display:flex;gap:8px}` +
       `#share-bar a{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;text-decoration:none;font-size:13px;font-family:sans-serif;transition:background .2s}` +
       `#share-bar a:hover{background:${accentColor}}`;
-    const url = encodeURIComponent(publicUrl);
-    const text = encodeURIComponent(meta.name || '');
     const links: string[] = [];
-    if (share.facebook) links.push(`<a href="https://facebook.com/sharer/sharer.php?u=${url}" target="_blank" rel="noopener" title="Facebook">f</a>`);
-    if (share.twitter)  links.push(`<a href="https://x.com/intent/tweet?url=${url}&amp;text=${text}" target="_blank" rel="noopener" title="X / Twitter">X</a>`);
-    if (share.whatsapp) links.push(`<a href="https://api.whatsapp.com/send?text=${text}%20${url}" target="_blank" rel="noopener" title="WhatsApp">W</a>`);
-    if (share.linkedin) links.push(`<a href="https://linkedin.com/sharing/share-offsite/?url=${url}" target="_blank" rel="noopener" title="LinkedIn">in</a>`);
-    if (share.email)    links.push(`<a href="mailto:?subject=${text}&amp;body=${url}" title="Email">@</a>`);
+    if (share.facebook) links.push(`<a href="#" onclick="window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="Facebook">f</a>`);
+    if (share.twitter)  links.push(`<a href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener,noreferrer');return false;" title="X / Twitter">X</a>`);
+    if (share.whatsapp) links.push(`<a href="#" onclick="window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="WhatsApp">W</a>`);
+    if (share.linkedin) links.push(`<a href="#" onclick="window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="LinkedIn">in</a>`);
+    if (share.email)    links.push(`<a href="#" onclick="location.href='mailto:?subject='+encodeURIComponent(document.title)+'&body='+encodeURIComponent(location.href);return false;" title="Email">@</a>`);
     shareBar = `  <div id="share-bar">${links.join('')}</div>\n`;
   }
 
@@ -1310,6 +1308,16 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       progress(`Skin copied (${skinCount} files)`, 'ok');
     } catch {
       progress('vtour skin not found — tour.xml skin include may fail', 'info');
+    }
+
+    // ── krpano plugins (webvr, gyro2, etc.) ────────────────────────────────
+    const pluginsSrc = path.join(kPath, 'viewer', 'plugins');
+    try {
+      await fs.access(pluginsSrc);
+      const pluginCount = await copyDir(pluginsSrc, path.join(outputDir, 'krpano', 'plugins'));
+      progress(`Plugins copied (${pluginCount} files)`, 'ok');
+    } catch {
+      progress('viewer/plugins/ not found in krpano install — VR/gyro may 404', 'info');
     }
 
     // ── License (opt-in) ───────────────────────────────────────────────────
