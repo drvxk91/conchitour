@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { TitleBar } from '@/components/shell/TitleBar';
 import { ScreenRouter } from '@/components/shell/ScreenRouter';
 import { toLocalUrl } from '@/lib/local-url';
 import { useProject } from '@/store/project';
-import type { Scene, LinkHotspot, ExternalHotspot, FormHotspot } from '@/types';
+import type { Scene, LinkHotspot, ExternalHotspot, FormHotspot, Project } from '@/types';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
@@ -183,8 +183,58 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
 }
 
 export default function App() {
-  const { activeScreen } = useProject();
+  const { activeScreen, project, clearDirty, loadProjectData, setProjectDir } = useProject();
   const needsFullHeight = activeScreen === 'scenes' || activeScreen === 'map';
+
+  const handleSave = useCallback(async () => {
+    try {
+      await window.conchitect.saveProject(project);
+      clearDirty();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('No project open')) {
+        handleSaveAs();
+      } else {
+        alert(`Save failed: ${msg}`);
+      }
+    }
+  }, [project, clearDirty]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveAs = useCallback(async () => {
+    const dir = await window.conchitect.saveProjectAs(project);
+    if (dir) {
+      setProjectDir(dir);
+      clearDirty();
+    }
+  }, [project, clearDirty, setProjectDir]);
+
+  const handleNewProject = useCallback(async () => {
+    const name = window.prompt('Project name:', project.meta.name || 'My Tour');
+    if (!name) return;
+    const folder = await window.conchitect.showFolderDialog();
+    if (!folder) return;
+    const result = await window.conchitect.newProject(folder, name);
+    setProjectDir(result.projectDir);
+    clearDirty();
+  }, [project.meta.name, clearDirty, setProjectDir]);
+
+  const handleOpenProject = useCallback(async () => {
+    const result = await window.conchitect.openProject();
+    if (!result) return;
+    if ('error' in result) { alert(result.error); return; }
+    loadProjectData(result.project as Project, result.projectDir);
+  }, [loadProjectData]);
+
+  // Ctrl+S / menu actions
+  useEffect(() => {
+    const unsubs = [
+      window.conchitect.onMenuAction('save',         handleSave),
+      window.conchitect.onMenuAction('save-as',      handleSaveAs),
+      window.conchitect.onMenuAction('new-project',  handleNewProject),
+      window.conchitect.onMenuAction('open-project', handleOpenProject),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [handleSave, handleSaveAs, handleNewProject, handleOpenProject]);
 
   // Preview mode: opened as a separate BrowserWindow by main process
   const params = new URLSearchParams(window.location.search);

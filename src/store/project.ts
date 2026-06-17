@@ -14,6 +14,7 @@ function withHistory(s: HistorySlice, newProject: Project) {
     project: newProject,
     history: newHist,
     historyIndex: newHist.length - 1,
+    isDirty: true,
   };
 }
 
@@ -27,6 +28,8 @@ interface ProjectStore {
   isProcessing: boolean;
   processingMessage: string;
   isCompiling: boolean;
+  isDirty: boolean;
+  projectDir: string | null;
   history: Project[];
   historyIndex: number;
 
@@ -36,6 +39,9 @@ interface ProjectStore {
   setActiveHotspot: (id: UUID | null) => void;
   setProcessing: (isProcessing: boolean, message?: string) => void;
   setIsCompiling: (v: boolean) => void;
+  clearDirty: () => void;
+  setProjectDir: (dir: string | null) => void;
+  loadProjectData: (project: Project, projectDir: string) => void;
 
   // Scenes
   addScene: (scene: Scene) => void;
@@ -94,6 +100,8 @@ export const useProject = create<ProjectStore>((set) => ({
   isProcessing: false,
   processingMessage: '',
   isCompiling: false,
+  isDirty: false,
+  projectDir: null,
   history: [_initial],
   historyIndex: 0,
 
@@ -103,6 +111,20 @@ export const useProject = create<ProjectStore>((set) => ({
   setProcessing: (isProcessing, message = '') =>
     set({ isProcessing, processingMessage: message }),
   setIsCompiling: (v) => set({ isCompiling: v }),
+  clearDirty: () => set({ isDirty: false }),
+  setProjectDir: (dir) => set({ projectDir: dir }),
+  loadProjectData: (project, projectDir) => {
+    set({
+      project,
+      projectDir,
+      isDirty: false,
+      activeSceneId: null,
+      activeHotspotId: null,
+      activeScreen: 'scenes',
+      history: [project],
+      historyIndex: 0,
+    });
+  },
 
   addScene: (scene) =>
     set((s) =>
@@ -273,6 +295,9 @@ export const useProject = create<ProjectStore>((set) => ({
       activeScreen: 'import',
       isProcessing: false,
       processingMessage: '',
+      isCompiling: false,
+      isDirty: false,
+      projectDir: null,
       history: [fresh],
       historyIndex: 0,
     });

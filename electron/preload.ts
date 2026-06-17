@@ -1,8 +1,28 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import path from 'node:path';
 
 contextBridge.exposeInMainWorld('conchitect', {
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
-  saveProject: (p: string, data: unknown) => ipcRenderer.invoke('project:save', p, data),
+  // Project lifecycle
+  newProject: (parentFolder: string, name: string): Promise<{ projectDir: string }> =>
+    ipcRenderer.invoke('project:new', parentFolder, name),
+  openProject: (): Promise<{ projectDir: string; project: unknown } | { error: string } | null> =>
+    ipcRenderer.invoke('project:open'),
+  saveProject: (data: unknown): Promise<boolean> =>
+    ipcRenderer.invoke('project:save', data),
+  saveProjectAs: (data: unknown): Promise<string | null> =>
+    ipcRenderer.invoke('project:save-as', data),
+  getProjectDir: (): Promise<string | null> =>
+    ipcRenderer.invoke('project:get-current-path'),
+  copySourceToProject: (srcPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('project:copy-source', srcPath),
+  pathJoin: (...parts: string[]): string => path.join(...parts),
+  onMenuAction: (action: string, cb: () => void): (() => void) => {
+    const ch = `menu:${action}`;
+    const handler = () => cb();
+    ipcRenderer.on(ch, handler);
+    return () => ipcRenderer.removeListener(ch, handler);
+  },
   loadProject: (p: string) => ipcRenderer.invoke('project:load', p),
   readPhotosMeta: (paths: string[]) => ipcRenderer.invoke('photos:readMeta', paths),
   copyToProject: (paths: string[], destDir: string) => ipcRenderer.invoke('photos:copyToProject', paths, destDir),
@@ -88,11 +108,27 @@ export interface CompileRunState {
   startedAt: number;
 }
 
+export interface ProjectOpenResult {
+  projectDir: string;
+  project: unknown;
+}
+export interface ProjectOpenError {
+  error: string;
+}
+
 declare global {
   interface Window {
     conchitect: {
       openFiles: () => Promise<string[]>;
-      saveProject: (p: string, data: unknown) => Promise<boolean>;
+      // Project lifecycle
+      newProject: (parentFolder: string, name: string) => Promise<{ projectDir: string }>;
+      openProject: () => Promise<ProjectOpenResult | ProjectOpenError | null>;
+      saveProject: (data: unknown) => Promise<boolean>;
+      saveProjectAs: (data: unknown) => Promise<string | null>;
+      getProjectDir: () => Promise<string | null>;
+      copySourceToProject: (srcPath: string) => Promise<string | null>;
+      pathJoin: (...parts: string[]) => string;
+      onMenuAction: (action: string, cb: () => void) => () => void;
       loadProject: (p: string) => Promise<unknown>;
       readPhotosMeta: (paths: string[]) => Promise<PhotoMetaResult[]>;
       copyToProject: (paths: string[], destDir: string) => Promise<string[]>;

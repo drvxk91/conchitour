@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -66,6 +66,7 @@ app.whenReady().then(async () => {
     });
   });
 
+  setupAppMenu();
   await createWindow();
 });
 
@@ -448,6 +449,150 @@ ipcMain.handle('settings:set', async (_e, patch: Partial<ConchitectSettings>) =>
   await saveSettings(patch);
   return true;
 });
+
+// ── Project file format (.conchitect folder) ──────────────────────────────────
+
+let currentProjectDir: string | null = null;
+
+function getMainWindow(): BrowserWindow | null {
+  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()) ?? null;
+}
+
+function sendToRenderer(channel: string, ...args: unknown[]) {
+  const w = getMainWindow();
+  if (w) w.webContents.send(channel, ...args);
+}
+
+ipcMain.handle('project:get-current-path', () => currentProjectDir);
+
+ipcMain.handle('project:new', async (_e, parentFolder: string, projectName: string) => {
+  const slug = projectName.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '') || 'untitled';
+  const projectDir = path.join(parentFolder, `${slug}.conchitect`);
+  await fs.mkdir(path.join(projectDir, 'sources'), { recursive: true });
+  await fs.mkdir(path.join(projectDir, 'cache'),   { recursive: true });
+  await fs.mkdir(path.join(projectDir, 'assets'),  { recursive: true });
+  const lock = { schemaVersion: 1, createdAt: new Date().toISOString(), lastModified: new Date().toISOString() };
+  await fs.writeFile(path.join(projectDir, 'conchitect.lock'), JSON.stringify(lock, null, 2), 'utf-8');
+  currentProjectDir = projectDir;
+  return { projectDir };
+});
+
+ipcMain.handle('project:open', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Open Conchitect Project',
+    properties: ['openDirectory'],
+    buttonLabel: 'Open Project',
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+
+  const projectDir = result.filePaths[0];
+  const projectJsonPath = path.join(projectDir, 'project.json');
+  try {
+    await fs.access(projectJsonPath);
+  } catch {
+    return { error: 'Not a valid Conchitect project (missing project.json)' };
+  }
+
+  const raw = await fs.readFile(projectJsonPath, 'utf-8');
+  const project = JSON.parse(raw);
+
+  // Resolve sourcePath from sourceFile when sourcePath is missing or stale
+  if (Array.isArray(project.scenes)) {
+    for (const scene of project.scenes) {
+      if (scene.media?.sourceFile) {
+        const resolved = path.join(projectDir, 'sources', scene.media.sourceFile);
+        scene.media.sourcePath = resolved;
+      }
+    }
+  }
+
+  currentProjectDir = projectDir;
+  return { projectDir, project };
+});
+
+ipcMain.handle('project:save', async (_e, projectData: unknown) => {
+  if (!currentProjectDir) throw new Error('No project open — use Save As to create one');
+  const p = path.join(currentProjectDir, 'project.json');
+  await fs.writeFile(p, JSON.stringify(projectData, null, 2), 'utf-8');
+  // Update lock timestamp
+  try {
+    const lockPath = path.join(currentProjectDir, 'conchitect.lock');
+    const existing = JSON.parse(await fs.readFile(lockPath, 'utf-8').catch(() => '{}')).valueOf() as Record<string, unknown>;
+    await fs.writeFile(lockPath, JSON.stringify({ ...existing, lastModified: new Date().toISOString() }, null, 2), 'utf-8');
+  } catch { /* ignore */ }
+  return true;
+});
+
+ipcMain.handle('project:save-as', async (_e, projectData: unknown) => {
+  const pick = await dialog.showOpenDialog({
+    title: 'Save Project As — choose parent folder',
+    properties: ['openDirectory', 'createDirectory'],
+    buttonLabel: 'Save Here',
+  });
+  if (pick.canceled || !pick.filePaths[0]) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const projName = (projectData as any)?.meta?.name || 'untitled';
+  const slug = projName.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '') || 'untitled';
+  const destDir = path.join(pick.filePaths[0], `${slug}.conchitect`);
+
+  // Copy sources and cache from current project if it exists
+  if (currentProjectDir) {
+    for (const sub of ['sources', 'cache', 'assets']) {
+      try { await copyDir(path.join(currentProjectDir, sub), path.join(destDir, sub)); } catch { /* skip */ }
+    }
+  }
+
+  await fs.mkdir(destDir, { recursive: true });
+  const lock = { schemaVersion: 1, createdAt: new Date().toISOString(), lastModified: new Date().toISOString() };
+  await fs.writeFile(path.join(destDir, 'conchitect.lock'), JSON.stringify(lock, null, 2), 'utf-8');
+  await fs.writeFile(path.join(destDir, 'project.json'), JSON.stringify(projectData, null, 2), 'utf-8');
+
+  currentProjectDir = destDir;
+  return destDir;
+});
+
+// Copy photo into project sources/ folder, returns relative path (sourceFile)
+ipcMain.handle('project:copy-source', async (_e, srcPath: string) => {
+  if (!currentProjectDir) return null;
+  const sourcesDir = path.join(currentProjectDir, 'sources');
+  await fs.mkdir(sourcesDir, { recursive: true });
+  const name = path.basename(srcPath);
+  // Avoid overwriting if same file
+  const dest = path.join(sourcesDir, name);
+  try { await fs.access(dest); return name; } catch { /* copy */ }
+  await fs.copyFile(srcPath, dest);
+  return name;
+});
+
+// Build file menu and send actions to renderer
+function setupAppMenu() {
+  const sendAction = (action: string) => sendToRenderer(`menu:${action}`);
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New Project…',  accelerator: 'CmdOrCtrl+N', click: () => sendAction('new-project') },
+        { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: () => sendAction('open-project') },
+        { type: 'separator' },
+        { label: 'Save',          accelerator: 'CmdOrCtrl+S',       click: () => sendAction('save') },
+        { label: 'Save As…',      accelerator: 'CmdOrCtrl+Shift+S', click: () => sendAction('save-as') },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' as const },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
+        { role: 'selectAll' as const },
+      ],
+    },
+  ]));
+}
 
 ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
   const checks = [
