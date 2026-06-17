@@ -1552,18 +1552,21 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
             const ext = path.extname(src) || '.jpg';
             const srcHash = await fileHash(src).catch(() => '');
 
-            // Check cache first (unless force-regen)
-            if (!forceRegenTiles && cacheDir && srcHash && await hasValidCache(cacheDir, scene.slug, srcHash)) {
-              // If tiles already exist in the output folder from a previous compile, skip the copy
+            // 1. Tiles already in output folder → skip entirely (Force regen overrides)
+            if (!forceRegenTiles) {
               const outTilesDir = path.join(panosDir, `${scene.slug}.tiles`);
-              let alreadyInOutput = false;
-              try { await fs.access(path.join(outTilesDir, 'f')); alreadyInOutput = true; } catch { /* not there */ }
-              if (alreadyInOutput) {
+              try {
+                await fs.access(path.join(outTilesDir, 'f'));
                 progress(`Tiles for "${scene.slug}" — already in output, skipped`, 'ok');
-              } else {
-                progress(`Tiles for "${scene.slug}" — from cache`, 'ok');
-                await copyCacheTo(cacheDir, scene.slug, panosDir);
-              }
+                tiledScenes.set(scene.slug, await detectTileInfo(panosDir, scene.slug));
+                continue;
+              } catch { /* not there yet, check project cache */ }
+            }
+
+            // 2. Project cache hit → copy without running krpanotools
+            if (!forceRegenTiles && cacheDir && srcHash && await hasValidCache(cacheDir, scene.slug, srcHash)) {
+              progress(`Tiles for "${scene.slug}" — from cache`, 'ok');
+              await copyCacheTo(cacheDir, scene.slug, panosDir);
               tiledScenes.set(scene.slug, await detectTileInfo(panosDir, scene.slug));
               continue;
             }
