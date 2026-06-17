@@ -1409,6 +1409,9 @@ var LANGS   = ${JSON.stringify(allLangs)};
 var DEFAULT = ${JSON.stringify(defaultLang)};
 var ROOT    = __dirname;
 
+// Strict routing: /en and /en/ are distinct routes (prevents redirect loops)
+app.set('strict routing', true);
+
 // Long-lived static assets
 ['panos','krpano','skin','media'].forEach(function(dir) {
   app.use('/' + dir, express.static(path.join(ROOT, dir), { maxAge: '365d' }));
@@ -1419,7 +1422,7 @@ app.use(express.static(ROOT, { index: false, maxAge: 0 }));
 // Root → default language
 app.get('/', function(_req, res) { res.redirect(301, '/' + DEFAULT + '/'); });
 
-// /:lang  (no trailing slash)
+// /:lang  (no trailing slash) → add trailing slash
 app.get('/:lang', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
   res.redirect(301, '/' + req.params.lang + '/');
@@ -1430,10 +1433,10 @@ app.get('/:lang/', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
   var file = path.join(ROOT, req.params.lang, 'index.html');
   if (fs.existsSync(file)) return res.sendFile(file);
-  res.redirect(301, '/' + DEFAULT + '/');
+  next();
 });
 
-// /scene/:slug/:lang  (no trailing slash)
+// /scene/:slug/:lang  (no trailing slash) → add trailing slash
 app.get('/scene/:slug/:lang', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
   res.redirect(301, '/scene/' + req.params.slug + '/' + req.params.lang + '/');
