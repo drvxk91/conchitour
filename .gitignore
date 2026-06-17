@@ -12,3 +12,7 @@ tsconfig*.tsbuildinfo
 assets/krpano/*.html
 assets/krpano/krpanolicense.xml
 sample-projects/
+
+# Block .js files in src/ — the project is 100% TypeScript.
+# Stale compiled .js files shadow .tsx modules and break Vite resolution.
+src/**/*.js
