@@ -985,7 +985,7 @@ async function detectTileInfo(panosDir: string, slug: string): Promise<TileInfo 
         num: levelNum,
         tiledimagewidth: totalWidth,
         tiledimageheight: totalHeight,
-        url: `panos/${slug}.tiles/%s/${levelDir}/%v/${levelDir}_%s_%v_%h.jpg`,
+        url: `/panos/${slug}.tiles/%s/${levelDir}/%v/${levelDir}_%s_%v_%h.jpg`,
       });
     } catch { /* skip this level */ }
   }
@@ -1010,7 +1010,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += `<krpano version="1.23" title="${projectTitle}">\n\n`;
 
-  xml += '  <include url="skin/vtourskin.xml"/>\n\n';
+  xml += '  <include url="/skin/vtourskin.xml"/>\n\n';
 
   xml += '  <skin_settings\n';
   xml += '    maps="false"\n';
@@ -1061,7 +1061,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     const tileInfo = useTiles ? (tiledScenes.get(scene.slug) ?? null) : null;
     const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
 
-    const thumbAttr = useTiles ? ` thumburl="panos/${scene.slug}.tiles/preview.jpg"` : '';
+    const thumbAttr = useTiles ? ` thumburl="/panos/${scene.slug}.tiles/preview.jpg"` : '';
     const latAttr   = scene.geo?.lat != null ? ` lat="${scene.geo.lat}"` : '';
     const lngAttr   = scene.geo?.lng != null ? ` lng="${scene.geo.lng}"` : '';
 
@@ -1069,7 +1069,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     xml += `    <view hlookat="${hlookat.toFixed(1)}" vlookat="${vlookat.toFixed(1)}" fovtype="MFOV" fov="${fov.toFixed(1)}" maxpixelzoom="2.0" fovmin="50" fovmax="140"/>\n`;
 
     if (useTiles) {
-      xml += `    <preview url="panos/${scene.slug}.tiles/preview.jpg"/>\n`;
+      xml += `    <preview url="/panos/${scene.slug}.tiles/preview.jpg"/>\n`;
       if (tileInfo && tileInfo.levels.length > 0) {
         xml += `    <image type="CUBE" multires="true" tilesize="${tileInfo.tileSize}" baseindex="1">\n`;
         for (const lvl of tileInfo.levels) {
@@ -1079,10 +1079,10 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
         }
         xml += `    </image>\n`;
       } else {
-        xml += `    <image><cube url="panos/${scene.slug}.tiles/pano_%s.jpg"/></image>\n`;
+        xml += `    <image><cube url="/panos/${scene.slug}.tiles/pano_%s.jpg"/></image>\n`;
       }
     } else {
-      xml += `    <image><sphere url="media/${xmlEsc(scene.slug)}${xmlEsc(ext)}" northoffset="${heading}"/></image>\n`;
+      xml += `    <image><sphere url="/media/${xmlEsc(scene.slug)}${xmlEsc(ext)}" northoffset="${heading}"/></image>\n`;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1229,6 +1229,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
 <html lang="${lang}">
 <head>
   <meta charset="UTF-8">
+  <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${pageTitle}</title>
 ${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}  <style>
