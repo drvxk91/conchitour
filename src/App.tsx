@@ -225,8 +225,9 @@ export default function App() {
     loadProjectData(result.project as Project, result.projectDir);
   }, [loadProjectData]);
 
-  // Ctrl+S / menu actions
+  // Ctrl+S / menu actions (guard: conchitect may be undefined if preload failed)
   useEffect(() => {
+    if (!window.conchitect?.onMenuAction) return;
     const unsubs = [
       window.conchitect.onMenuAction('save',         handleSave),
       window.conchitect.onMenuAction('save-as',      handleSaveAs),

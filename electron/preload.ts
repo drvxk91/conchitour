@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import path from 'node:path';
 
 contextBridge.exposeInMainWorld('conchitect', {
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
@@ -16,7 +15,6 @@ contextBridge.exposeInMainWorld('conchitect', {
     ipcRenderer.invoke('project:get-current-path'),
   copySourceToProject: (srcPath: string): Promise<string | null> =>
     ipcRenderer.invoke('project:copy-source', srcPath),
-  pathJoin: (...parts: string[]): string => path.join(...parts),
   onMenuAction: (action: string, cb: () => void): (() => void) => {
     const ch = `menu:${action}`;
     const handler = () => cb();
@@ -127,7 +125,6 @@ declare global {
       saveProjectAs: (data: unknown) => Promise<string | null>;
       getProjectDir: () => Promise<string | null>;
       copySourceToProject: (srcPath: string) => Promise<string | null>;
-      pathJoin: (...parts: string[]) => string;
       onMenuAction: (action: string, cb: () => void) => () => void;
       loadProject: (p: string) => Promise<unknown>;
       readPhotosMeta: (paths: string[]) => Promise<PhotoMetaResult[]>;
