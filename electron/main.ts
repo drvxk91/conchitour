@@ -1103,7 +1103,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
 
   // JS bridge: fires window.onSceneLoaded(xmlSceneName) on every scene change
   xml += '  <action name="_conchitect_scene_loaded">\n';
-  xml += '    jscall(window.onSceneLoaded(get(xml.scene)));\n';
+  xml += "    jscall(window.onSceneLoaded('%xml.scene%'));\n";
   xml += '  </action>\n';
   xml += '  <events name="conchitect" keep="true" onloadscene="_conchitect_scene_loaded();"/>\n\n';
 
