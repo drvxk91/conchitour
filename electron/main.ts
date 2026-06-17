@@ -1031,6 +1031,12 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     xml += '  </action>\n\n';
   }
 
+  // JS bridge: fires window.onSceneLoaded(xmlSceneName) on every scene change
+  xml += '  <action name="_conchitect_scene_loaded">\n';
+  xml += '    jscall(window.onSceneLoaded(get(xml.scene)));\n';
+  xml += '  </action>\n';
+  xml += '  <events name="conchitect" keep="true" onloadscene="_conchitect_scene_loaded();"/>\n\n';
+
   // Custom hotspot styles (text, external, video — link uses skin default arrow)
   xml += '  <style name="hs_text" type="text"\n';
   xml += '    css="font-family:sans-serif; color:#fff; font-size:13px; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px;"\n';
@@ -1115,62 +1121,224 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function generateHtml(project: any): string {
-  const meta = project.meta || {};
-  const seo = project.seo || {};
-  const branding = project.branding || {};
-  const share = project.share || {};
-  const lang: string = project.languages?.default || 'en';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateTourHtml(project: any, lang: string, startSceneSlug: string | null, tiledSlugs: Set<string>): string {
+  const meta      = project.meta     || {};
+  const seo       = project.seo      || {};
+  const branding  = project.branding || {};
+  const share     = project.share    || {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scenes: any[]     = project.scenes     || [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const categories: any[] = project.categories || [];
+  const defaultLang: string  = project.languages?.default    || 'en';
+  const allLangs: string[]   = project.languages?.available  || [defaultLang];
 
-  const title = xmlEsc(seo.metaTitle || meta.name || 'Virtual Tour');
-  const description = xmlEsc(seo.metaDescription || meta.shortDescription || '');
+  const startScene = startSceneSlug
+    ? scenes.find((s: any) => s.slug === startSceneSlug)
+    : (scenes.find((s: any) => s.id === branding.startSceneId) ?? scenes[0]);
+
+  const projectTitle = meta.name || 'Virtual Tour';
+  const sceneTitle   = startScene ? (loc(startScene.title, lang) || startScene.slug) : '';
+  const pageTitle    = xmlEsc(sceneTitle ? `${sceneTitle} — ${projectTitle}` : projectTitle);
+  const description  = xmlEsc(startScene
+    ? (loc(startScene.description, lang) || seo.metaDescription || '')
+    : (seo.metaDescription || ''));
   const keywords: string[] = seo.keywords || [];
-  const publicUrl = String(meta.publicationUrl || '');
+  const publicUrl    = String(meta.publicationUrl || '').replace(/\/$/, '');
+  const canonicalPath = startSceneSlug ? `/scene/${startSceneSlug}/${lang}/` : `/${lang}/`;
+  const canonicalUrl  = publicUrl ? publicUrl + canonicalPath : '';
   const primaryColor: string = branding.primaryColor || '#1a1a1a';
-  const accentColor: string = branding.accentColor || '#3b82f6';
+  const accentColor: string  = branding.accentColor  || '#3b82f6';
   const copyright = xmlEsc(meta.copyright || '');
 
-  const hasShare: boolean = !!(share.facebook || share.twitter || share.whatsapp || share.linkedin || share.email);
-
-  let ogTags = '';
-  if (publicUrl) {
-    ogTags += `  <meta property="og:url" content="${xmlEsc(publicUrl)}">\n`;
-    ogTags += `  <meta property="og:title" content="${title}">\n`;
-    if (description) ogTags += `  <meta property="og:description" content="${description}">\n`;
-    ogTags += `  <meta property="og:type" content="website">\n`;
+  // Build per-lang scene data for the TOUR JS object (all scenes, current lang strings)
+  const scenesData: Record<string, unknown> = {};
+  for (const scene of scenes) {
+    const ext = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
+    scenesData[scene.slug] = {
+      title:       loc(scene.title, lang)       || scene.slug,
+      description: loc(scene.description, lang) || '',
+      categoryIds: scene.categoryIds || [],
+      preview: tiledSlugs.has(scene.slug)
+        ? `/panos/${scene.slug}.tiles/preview.jpg`
+        : `/media/${scene.slug}${ext}`,
+    };
   }
 
+  // Categories keyed by ID
+  const categoriesData: Record<string, unknown> = {};
+  for (const cat of categories) {
+    categoriesData[cat.id] = {
+      name:    loc(cat.name, lang) || cat.slug,
+      color:   cat.color || accentColor,
+      iconSvg: cat.iconSvg || null,
+    };
+  }
+
+  const tourDataJson = JSON.stringify({
+    lang,
+    defaultLang,
+    allLangs,
+    projectTitle,
+    publicUrl: publicUrl || null,
+    startScene: startSceneSlug,
+    scenes: scenesData,
+    categories: categoriesData,
+  });
+
+  // OG / canonical
+  let headExtras = '';
+  if (canonicalUrl) {
+    headExtras += `  <link rel="canonical" href="${xmlEsc(canonicalUrl)}">\n`;
+    headExtras += `  <meta property="og:url" content="${xmlEsc(canonicalUrl)}">\n`;
+  }
+  headExtras += `  <meta property="og:title" content="${pageTitle}">\n`;
+  if (description) headExtras += `  <meta property="og:description" content="${description}">\n`;
+  headExtras += '  <meta property="og:type" content="website">\n';
+  if (startScene && publicUrl && tiledSlugs.has(startScene.slug)) {
+    headExtras += `  <meta property="og:image" content="${xmlEsc(publicUrl)}/panos/${startScene.slug}.tiles/preview.jpg">\n`;
+  }
+  if (keywords.length) headExtras += `  <meta name="keywords" content="${xmlEsc(keywords.join(', '))}">\n`;
+
+  // Share bar
   let shareStyles = '';
-  let shareBar = '';
+  let shareBar    = '';
+  const hasShare: boolean = !!(share.facebook || share.twitter || share.whatsapp || share.linkedin || share.email);
   if (hasShare) {
-    shareStyles = `\n    #share-bar{position:fixed;bottom:16px;right:16px;z-index:100;display:flex;gap:8px}` +
-      `#share-bar a{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;text-decoration:none;font-size:13px;font-family:sans-serif;transition:background .2s}` +
+    shareStyles =
+      `\n    #share-bar{position:fixed;bottom:16px;left:16px;z-index:100;display:flex;gap:8px}` +
+      `#share-bar a{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;` +
+      `background:rgba(0,0,0,.55);color:#fff;text-decoration:none;font-size:13px;font-family:sans-serif;transition:background .2s}` +
       `#share-bar a:hover{background:${accentColor}}`;
     const links: string[] = [];
     if (share.facebook) links.push(`<a href="#" onclick="window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="Facebook">f</a>`);
-    if (share.twitter)  links.push(`<a href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener,noreferrer');return false;" title="X / Twitter">X</a>`);
+    if (share.twitter)  links.push(`<a href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener,noreferrer');return false;" title="X">X</a>`);
     if (share.whatsapp) links.push(`<a href="#" onclick="window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="WhatsApp">W</a>`);
     if (share.linkedin) links.push(`<a href="#" onclick="window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="LinkedIn">in</a>`);
     if (share.email)    links.push(`<a href="#" onclick="location.href='mailto:?subject='+encodeURIComponent(document.title)+'&body='+encodeURIComponent(location.href);return false;" title="Email">@</a>`);
     shareBar = `  <div id="share-bar">${links.join('')}</div>\n`;
   }
 
+  // krpano onready: for scene-specific pages, load the target scene after init
+  const onready = startSceneSlug
+    ? `function(krp){_krpano=krp;_ready=true;krp.call("loadscene(${sceneXmlName(startSceneSlug)},null,MERGE,BLEND(0.5));");}`
+    : `function(krp){_krpano=krp;_ready=true;}`;
+
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-${description ? `  <meta name="description" content="${description}">\n` : ''}${keywords.length ? `  <meta name="keywords" content="${xmlEsc(keywords.join(', '))}">\n` : ''}${ogTags}  <style>
+  <title>${pageTitle}</title>
+${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}  <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body{width:100%;height:100%;overflow:hidden;background:${primaryColor}}
-    #pano{width:100%;height:100%}${shareStyles}
+    #pano{position:absolute;inset:0}
+    #info-panel{
+      position:fixed;right:0;top:0;bottom:0;width:340px;z-index:50;
+      background:rgba(8,8,10,.9);
+      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      color:#fff;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+      padding:52px 28px 32px 28px;
+      display:flex;flex-direction:column;
+      transform:translateX(100%);
+      transition:transform .45s cubic-bezier(.22,1,.36,1);
+      overflow-y:auto;
+    }
+    #info-panel.open{transform:translateX(0)}
+    #panel-close{
+      position:absolute;top:12px;right:12px;
+      width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.08);color:#fff;font-size:18px;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      transition:background .2s;line-height:1;
+    }
+    #panel-close:hover{background:rgba(255,255,255,.2)}
+    #panel-category{
+      display:none;align-items:center;
+      font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      padding:4px 10px;border-radius:20px;align-self:flex-start;margin-bottom:14px;
+      border:1px solid transparent;
+    }
+    #panel-title{font-size:23px;font-weight:700;line-height:1.2;margin-bottom:10px}
+    #panel-rule{width:36px;height:2px;border-radius:1px;background:${accentColor};opacity:.7;margin-bottom:14px}
+    #panel-desc{font-size:14px;line-height:1.7;color:rgba(255,255,255,.65);flex:1}
+    #panel-toggle{
+      position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:51;
+      background:rgba(8,8,10,.8);border:1px solid rgba(255,255,255,.12);border-right:none;
+      border-radius:8px 0 0 8px;padding:14px 8px;cursor:pointer;color:rgba(255,255,255,.7);
+      font-size:11px;writing-mode:vertical-rl;letter-spacing:.06em;text-transform:uppercase;
+      font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      transition:right .45s cubic-bezier(.22,1,.36,1),background .2s,color .2s;
+    }
+    #panel-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
+    #panel-toggle.open{right:340px}${shareStyles}
   </style>
 </head>
 <body>
   <div id="pano"></div>
-${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.4);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script src="krpano/krpano.js"></script>
-  <script>embedpano({xml:"tour.xml",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:true});</script>
+  <aside id="info-panel">
+    <button id="panel-close" aria-label="Close">&#x2715;</button>
+    <div id="panel-category"></div>
+    <h1 id="panel-title"></h1>
+    <div id="panel-rule"></div>
+    <p id="panel-desc"></p>
+  </aside>
+  <button id="panel-toggle">Info</button>
+${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.35);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script>
+  var TOUR = ${tourDataJson};
+  var _krpano = null;
+  var _ready  = false;
+
+  function _showPanel(slug) {
+    var scene = TOUR.scenes[slug];
+    if (!scene) return;
+    var catId = scene.categoryIds && scene.categoryIds[0];
+    var cat   = catId ? TOUR.categories[catId] : null;
+    var catEl = document.getElementById('panel-category');
+    if (cat) {
+      catEl.textContent = cat.name;
+      var c = cat.color || '${accentColor}';
+      catEl.style.cssText = 'display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:20px;align-self:flex-start;margin-bottom:14px;border:1px solid ' + c + '55;background:' + c + '1a;color:' + c;
+    } else {
+      catEl.style.display = 'none';
+    }
+    document.getElementById('panel-title').textContent = scene.title || slug;
+    document.getElementById('panel-desc').textContent  = scene.description || '';
+    document.title = (scene.title || slug) + ' — ' + TOUR.projectTitle;
+    document.getElementById('info-panel').classList.add('open');
+    document.getElementById('panel-toggle').classList.add('open');
+  }
+
+  window.onSceneLoaded = function(xmlName) {
+    var slug = (xmlName || '').replace(/^scene_/, '');
+    if (!slug || !TOUR.scenes[slug]) return;
+    _showPanel(slug);
+    if (!_ready) return;
+    var newPath = '/scene/' + slug + '/' + TOUR.lang + '/';
+    if (window.location.pathname !== newPath) {
+      try { history.pushState({ scene: slug }, '', newPath); } catch(e) {}
+    }
+  };
+
+  window.addEventListener('popstate', function(e) {
+    var slug = e.state && e.state.scene;
+    if (slug && _krpano) _krpano.call('loadscene(scene_' + slug + ',null,MERGE,BLEND(0.5));');
+  });
+
+  document.getElementById('panel-close').addEventListener('click', function() {
+    document.getElementById('info-panel').classList.remove('open');
+    document.getElementById('panel-toggle').classList.remove('open');
+  });
+  document.getElementById('panel-toggle').addEventListener('click', function() {
+    var open = document.getElementById('info-panel').classList.toggle('open');
+    document.getElementById('panel-toggle').classList.toggle('open', open);
+  });
+  </script>
+  <script src="/krpano/krpano.js"></script>
+  <script>embedpano({xml:"/tour.xml",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:${onready}});</script>
 </body>
 </html>`;
 }
@@ -1190,18 +1358,18 @@ function generateSitemap(project: any): string {
   xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n';
   xml += '        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n';
 
-  // Root URL
+  // Root URL (default lang entry point)
   xml += '  <url>\n';
-  xml += `    <loc>${xmlEsc(baseUrl)}/</loc>\n`;
+  xml += `    <loc>${xmlEsc(baseUrl)}/${xmlEsc(lang)}/</loc>\n`;
   xml += `    <lastmod>${today}</lastmod>\n`;
   xml += '    <changefreq>monthly</changefreq>\n';
   xml += '    <priority>1.0</priority>\n';
   xml += '  </url>\n';
 
-  // Per-scene URLs with image annotations
+  // Per-scene URLs with image annotations — one entry per scene per lang
   for (const scene of scenes) {
     const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
-    const sceneUrl = `${xmlEsc(baseUrl)}/scene/${xmlEsc(scene.slug)}/`;
+    const sceneUrl = `${xmlEsc(baseUrl)}/scene/${xmlEsc(scene.slug)}/${xmlEsc(lang)}/`;
     const imgUrl = `${xmlEsc(baseUrl)}/media/${xmlEsc(scene.slug)}${xmlEsc(ext)}`;
     const caption = xmlEsc(loc(scene.title, lang) || scene.slug);
     const alt = xmlEsc(loc(scene.altText, lang) || caption);
@@ -1222,111 +1390,89 @@ function generateSitemap(project: any): string {
   return xml;
 }
 
-// Generates a per-scene deep-link page at scene/<slug>/index.html (depth 2 from root).
-// Assets use ../../ prefix. The krpano onready callback loads the specific scene.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function generateScenePageHtml(project: any, scene: any): string {
-  const meta = project.meta || {};
-  const seo = project.seo || {};
-  const branding = project.branding || {};
-  const lang: string = project.languages?.default || 'en';
+function generateServerJs(project: any): string {
+  const defaultLang: string = project.languages?.default || 'en';
+  const allLangs: string[]  = project.languages?.available || [defaultLang];
+  return `'use strict';
+/**
+ * Conchitect virtual tour server
+ * Usage: npm install && node server.js
+ * PORT environment variable overrides default 3000.
+ */
+var express = require('express');
+var path    = require('path');
+var fs      = require('fs');
+var app     = express();
+var PORT    = parseInt(process.env.PORT || '3000', 10);
+var LANGS   = ${JSON.stringify(allLangs)};
+var DEFAULT = ${JSON.stringify(defaultLang)};
+var ROOT    = __dirname;
 
-  const sceneTitle = xmlEsc(loc(scene.title, lang) || scene.slug);
-  const projectTitle = xmlEsc(meta.name || 'Virtual Tour');
-  const pageTitle = `${sceneTitle} — ${projectTitle}`;
-  const description = xmlEsc(loc(scene.description, lang) || seo.metaDescription || '');
-  const publicUrl = String(meta.publicationUrl || '').replace(/\/$/, '');
-  const canonicalUrl = publicUrl ? `${xmlEsc(publicUrl)}/scene/${xmlEsc(scene.slug)}/` : '';
-  const primaryColor: string = branding.primaryColor || '#1a1a1a';
-  const copyright = xmlEsc(meta.copyright || '');
-  const xmlName = sceneXmlName(scene.slug);
+// Long-lived static assets
+['panos','krpano','skin','media'].forEach(function(dir) {
+  app.use('/' + dir, express.static(path.join(ROOT, dir), { maxAge: '365d' }));
+});
+// tour.xml, sitemap.xml, robots.txt — no cache
+app.use(express.static(ROOT, { index: false, maxAge: 0 }));
 
-  return `<!DOCTYPE html>
-<html lang="${lang}">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${pageTitle}</title>
-${description ? `  <meta name="description" content="${description}">\n` : ''}${canonicalUrl ? `  <link rel="canonical" href="${canonicalUrl}">\n  <meta property="og:url" content="${canonicalUrl}">\n` : ''}  <meta property="og:title" content="${sceneTitle}">
-  <meta property="og:type" content="website">
-  <style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html,body{width:100%;height:100%;overflow:hidden;background:${primaryColor}}
-    #pano{width:100%;height:100%}
-  </style>
-</head>
-<body>
-  <div id="pano"></div>
-${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.4);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script src="../../krpano/krpano.js"></script>
-  <script>embedpano({xml:"../../tour.xml",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){krp.call("loadscene(${xmlName},null,MERGE,BLEND(0.5));");}});</script>
-</body>
-</html>`;
-}
+// Root → default language
+app.get('/', function(_req, res) { res.redirect(301, '/' + DEFAULT + '/'); });
 
-function generateHtaccess(): string {
-  return `# Generated by Conchitect
-Options -Indexes
-ErrorDocument 404 /404.html
+// /:lang  (no trailing slash)
+app.get('/:lang', function(req, res, next) {
+  if (!LANGS.includes(req.params.lang)) return next();
+  res.redirect(301, '/' + req.params.lang + '/');
+});
 
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteBase /
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule . /index.html [L]
-</IfModule>
+// /:lang/
+app.get('/:lang/', function(req, res, next) {
+  if (!LANGS.includes(req.params.lang)) return next();
+  var file = path.join(ROOT, req.params.lang, 'index.html');
+  if (fs.existsSync(file)) return res.sendFile(file);
+  res.redirect(301, '/' + DEFAULT + '/');
+});
 
-<IfModule mod_headers.c>
-  <FilesMatch "\\.(js|css|jpg|jpeg|png|gif|ico|woff2?)$">
-    Header set Cache-Control "public, max-age=31536000, immutable"
-  </FilesMatch>
-  <FilesMatch "\\.html$">
-    Header set Cache-Control "no-cache, no-store, must-revalidate"
-  </FilesMatch>
-</IfModule>
+// /scene/:slug/:lang  (no trailing slash)
+app.get('/scene/:slug/:lang', function(req, res, next) {
+  if (!LANGS.includes(req.params.lang)) return next();
+  res.redirect(301, '/scene/' + req.params.slug + '/' + req.params.lang + '/');
+});
+
+// /scene/:slug/:lang/
+app.get('/scene/:slug/:lang/', function(req, res, next) {
+  if (!LANGS.includes(req.params.lang)) return next();
+  var file = path.join(ROOT, req.params.lang, 'scene', req.params.slug, 'index.html');
+  if (fs.existsSync(file)) return res.sendFile(file);
+  // Scene not found in this lang → try default lang
+  var fb = path.join(ROOT, DEFAULT, 'scene', req.params.slug, 'index.html');
+  if (fs.existsSync(fb)) return res.redirect(301, '/scene/' + req.params.slug + '/' + DEFAULT + '/');
+  next();
+});
+
+// 404 → serve tour root for the default language
+app.use(function(_req, res) {
+  var fb = path.join(ROOT, DEFAULT, 'index.html');
+  if (fs.existsSync(fb)) return res.status(404).sendFile(fb);
+  res.status(404).send('Not found');
+});
+
+app.listen(PORT, function() {
+  console.log('Conchitect tour \\u2192 http://localhost:' + PORT + '/' + DEFAULT + '/');
+});
 `;
 }
 
-function generateRedirects(): string {
-  return `# Netlify — generated by Conchitect
-/*  /index.html  200
-`;
-}
-
-function generateVercelJson(): string {
+function generateNpmPackageJson(): string {
   return JSON.stringify({
-    cleanUrls: true,
-    trailingSlash: false,
-    rewrites: [{ source: '/(.*)', destination: '/index.html' }],
-    headers: [{
-      source: '/(.*)\\.(?:js|css|jpg|jpeg|png|gif|ico|woff2?)',
-      headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
-    }],
-  }, null, 2);
-}
-
-function generateWebConfig(): string {
-  return `<?xml version="1.0" encoding="utf-8"?>
-<!-- Generated by Conchitect — IIS rewrite rules -->
-<configuration>
-  <system.webServer>
-    <rewrite>
-      <rules>
-        <rule name="SPA" stopProcessing="true">
-          <match url=".*" />
-          <conditions logicalGrouping="MatchAll">
-            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-          </conditions>
-          <action type="Rewrite" url="/index.html" />
-        </rule>
-      </rules>
-    </rewrite>
-    <staticContent>
-      <mimeMap fileExtension=".xml" mimeType="application/xml" />
-    </staticContent>
-  </system.webServer>
-</configuration>`;
+    name: 'conchitect-tour',
+    version: '1.0.0',
+    private: true,
+    description: 'Conchitect virtual tour — Express server',
+    main: 'server.js',
+    scripts: { start: 'node server.js' },
+    dependencies: { express: '^4.21.0' },
+  }, null, 2) + '\n';
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1338,6 +1484,7 @@ function generateRobotsTxt(project: any): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function generateReadmeTxt(project: any, includeLicense: boolean, krpanoPath: string): string {
   const name = project.meta?.name || 'Virtual Tour';
+  const defaultLang: string = project.languages?.default || 'en';
   const licenseSection = includeLicense
     ? '  Your krpanolicense.xml is included in the krpano/ folder.'
     : `  Your krpano license is NOT included.\n  Copy krpanolicense.xml from:\n    ${krpanoPath}\\krpanolicense.xml\n  into the krpano/ folder to remove the watermark.`;
@@ -1345,25 +1492,29 @@ function generateReadmeTxt(project: any, includeLicense: boolean, krpanoPath: st
 Generated by Conchitect
 ${'='.repeat(60)}
 
-HOW TO PUBLISH
---------------
+HOW TO START THE SERVER
+-----------------------
 
-OPTION A — Apache / cPanel / OVH
-  1. Upload all files to your web server root (FTP/SFTP)
-  2. The .htaccess file handles URL routing automatically
+This tour requires Node.js (https://nodejs.org) to run.
 
-OPTION B — Netlify
-  1. Drag this folder into app.netlify.com/drop
-  2. Or: connect your repo, set publish dir to this folder
-  The _redirects file is pre-configured.
+  1. Open a terminal in this folder
+  2. Run: npm install
+  3. Run: npm start   (or: node server.js)
+  4. Open: http://localhost:3000/${defaultLang}/
 
-OPTION C — Vercel
-  Run: npx vercel --prod (from this folder)
-  vercel.json is pre-configured.
+To change the port:  PORT=8080 node server.js
 
-OPTION D — GitHub Pages
-  Push this folder to a "docs/" subfolder in your repo,
-  then enable Pages in Settings → Pages → "docs/" source.
+Deploy on a VPS (OVH, DigitalOcean, Hetzner, etc.):
+  - Upload this entire folder to your server
+  - Install Node.js on the server
+  - Run: npm install && node server.js
+  - Use nginx or Apache as a reverse proxy to port 3000
+
+URL STRUCTURE
+-------------
+  /                           → redirects to /${defaultLang}/
+  /${defaultLang}/                 → tour entry point
+  /scene/<slug>/${defaultLang}/    → direct link to a specific scene
 
 KRPANO LICENSE
 --------------
@@ -1371,19 +1522,16 @@ ${licenseSection}
 
 FILE STRUCTURE
 --------------
-  index.html         — main tour viewer
+  server.js          — Express server (entry point)
+  package.json       — Node.js dependencies
   tour.xml           — krpano scene configuration
   skin/              — krpano vtour skin
   krpano/            — krpano runtime (krpano.js)
   media/             — equirectangular panorama images
   panos/             — cube tile sets (if generated)
-  scene/             — per-scene deep-link pages
+  <lang>/            — per-language HTML pages
   sitemap.xml        — search engine sitemap
   robots.txt         — crawler rules
-  .htaccess          — Apache URL routing
-  _redirects         — Netlify routing
-  vercel.json        — Vercel routing
-  web.config         — IIS routing
 `;
 }
 
@@ -1655,30 +1803,36 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     await fs.writeFile(path.join(outputDir, 'tour.xml'), tourXml, 'utf8');
     progress('tour.xml generated', 'ok');
 
-    // ── index.html ─────────────────────────────────────────────────────────
-    const indexHtml = generateHtml(project);
-    await fs.writeFile(path.join(outputDir, 'index.html'), indexHtml, 'utf8');
+    // ── Per-language HTML pages ────────────────────────────────────────────
+    const langs: string[] = project.languages?.available?.length
+      ? project.languages.available
+      : [project.languages?.default || 'en'];
+    const tiledSlugsSet = new Set(tiledScenes.keys());
 
-    // 404.html = copy of index.html (SPA routing fallback)
-    await fs.copyFile(path.join(outputDir, 'index.html'), path.join(outputDir, '404.html'));
-    progress('index.html + 404.html generated', 'ok');
+    for (const lang of langs) {
+      const langDir = path.join(outputDir, lang);
+      await fs.mkdir(langDir, { recursive: true });
 
-    // ── Per-scene deep-link pages ──────────────────────────────────────────
-    const sceneOutDir = path.join(outputDir, 'scene');
-    await fs.mkdir(sceneOutDir, { recursive: true });
-    for (const scene of scenes) {
-      const dir = path.join(sceneOutDir, scene.slug);
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, 'index.html'), generateScenePageHtml(project, scene), 'utf8');
+      // /:lang/index.html — tour entry point for this language
+      const rootHtml = generateTourHtml(project, lang, null, tiledSlugsSet);
+      await fs.writeFile(path.join(langDir, 'index.html'), rootHtml, 'utf8');
+
+      // /:lang/scene/:slug/index.html — per-scene deep-link
+      const sceneLangDir = path.join(langDir, 'scene');
+      await fs.mkdir(sceneLangDir, { recursive: true });
+      for (const scene of scenes) {
+        const dir = path.join(sceneLangDir, scene.slug);
+        await fs.mkdir(dir, { recursive: true });
+        const sceneHtml = generateTourHtml(project, lang, scene.slug, tiledSlugsSet);
+        await fs.writeFile(path.join(dir, 'index.html'), sceneHtml, 'utf8');
+      }
     }
-    progress(`Per-scene pages: ${scenes.length} in scene/`, 'ok');
+    progress(`HTML pages: ${langs.length} lang(s) × ${scenes.length + 1} pages`, 'ok');
 
-    // ── Rewrite configs ────────────────────────────────────────────────────
-    await fs.writeFile(path.join(outputDir, '.htaccess'),   generateHtaccess(),     'utf8');
-    await fs.writeFile(path.join(outputDir, '_redirects'),  generateRedirects(),    'utf8');
-    await fs.writeFile(path.join(outputDir, 'vercel.json'), generateVercelJson(),   'utf8');
-    await fs.writeFile(path.join(outputDir, 'web.config'),  generateWebConfig(),    'utf8');
-    progress('Rewrite configs generated (.htaccess, _redirects, vercel.json, web.config)', 'ok');
+    // ── Express server ─────────────────────────────────────────────────────
+    await fs.writeFile(path.join(outputDir, 'server.js'),    generateServerJs(project), 'utf8');
+    await fs.writeFile(path.join(outputDir, 'package.json'), generateNpmPackageJson(),  'utf8');
+    progress('server.js + package.json generated', 'ok');
 
     // ── Sitemap + robots.txt ───────────────────────────────────────────────
     const sitemap = generateSitemap(project);

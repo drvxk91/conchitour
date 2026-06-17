@@ -54,8 +54,8 @@ function msgToStep(msg: string): StepId | null {
   if (m.includes('scene images'))    return 'media';
   if (m.includes('tile') || m.includes('pano')) return 'tiles';
   if (m.includes('tour.xml'))        return 'xml';
-  if (m.includes('index.html') || m.includes('scene page')) return 'html';
-  if (m.includes('sitemap') || m.includes('robots') || m.includes('readme') || m.includes('rewrite')) return 'seo';
+  if (m.includes('HTML pages') || m.includes('server.js') || m.includes('index.html')) return 'html';
+  if (m.includes('sitemap') || m.includes('robots') || m.includes('readme')) return 'seo';
   if (m.includes('done —') || m.includes('files,')) return 'done';
   return null;
 }
@@ -625,6 +625,9 @@ export function CompileScreen() {
                       {result.fileCount} files — {(result.sizeBytes / 1048576).toFixed(1)} MB
                     </p>
                   )}
+                  <p className="text-xs text-emerald-600 mt-1 font-mono">
+                    cd &quot;{result.outputDir}&quot; &amp;&amp; npm install &amp;&amp; node server.js
+                  </p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button
