@@ -8,7 +8,7 @@ import clsx from 'clsx';
 interface NavEntry { id: ScreenId; label: string; Icon: typeof Upload; badge?: () => string | number | null; }
 
 export function Sidebar() {
-  const { activeScreen, setActiveScreen, project } = useProject();
+  const { activeScreen, setActiveScreen, project, isCompiling } = useProject();
 
   const sections: { title: string; entries: NavEntry[] }[] = [
     {
@@ -34,7 +34,7 @@ export function Sidebar() {
     {
       title: 'Publish',
       entries: [
-        { id: 'compile', label: 'Compile', Icon: Package },
+        { id: 'compile', label: 'Compile', Icon: Package, badge: () => isCompiling ? '…' : null },
       ],
     },
   ];

@@ -26,6 +26,7 @@ interface ProjectStore {
   activeScreen: ScreenId;
   isProcessing: boolean;
   processingMessage: string;
+  isCompiling: boolean;
   history: Project[];
   historyIndex: number;
 
@@ -34,6 +35,7 @@ interface ProjectStore {
   setActiveScene: (id: UUID | null) => void;
   setActiveHotspot: (id: UUID | null) => void;
   setProcessing: (isProcessing: boolean, message?: string) => void;
+  setIsCompiling: (v: boolean) => void;
 
   // Scenes
   addScene: (scene: Scene) => void;
@@ -91,6 +93,7 @@ export const useProject = create<ProjectStore>((set) => ({
   activeScreen: 'import',
   isProcessing: false,
   processingMessage: '',
+  isCompiling: false,
   history: [_initial],
   historyIndex: 0,
 
@@ -99,6 +102,7 @@ export const useProject = create<ProjectStore>((set) => ({
   setActiveHotspot: (id) => set({ activeHotspotId: id }),
   setProcessing: (isProcessing, message = '') =>
     set({ isProcessing, processingMessage: message }),
+  setIsCompiling: (v) => set({ isCompiling: v }),
 
   addScene: (scene) =>
     set((s) =>

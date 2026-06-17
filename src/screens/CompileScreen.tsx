@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
-  Loader2, ExternalLink, Copy, Settings, RotateCw,
+  Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
@@ -14,7 +14,7 @@ interface LogEntry {
 }
 
 export function CompileScreen() {
-  const { project } = useProject();
+  const { project, setIsCompiling } = useProject();
 
   // Settings state
   const [settings, setSettings] = useState<ConchitectSettings | null>(null);
@@ -30,15 +30,22 @@ export function CompileScreen() {
   const [copied, setCopied]         = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
-  // Load settings on mount
+  // Load settings and restore any in-progress compile on mount
   useEffect(() => {
     window.conchitect.settingsGet().then((s) => {
       setSettings(s);
       setKrpanoPathDraft(s.krpanoPath);
-      // Auto-validate on load
       window.conchitect.krpanoValidate(s.krpanoPath).then(setValidation);
     });
-  }, []);
+
+    window.conchitect.compileGetState().then((state) => {
+      if (!state) return;
+      setLog(state.log.map((e) => ({ msg: e.msg, status: e.status as LogEntry['status'] })));
+      setRunning(state.running);
+      setIsCompiling(state.running);
+      if (state.result) setResult(state.result);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll log
   useEffect(() => {
@@ -79,13 +86,19 @@ export function CompileScreen() {
     setLog([]);
     setResult(null);
     setRunning(true);
+    setIsCompiling(true);
     try {
       const res = await window.conchitect.compileRun(project, outputDir);
       setResult(res);
     } finally {
       setRunning(false);
+      setIsCompiling(false);
     }
-  }, [outputDir, running, project]);
+  }, [outputDir, running, project, setIsCompiling]);
+
+  const handleCancel = useCallback(() => {
+    window.conchitect.compileCancel();
+  }, []);
 
   const handleCopyPath = useCallback(() => {
     if (!result?.outputDir) return;
@@ -266,20 +279,31 @@ export function CompileScreen() {
         </section>
 
         {/* ── Compile button ───────────────────────────────────────────── */}
-        <button
-          onClick={handleCompile}
-          disabled={!canCompile}
-          className={clsx(
-            'flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all',
-            canCompile
-              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer'
-              : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleCompile}
+            disabled={!canCompile}
+            className={clsx(
+              'flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all',
+              canCompile
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer'
+                : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+            )}
+          >
+            {running
+              ? <><Loader2 size={15} className="animate-spin" />Compiling…</>
+              : <><Play size={15} />Compile tour</>}
+          </button>
+          {running && (
+            <button
+              onClick={handleCancel}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
+            >
+              <XCircle size={14} />
+              Cancel
+            </button>
           )}
-        >
-          {running
-            ? <><Loader2 size={15} className="animate-spin" />Compiling…</>
-            : <><Play size={15} />Compile tour</>}
-        </button>
+        </div>
 
         {/* ── Progress log ─────────────────────────────────────────────── */}
         {log.length > 0 && (

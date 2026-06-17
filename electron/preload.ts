@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('conchitect', {
     ipcRenderer.on('compile:progress', handler as Parameters<typeof ipcRenderer.on>[1]);
     return () => ipcRenderer.removeListener('compile:progress', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
   },
+  compileGetState: (): Promise<CompileRunState | null> => ipcRenderer.invoke('compile:get-state'),
+  compileCancel: (): Promise<boolean> => ipcRenderer.invoke('compile:cancel'),
   openFolder: (folderPath: string): Promise<void> => ipcRenderer.invoke('shell:openFolder', folderPath),
 });
 
@@ -79,6 +81,13 @@ export interface CompileResult {
   error?: string;
 }
 
+export interface CompileRunState {
+  running: boolean;
+  log: Array<{ msg: string; status: 'running' | 'ok' | 'error' | 'info' }>;
+  result?: CompileResult;
+  startedAt: number;
+}
+
 declare global {
   interface Window {
     conchitect: {
@@ -100,6 +109,8 @@ declare global {
       showFolderDialog: () => Promise<string | null>;
       compileRun: (projectData: unknown, outputDir: string) => Promise<CompileResult>;
       onCompileProgress: (cb: (msg: string, status: string) => void) => () => void;
+      compileGetState: () => Promise<CompileRunState | null>;
+      compileCancel: () => Promise<boolean>;
       openFolder: (folderPath: string) => Promise<void>;
     };
   }

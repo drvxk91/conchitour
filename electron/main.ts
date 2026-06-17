@@ -20,6 +20,7 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   });
 
@@ -462,6 +463,30 @@ ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
   return { valid: missing.length === 0, missing };
 });
 
+// ── Compile state (survives renderer navigation) ──────────────────────────────
+
+interface CompileLogEntry {
+  msg: string;
+  status: 'running' | 'ok' | 'error' | 'info';
+}
+
+interface CompileRunState {
+  running: boolean;
+  log: CompileLogEntry[];
+  result?: { ok: boolean; outputDir?: string; fileCount?: number; sizeBytes?: number; error?: string };
+  startedAt: number;
+}
+
+let compileRunState: CompileRunState | null = null;
+let compileCancelToken = { canceled: false };
+
+ipcMain.handle('compile:get-state', () => compileRunState);
+
+ipcMain.handle('compile:cancel', () => {
+  compileCancelToken.canceled = true;
+  return true;
+});
+
 // ── Compile pipeline ──────────────────────────────────────────────────────────
 
 function xmlEsc(s: string | undefined | null): string {
@@ -898,14 +923,25 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
   const scenes: any[] = project.scenes || [];
   const settings = await readSettings();
 
+  compileRunState = { running: true, log: [], startedAt: Date.now() };
+  compileCancelToken = { canceled: false };
+  const token = compileCancelToken;
+
   function progress(msg: string, status: 'running' | 'ok' | 'error' | 'info') {
-    event.sender.send('compile:progress', { msg, status });
+    const entry: CompileLogEntry = { msg, status };
+    if (compileRunState) compileRunState.log.push(entry);
+    try { event.sender.send('compile:progress', { msg, status }); } catch { /* window closed */ }
+  }
+
+  function checkCancel() {
+    if (token.canceled) throw new Error('Compile canceled');
   }
 
   try {
     progress('Starting compile…', 'running');
 
     // ── Create output structure ─────────────────────────────────────────────
+    checkCancel();
     await fs.mkdir(path.join(outputDir, 'media'), { recursive: true });
     await fs.mkdir(path.join(outputDir, 'krpano'), { recursive: true });
     progress('Output folder ready', 'ok');
@@ -956,6 +992,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     }
 
     // ── Copy scene images (sphere) ─────────────────────────────────────────
+    checkCancel();
     let mediaCopied = 0;
     let mediaSkipped = 0;
     for (const scene of scenes) {
@@ -974,6 +1011,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     progress(`Scene images: ${mediaCopied} copied${mediaSkipped > 0 ? `, ${mediaSkipped} skipped` : ''}`, mediaCopied > 0 ? 'ok' : 'info');
 
     // ── Tile generation via krpanotools ────────────────────────────────────
+    checkCancel();
     const tiledSlugs = new Set<string>();
     if (settings.useKrpanoTiles) {
       const toolPath = path.join(kPath, 'krpanotools.exe');
@@ -1107,11 +1145,16 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     const sizeMb = (totalBytes / 1048576).toFixed(1);
     progress(`Done — ${totalFiles} files, ${sizeMb} MB`, 'ok');
 
-    return { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes };
+    const result = { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes };
+    if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
+    return result;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    progress(`Error: ${msg}`, 'error');
-    return { ok: false, error: msg };
+    const isCanceled = token.canceled;
+    progress(isCanceled ? 'Compile canceled' : `Error: ${msg}`, isCanceled ? 'info' : 'error');
+    const result = { ok: false, error: isCanceled ? 'Compile canceled' : msg };
+    if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
+    return result;
   }
 });
 
