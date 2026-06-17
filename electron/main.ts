@@ -1412,6 +1412,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
 
     const result = { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes };
     if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
+    try { event.sender.send('compile:done', result); } catch { /* window closed */ }
     return result;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1419,6 +1420,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     progress(isCanceled ? 'Compile canceled' : `Error: ${msg}`, isCanceled ? 'info' : 'error');
     const result = { ok: false, error: isCanceled ? 'Compile canceled' : msg };
     if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
+    try { event.sender.send('compile:done', result); } catch { /* window closed */ }
     return result;
   }
 });

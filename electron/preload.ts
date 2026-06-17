@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld('conchitect', {
   },
   compileGetState: (): Promise<CompileRunState | null> => ipcRenderer.invoke('compile:get-state'),
   compileCancel: (): Promise<boolean> => ipcRenderer.invoke('compile:cancel'),
+  onCompileDone: (cb: (result: CompileResult) => void): (() => void) => {
+    const handler = (_event: unknown, result: CompileResult) => cb(result);
+    ipcRenderer.on('compile:done', handler as Parameters<typeof ipcRenderer.on>[1]);
+    return () => ipcRenderer.removeListener('compile:done', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
+  },
   openFolder: (folderPath: string): Promise<void> => ipcRenderer.invoke('shell:openFolder', folderPath),
 });
 
@@ -144,6 +149,7 @@ declare global {
       onCompileProgress: (cb: (msg: string, status: string) => void) => () => void;
       compileGetState: () => Promise<CompileRunState | null>;
       compileCancel: () => Promise<boolean>;
+      onCompileDone: (cb: (result: CompileResult) => void) => () => void;
       openFolder: (folderPath: string) => Promise<void>;
     };
   }

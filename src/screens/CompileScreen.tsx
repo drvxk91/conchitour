@@ -76,8 +76,30 @@ export function CompileScreen() {
       setRunning(state.running);
       setIsCompiling(state.running);
       if (state.result) setResult(state.result);
+      // Restore step progress by replaying log entries
+      const restoredSteps = new Set<StepId>();
+      let lastStep: StepId | null = null;
+      for (const entry of state.log) {
+        const step = msgToStep(entry.msg);
+        if (step) {
+          lastStep = step;
+          if (entry.status === 'ok') restoredSteps.add(step);
+        }
+      }
+      completedStepsRef.current = restoredSteps;
+      if (state.running && lastStep) setCurrentStep(lastStep);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear running state when compile finishes (even if handleCompile ran on a prior component instance)
+  useEffect(() => {
+    const unsub = window.conchitect.onCompileDone((res) => {
+      setRunning(false);
+      setIsCompiling(false);
+      setResult(res);
+    });
+    return unsub;
+  }, [setIsCompiling]);
 
   // Auto-scroll log
   useEffect(() => {
