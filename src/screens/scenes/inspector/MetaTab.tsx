@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
-import { Check, X, MapPin, Globe } from 'lucide-react';
+import { Check, X, MapPin } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { isValidSlug } from '@/lib/slug';
 import { normalizeHeading } from '@/lib/heading';
+import { flagFor } from '@/lib/language-flags';
 import type { Scene } from '@/types';
 
 export function MetaTab({ scene }: { scene: Scene }) {
@@ -87,14 +88,15 @@ export function MetaTab({ scene }: { scene: Scene }) {
       {/* Language selector (only when project has multiple languages) */}
       {langs.length > 1 && (
         <div className="flex items-center gap-1.5 text-xs text-ink-faded">
-          <Globe size={11} />
           <span>Editing:</span>
           <select
             className="bg-paper-strong border border-line-soft rounded px-1.5 py-0.5 text-xs focus:outline-none"
             value={lang}
             onChange={(e) => setLang(e.target.value)}
           >
-            {langs.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}
+            {langs.map((l) => (
+              <option key={l} value={l}>{flagFor[l] ?? '🌐'}  {l.toUpperCase()}</option>
+            ))}
           </select>
         </div>
       )}

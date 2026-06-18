@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Plus, Trash2, Star, Globe } from 'lucide-react';
+import { Plus, Trash2, Star } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
+import { flagFor } from '@/lib/language-flags';
 
 // Common language codes with display names
 const COMMON_LANGS: { code: string; label: string }[] = [
@@ -26,6 +27,10 @@ const COMMON_LANGS: { code: string; label: string }[] = [
 
 function langLabel(code: string): string {
   return COMMON_LANGS.find((l) => l.code === code)?.label ?? code.toUpperCase();
+}
+
+function langFlag(code: string): string {
+  return flagFor[code] ?? '🌐';
 }
 
 export function LanguagesScreen() {
@@ -75,7 +80,7 @@ export function LanguagesScreen() {
                   key={code}
                   className="flex items-center gap-3 bg-paper border border-line-soft rounded-lg px-4 py-2.5"
                 >
-                  <Globe size={14} className="text-ink-faded flex-shrink-0" />
+                  <span className="text-xl flex-shrink-0 select-none" role="img" aria-label={langLabel(code)}>{langFlag(code)}</span>
                   <div className="flex-1">
                     <span className="text-sm font-medium text-ink">{langLabel(code)}</span>
                     <span className="ml-2 text-xs text-ink-faded font-mono">{code}</span>
@@ -120,7 +125,7 @@ export function LanguagesScreen() {
               >
                 <option value="">Select from list…</option>
                 {COMMON_LANGS.filter((l) => !available.includes(l.code)).map((l) => (
-                  <option key={l.code} value={l.code}>{l.label} ({l.code})</option>
+                  <option key={l.code} value={l.code}>{langFlag(l.code)}  {l.label} ({l.code})</option>
                 ))}
               </select>
             </div>
