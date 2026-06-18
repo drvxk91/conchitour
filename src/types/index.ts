@@ -141,6 +141,10 @@ export interface ProjectBranding {
   primaryColor: string;
   accentColor: string;
   introText: Record<string, string>;
+  /** Style of the hover preview card shown on link hotspots in the compiled tour */
+  hotspotPreviewStyle?: 'card' | 'compact' | 'overlay';
+  /** Size of hotspot pins in pixels (default 32, range 16–80) */
+  hotspotSizePx?: number;
 }
 
 export interface ProjectShare {
@@ -152,6 +156,13 @@ export interface ProjectShare {
   captureView: boolean;
 }
 
+export interface MapModeConfig {
+  enabled: boolean;
+  defaultView: '360' | 'map' | 'sidebyside';
+  tileStyle: 'streets' | 'satellite' | 'light' | 'dark';
+  showByDefault: boolean;
+}
+
 export interface ProjectModules {
   vr: boolean;
   gyroscope: boolean;
@@ -159,6 +170,9 @@ export interface ProjectModules {
   feedbackMailto?: string;
   formsEnabled: boolean;
   deeplApiKey?: string;
+  cookieConsent?: boolean;
+  cookieText?: Record<string, string>;
+  mapMode?: MapModeConfig;
 }
 
 export interface Project {

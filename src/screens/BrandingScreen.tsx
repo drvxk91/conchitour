@@ -167,6 +167,98 @@ export function BrandingScreen() {
           />
         </div>
 
+        {/* ── Hotspot size ─── */}
+        <SectionTitle>Hotspot size</SectionTitle>
+        <p className="text-xs text-ink-faded mb-3">
+          Size of navigation pins displayed in the compiled tour.
+        </p>
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min={16}
+            max={80}
+            step={2}
+            value={b.hotspotSizePx ?? 32}
+            onChange={(e) => updateBranding({ hotspotSizePx: Number(e.target.value) })}
+            className="flex-1 accent-accent h-1.5"
+          />
+          <span className="text-sm font-mono text-ink w-12 text-right flex-shrink-0">
+            {b.hotspotSizePx ?? 32} px
+          </span>
+        </div>
+        <div className="flex justify-between text-[10px] text-ink-faded mt-1">
+          <span>Small (16 px)</span>
+          <span>Default (32 px)</span>
+          <span>Large (80 px)</span>
+        </div>
+
+        {/* ── Hotspot preview style ─── */}
+        <SectionTitle>Hotspot preview style</SectionTitle>
+        <p className="text-xs text-ink-faded mb-3">
+          Design of the card shown when hovering a navigation hotspot in the compiled tour.
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          {([
+            {
+              id: 'card',
+              label: 'Card',
+              hint: 'Image + title',
+              preview: (
+                <div className="w-14 rounded-lg overflow-hidden shadow-md bg-zinc-800">
+                  <div className="h-8 bg-zinc-600"/>
+                  <div className="px-1.5 py-1 space-y-0.5">
+                    <div className="h-1.5 rounded bg-zinc-500 w-10"/>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: 'compact',
+              label: 'Compact',
+              hint: 'Title only',
+              preview: (
+                <div className="flex items-center justify-center h-10">
+                  <div className="rounded-full bg-zinc-800 shadow-md px-3 py-1.5">
+                    <div className="h-1.5 rounded bg-zinc-500 w-14"/>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: 'overlay',
+              label: 'Overlay',
+              hint: 'Title on image',
+              preview: (
+                <div className="w-14 rounded-lg overflow-hidden shadow-md relative">
+                  <div className="h-10 bg-zinc-600"/>
+                  <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-gradient-to-t from-zinc-900/90 via-zinc-900/50 to-transparent">
+                    <div className="h-1.5 rounded bg-zinc-300/70 w-10"/>
+                  </div>
+                </div>
+              ),
+            },
+          ] as { id: 'card' | 'compact' | 'overlay'; label: string; hint: string; preview: React.ReactNode }[]).map(({ id, label, hint, preview }) => {
+            const active = (b.hotspotPreviewStyle ?? 'card') === id;
+            return (
+              <button
+                key={id}
+                onClick={() => updateBranding({ hotspotPreviewStyle: id })}
+                className={`flex flex-col items-center gap-2 rounded-xl border p-3 transition-colors ${
+                  active
+                    ? 'border-accent bg-accent/5 ring-1 ring-accent'
+                    : 'border-line-soft bg-paper-tinted hover:border-line-strong'
+                }`}
+              >
+                {preview}
+                <div className="text-center">
+                  <p className={`text-xs font-medium ${active ? 'text-accent' : 'text-ink'}`}>{label}</p>
+                  <p className="text-[10px] text-ink-faded">{hint}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
         {/* ── Intro text ─── */}
         <SectionTitle>Welcome / intro text</SectionTitle>
         <p className="text-xs text-ink-faded mb-3">
