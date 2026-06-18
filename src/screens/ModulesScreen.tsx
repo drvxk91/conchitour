@@ -1,6 +1,7 @@
-import { Glasses, Smartphone, Maximize, MessageSquare, ClipboardList, Key } from 'lucide-react';
+import { Glasses, Smartphone, Maximize, MessageSquare, ClipboardList, Key, Bot, Sparkles, Construction, Cookie, Map } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
+import type { MapModeConfig } from '@/types';
 
 const inputCls =
   'w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink placeholder-ink-faded font-mono focus:outline-none focus:border-accent';
@@ -43,9 +44,18 @@ function ModuleToggle({ Icon, label, description, enabled, onChange, children }:
   );
 }
 
+const DEFAULT_MAP_MODE: MapModeConfig = {
+  enabled: false,
+  defaultView: '360',
+  tileStyle: 'streets',
+  showByDefault: false,
+};
+
 export function ModulesScreen() {
   const { project, updateModules } = useProject();
   const m = project.modules;
+  const mapMode: MapModeConfig = m.mapMode ?? DEFAULT_MAP_MODE;
+  const scenesWithGps = project.scenes.filter((s) => s.geo?.lat !== 0 || s.geo?.lng !== 0).length;
 
   return (
     <ScreenShell title="Modules" subtitle="Enable optional viewer features and integrations.">
@@ -86,9 +96,10 @@ export function ModulesScreen() {
             <label className="text-[10px] uppercase tracking-wide text-ink-faded font-medium">Email address</label>
             <input
               className={inputCls}
-              defaultValue={m.feedbackMailto ?? ''}
+              type="email"
+              value={m.feedbackMailto ?? ''}
               placeholder="feedback@example.com"
-              onBlur={(e) => updateModules({ feedbackMailto: e.target.value || undefined })}
+              onChange={(e) => updateModules({ feedbackMailto: e.target.value })}
             />
           </div>
         </ModuleToggle>
@@ -100,6 +111,72 @@ export function ModulesScreen() {
           enabled={m.formsEnabled}
           onChange={(v) => updateModules({ formsEnabled: v })}
         />
+
+        <ModuleToggle
+          Icon={Cookie}
+          label="Cookie consent banner"
+          description="Shows a consent banner on the visitor's first visit. Stores acceptance in localStorage."
+          enabled={!!m.cookieConsent}
+          onChange={(v) => updateModules({ cookieConsent: v })}
+        >
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase tracking-wide text-ink-faded font-medium">Banner text</label>
+            <textarea
+              rows={3}
+              className={inputCls + ' resize-none text-xs'}
+              defaultValue={m.cookieText?.en ?? ''}
+              placeholder="This website uses cookies to enhance your virtual tour experience. By continuing, you accept our cookie policy."
+              onBlur={(e) =>
+                updateModules({ cookieText: { ...(m.cookieText ?? {}), en: e.target.value } })
+              }
+            />
+            <p className="text-[10px] text-ink-faded/70">Currently editing: EN — add per-language variants in the Languages screen (soon).</p>
+          </div>
+        </ModuleToggle>
+
+        <ModuleToggle
+          Icon={Map}
+          label="Map mode"
+          description={
+            scenesWithGps >= 2
+              ? 'Show an interactive map panel with scene pins. Powered by OpenStreetMap.'
+              : 'Add GPS data to at least 2 scenes in the Map screen to enable map mode.'
+          }
+          enabled={!!mapMode.enabled && scenesWithGps >= 2}
+          onChange={(v) => updateModules({ mapMode: { ...mapMode, enabled: v } })}
+        >
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wide text-ink-faded font-medium">Default view</label>
+              <div className="flex gap-2">
+                {(['360', 'map', 'sidebyside'] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => updateModules({ mapMode: { ...mapMode, defaultView: v } })}
+                    className={`flex-1 text-xs py-1 rounded border transition-colors ${
+                      mapMode.defaultView === v ? 'border-accent bg-accent/10 text-accent' : 'border-line-soft text-ink-faded hover:border-line-strong'
+                    }`}
+                  >
+                    {v === '360' ? '360°' : v === 'map' ? 'Map' : 'Side by side'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wide text-ink-faded font-medium">Map style</label>
+              <select
+                className={inputCls + ' text-xs'}
+                value={mapMode.tileStyle}
+                onChange={(e) => updateModules({ mapMode: { ...mapMode, tileStyle: e.target.value as MapModeConfig['tileStyle'] } })}
+              >
+                <option value="streets">Streets (OpenStreetMap)</option>
+                <option value="satellite">Satellite (Esri)</option>
+                <option value="light">Light (CartoDB)</option>
+                <option value="dark">Dark (CartoDB)</option>
+              </select>
+            </div>
+          </div>
+        </ModuleToggle>
 
         {/* DeepL key (also editable from Languages screen) */}
         <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 mt-6">
@@ -122,6 +199,61 @@ export function ModulesScreen() {
               {m.deeplApiKey && (
                 <p className="text-[11px] text-green-600 mt-1">API key stored.</p>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── AI integrations ─────────────────────────────────────────────── */}
+        <p className="text-[10px] uppercase tracking-widest text-ink-faded font-semibold mt-8 mb-3">AI integrations</p>
+
+        {/* Claude */}
+        <div className="rounded-xl border border-dashed border-line-strong bg-paper-tinted p-4 opacity-60">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-paper-strong text-ink-faded">
+              <Sparkles size={18} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-ink">Claude (Anthropic)</p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5">
+                  <Construction size={9} />
+                  Development in progress
+                </span>
+              </div>
+              <p className="text-xs text-ink-faded mt-1">
+                Auto-generate scene descriptions, alt texts, and SEO content from your panoramas.
+              </p>
+              <input
+                disabled
+                className={inputCls + ' mt-3 opacity-50 cursor-not-allowed'}
+                placeholder="sk-ant-xxxx — coming soon"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ChatGPT */}
+        <div className="rounded-xl border border-dashed border-line-strong bg-paper-tinted p-4 opacity-60">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-paper-strong text-ink-faded">
+              <Bot size={18} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-ink">ChatGPT (OpenAI)</p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5">
+                  <Construction size={9} />
+                  Development in progress
+                </span>
+              </div>
+              <p className="text-xs text-ink-faded mt-1">
+                Generate tour narratives, suggest hotspot labels, and enrich metadata with GPT-4.
+              </p>
+              <input
+                disabled
+                className={inputCls + ' mt-3 opacity-50 cursor-not-allowed'}
+                placeholder="sk-xxxx — coming soon"
+              />
             </div>
           </div>
         </div>
