@@ -41,7 +41,7 @@ export function ParcoursGraph() {
 
   return (
     <footer
-      className="h-[100px] border-t border-line bg-paper flex-shrink-0 overflow-x-auto"
+      className="h-[120px] border-t border-line bg-paper flex-shrink-0 overflow-x-auto"
       data-testid="parcours-graph"
     >
       <div className="h-full flex items-center gap-0 px-4 min-w-max">
