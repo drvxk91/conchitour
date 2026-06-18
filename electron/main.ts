@@ -1068,6 +1068,8 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
   const lang: string = project.languages?.default || 'en';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scenes: any[] = project.scenes || [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const categories: any[] = project.categories || [];
   const modules = project.modules || {};
   const startSceneId: string | undefined = project.branding?.startSceneId;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1162,8 +1164,11 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
         if (!targetScene) continue;
         const linkedScene = sceneXmlName(targetScene.slug);
         const tooltip = xmlEsc(loc(targetScene.title, lang) || targetScene.slug);
-        // skin_hotspotstyle provides the arrow PNG and its own onclick navigation handler
-        xml += `    <hotspot name="${hsName}" style="skin_hotspotstyle" ath="${ath}" atv="${atv}" linkedscene="${linkedScene}" tooltip="${tooltip}"/>\n`;
+        // Use target scene's primary category icon as hotspot pin
+        const tCatId: string | undefined = (targetScene.categoryIds as string[])?.[0];
+        const tCat = tCatId ? categories.find((c: any) => c.id === tCatId) : null;
+        const iconUrl = tCat?.slug ? `/hotspots/cat-${tCat.slug}.svg` : '/hotspots/default.svg';
+        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="40" height="48" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onclick="loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
       } else if (hs.type === 'text') {
         const label = xmlEsc(loc(hs.title, lang) || 'Info');
         xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_text" text="${label}"/>\n`;
@@ -1228,6 +1233,9 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
       preview: tiledSlugs.has(scene.slug)
         ? `/panos/${scene.slug}.tiles/preview.jpg`
         : `/media/${scene.slug}${ext}`,
+      gps: (scene.gps?.lat != null && scene.gps?.lng != null)
+        ? { lat: scene.gps.lat, lng: scene.gps.lng }
+        : null,
     };
   }
 
@@ -1251,6 +1259,8 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     scenes: scenesData,
     categories: categoriesData,
   });
+
+  const hasMap = scenes.some((s: any) => s.gps?.lat != null && s.gps?.lng != null);
 
   // OG / canonical
   let headExtras = '';
@@ -1297,7 +1307,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${pageTitle}</title>
-${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}  <style>
+${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}${hasMap ? '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n' : ''}  <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body{width:100%;height:100%;overflow:hidden;background:${primaryColor}}
     #pano{position:absolute;inset:0}
@@ -1340,7 +1350,30 @@ ${description ? `  <meta name="description" content="${description}">\n` : ''}${
       transition:right .45s cubic-bezier(.22,1,.36,1),background .2s,color .2s;
     }
     #panel-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
-    #panel-toggle.open{right:340px}${shareStyles}
+    #panel-toggle.open{right:340px}${shareStyles}${hasMap ? `
+    #map-btn{
+      position:fixed;top:50%;left:0;transform:translateY(-50%);z-index:51;
+      background:rgba(8,8,10,.8);border:1px solid rgba(255,255,255,.12);border-left:none;
+      border-radius:0 8px 8px 0;padding:14px 8px;cursor:pointer;color:rgba(255,255,255,.7);
+      font-size:11px;writing-mode:vertical-rl;letter-spacing:.06em;text-transform:uppercase;
+      font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      transition:background .2s,color .2s;
+    }
+    #map-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+    #map-panel{
+      position:fixed;left:0;top:0;bottom:0;width:360px;z-index:50;
+      display:flex;flex-direction:column;
+      transform:translateX(-100%);transition:transform .45s cubic-bezier(.22,1,.36,1);
+    }
+    #map-panel.open{transform:translateX(0)}
+    #map-close{
+      position:absolute;top:12px;right:12px;z-index:500;
+      width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.3);
+      background:rgba(8,8,10,.85);color:#fff;font-size:18px;line-height:1;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+    }
+    #map-close:hover{background:rgba(255,255,255,.2)}
+    #leaflet-map{flex:1}` : ''}
   </style>
 </head>
 <body>
@@ -1353,7 +1386,11 @@ ${description ? `  <meta name="description" content="${description}">\n` : ''}${
     <p id="panel-desc"></p>
   </aside>
   <button id="panel-toggle">Info</button>
-${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.35);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script>
+${hasMap ? `  <button id="map-btn">Map</button>
+  <div id="map-panel">
+    <button id="map-close" aria-label="Close">&#x2715;</button>
+    <div id="leaflet-map"></div>
+  </div>\n` : ''}${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.35);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script>
   var TOUR = ${tourDataJson};
   var _krpano    = null;
   var _curScene  = '';
@@ -1408,7 +1445,49 @@ ${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;trans
     document.getElementById('panel-toggle').classList.toggle('open', open);
   });
   </script>
-  <script src="/krpano/krpano.js"></script>
+${hasMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+  var _lmap = null;
+  function _openMap() {
+    var p = document.getElementById('map-panel');
+    p.classList.add('open');
+    if (_lmap) { setTimeout(function(){ _lmap.invalidateSize(); }, 300); return; }
+    setTimeout(function() {
+      _lmap = L.map('leaflet-map');
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom:19
+      }).addTo(_lmap);
+      var bounds = [];
+      Object.keys(TOUR.scenes).forEach(function(slug) {
+        var sc = TOUR.scenes[slug];
+        if (!sc.gps) return;
+        var catId = sc.categoryIds && sc.categoryIds[0];
+        var cat   = catId ? TOUR.categories[catId] : null;
+        var color = cat ? cat.color : '#6b7280';
+        var m = L.circleMarker([sc.gps.lat, sc.gps.lng], {
+          radius:9, fillColor:color, color:'#fff', weight:2, opacity:1, fillOpacity:0.9
+        });
+        m.bindTooltip(sc.title || slug, {direction:'top'});
+        m.on('click', function() {
+          if (_krpano) _krpano.call('loadscene(scene_'+slug+',null,MERGE,BLEND(0.5));');
+          _closeMap();
+        });
+        m.addTo(_lmap);
+        bounds.push([sc.gps.lat, sc.gps.lng]);
+      });
+      if (bounds.length === 1) { _lmap.setView(bounds[0], 15); }
+      else if (bounds.length > 1) { _lmap.fitBounds(bounds, {padding:[32,32]}); }
+    }, 300);
+  }
+  function _closeMap() {
+    document.getElementById('map-panel').classList.remove('open');
+  }
+  document.getElementById('map-btn').addEventListener('click', function() {
+    document.getElementById('map-panel').classList.contains('open') ? _closeMap() : _openMap();
+  });
+  document.getElementById('map-close').addEventListener('click', _closeMap);
+  </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){
     _krpano = krp;
     ${loadSceneCall}
@@ -1463,6 +1542,28 @@ function generateSitemap(project: any): string {
 
   xml += '</urlset>\n';
   return xml;
+}
+
+function generateHotspotSvg(color: string, label: string, iconSvg?: string | null): string {
+  const c = /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#555555';
+  let inner = '';
+  if (iconSvg) {
+    const m = iconSvg.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+    if (m) {
+      // centre a 24×24 icon at (20,20) → translate(8,8)
+      inner = `<g transform="translate(8,8)" fill="white" stroke="none">${m[1]}</g>`;
+    }
+  }
+  if (!inner) {
+    const letter = xmlEsc((label || '?').charAt(0).toUpperCase());
+    inner = `<text x="20" y="25" text-anchor="middle" dominant-baseline="auto" font-family="system-ui,sans-serif" font-size="15" font-weight="700" fill="white">${letter}</text>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48">
+  <defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/></filter></defs>
+  <path d="M20,2 C10.06,2 2,10.06 2,20 C2,31 20,46 20,46 C20,46 38,31 38,20 C38,10.06 29.94,2 20,2Z" fill="${c}" filter="url(#sh)"/>
+  <circle cx="20" cy="20" r="10" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
+  ${inner}
+</svg>`;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1886,6 +1987,21 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       ? project.languages.available
       : [project.languages?.default || 'en'];
     const tiledSlugsSet = new Set(tiledScenes.keys());
+
+    // ── Hotspot category icons ──────────────────────────────────────────────
+    const hotspotsDir = path.join(outputDir, 'hotspots');
+    await fs.mkdir(hotspotsDir, { recursive: true });
+    await fs.writeFile(path.join(hotspotsDir, 'default.svg'), generateHotspotSvg('#6b7280', '?'), 'utf8');
+    for (const cat of (project.categories || []) as Array<{ slug?: string; color?: string; name?: Record<string, string> | string; iconSvg?: string }>) {
+      if (!cat.slug) continue;
+      const label = typeof cat.name === 'string' ? cat.name : (Object.values(cat.name || {})[0] || cat.slug);
+      await fs.writeFile(
+        path.join(hotspotsDir, `cat-${cat.slug}.svg`),
+        generateHotspotSvg(cat.color || '#6b7280', label, cat.iconSvg),
+        'utf8'
+      );
+    }
+    progress(`Hotspot icons generated (${(project.categories || []).length} categories)`, 'ok');
 
     for (const lang of langs) {
       const langDir = path.join(outputDir, lang);
