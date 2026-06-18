@@ -1071,31 +1071,30 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const categories: any[] = project.categories || [];
   const modules = project.modules || {};
-  const startSceneId: string | undefined = project.branding?.startSceneId;
+  const branding = project.branding || {};
+  const startSceneId: string | undefined = branding.startSceneId;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startScene = scenes.find((s: any) => s.id === startSceneId) ?? scenes[0];
   const startName: string = startScene ? sceneXmlName(startScene.slug) : '';
   const projectTitle = xmlEsc(project.meta?.name || 'Virtual Tour');
-  const gyro = modules.gyroscope ? 'true' : 'false';
-  const webvr = modules.vr ? 'true' : 'false';
+  const useGyro: boolean = !!modules.gyroscope;
+  const useVr: boolean = !!modules.vr;
+  // hotspot size: branding.hotspotSizePx (default 32) → scale to krpano units
+  // 32 px → 60 krpano units (1.875×), maintain 5:6 aspect ratio
+  const hsPx: number = Math.max(16, Math.min(80, branding.hotspotSizePx ?? 32));
+  const hsW: number = Math.round(hsPx * 1.875);
+  const hsH: number = Math.round(hsPx * 2.25);
 
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += `<krpano version="1.23" title="${projectTitle}">\n\n`;
 
-  xml += '  <include url="/skin/vtourskin.xml"/>\n\n';
-
-  xml += '  <skin_settings\n';
-  xml += '    maps="false"\n';
-  xml += `    gyro="${gyro}"\n`;
-  xml += `    webvr="${webvr}"\n`;
-  xml += '    title="true"\n';
-  xml += '    thumbs="true"\n';
-  xml += '    thumbs_width="120" thumbs_height="80" thumbs_padding="10" thumbs_crop="0|40|240|160"\n';
-  xml += '    thumbs_opened="false"\n';
-  xml += '    deeplinking="false"\n';
-  xml += '    loadscene_flags="MERGE"\n';
-  xml += '    loadscene_blend="OPENBLEND(0.5, 0.0, 0.75, 0.05, linear)"\n';
-  xml += '  />\n\n';
+  // Optional plugins
+  if (useGyro) {
+    xml += '  <plugin name="gyro2" url="plugins/gyro2.js" enabled="true" license=""/>\n\n';
+  }
+  if (useVr) {
+    xml += '  <plugin name="webvr" url="plugins/webvr.js" enabled="true"/>\n\n';
+  }
 
   if (startName) {
     xml += '  <action name="startup" autorun="preinit">\n';
@@ -1104,16 +1103,6 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
   }
 
 
-  // Custom hotspot styles (text, external, video — link uses skin default arrow)
-  xml += '  <style name="hs_text" type="text"\n';
-  xml += '    css="font-family:sans-serif; color:#fff; font-size:13px; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px;"\n';
-  xml += '    edge="bottom" zoom="false" distorted="false"/>\n\n';
-  xml += '  <style name="hs_external" type="text"\n';
-  xml += '    css="font-family:sans-serif; color:#93c5fd; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
-  xml += '    edge="bottom" zoom="false" distorted="false"/>\n\n';
-  xml += '  <style name="hs_video" type="text"\n';
-  xml += '    css="font-family:sans-serif; color:#fbbf24; font-size:13px; font-weight:bold; background:rgba(0,0,0,0.55); padding:4px 12px; border-radius:20px; cursor:pointer;"\n';
-  xml += '    edge="bottom" zoom="false" distorted="false"/>\n\n';
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const scene of scenes) {
@@ -1168,18 +1157,17 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
         const tCatId: string | undefined = (targetScene.categoryIds as string[])?.[0];
         const tCat = tCatId ? categories.find((c: any) => c.id === tCatId) : null;
         const iconUrl = tCat?.slug ? `/hotspots/cat-${tCat.slug}.svg` : '/hotspots/default.svg';
-        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="40" height="48" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onclick="loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
+        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="js(showHotspotPreview('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.18,0.15);" onout="js(hideHotspotPreview()); tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
       } else if (hs.type === 'text') {
-        const label = xmlEsc(loc(hs.title, lang) || 'Info');
-        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_text" text="${label}"/>\n`;
+        const tooltip = xmlEsc(loc(hs.title, lang) || 'Info');
+        xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-text.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showTextHs('${hs.id}'));"/>\n`;
       } else if (hs.type === 'external') {
-        const label = xmlEsc(loc(hs.label, lang) || 'Link');
+        const tooltip = xmlEsc(loc(hs.label, lang) || 'Link');
         const url = xmlEsc(hs.url || '');
-        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_external" text="${label}" onclick="openurl(${url}, _blank);"/>\n`;
+        xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-external.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="openurl(${url}, _blank);"/>\n`;
       } else if (hs.type === 'video') {
-        const label = xmlEsc(`▶ ${loc(hs.title, lang) || 'Video'}`);
-        const url = xmlEsc(hs.url || '');
-        xml += `    <hotspot name="${hsName}" ath="${ath}" atv="${atv}" style="hs_video" text="${label}"${url ? ` onclick="openurl(${url}, _blank);"` : ''}/>\n`;
+        const tooltip = xmlEsc(loc(hs.title, lang) || 'Video');
+        xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-video.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showVideoHs('${hs.id}'));"/>\n`;
       }
     }
 
@@ -1233,8 +1221,8 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
       preview: tiledSlugs.has(scene.slug)
         ? `/panos/${scene.slug}.tiles/preview.jpg`
         : `/media/${scene.slug}${ext}`,
-      gps: (scene.gps?.lat != null && scene.gps?.lng != null)
-        ? { lat: scene.gps.lat, lng: scene.gps.lng }
+      gps: (scene.geo?.lat != null && scene.geo?.lng != null)
+        ? { lat: scene.geo.lat, lng: scene.geo.lng }
         : null,
     };
   }
@@ -1249,6 +1237,19 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     };
   }
 
+  // Hotspot content maps (for text/video popup data keyed by hotspot ID)
+  const hotspotTexts: Record<string, unknown> = {};
+  const hotspotVideos: Record<string, unknown> = {};
+  for (const scene of scenes as any[]) {
+    for (const hs of (scene.hotspots || []) as any[]) {
+      if (hs.type === 'text') {
+        hotspotTexts[hs.id] = { title: loc(hs.title, lang) || '', body: loc(hs.body, lang) || '' };
+      } else if (hs.type === 'video') {
+        hotspotVideos[hs.id] = { url: hs.url || '', title: loc(hs.title, lang) || '' };
+      }
+    }
+  }
+
   const tourDataJson = JSON.stringify({
     lang,
     defaultLang,
@@ -1258,9 +1259,11 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     startScene: startSceneSlug,
     scenes: scenesData,
     categories: categoriesData,
+    hotspotTexts,
+    hotspotVideos,
   });
 
-  const hasMap = scenes.some((s: any) => s.gps?.lat != null && s.gps?.lng != null);
+  const hasMap = scenes.some((s: any) => s.geo?.lat != null && s.geo?.lng != null);
 
   // OG / canonical
   let headExtras = '';
@@ -1271,8 +1274,20 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   headExtras += `  <meta property="og:title" content="${pageTitle}">\n`;
   if (description) headExtras += `  <meta property="og:description" content="${description}">\n`;
   headExtras += '  <meta property="og:type" content="website">\n';
-  if (startScene && publicUrl && tiledSlugs.has(startScene.slug)) {
-    headExtras += `  <meta property="og:image" content="${xmlEsc(publicUrl)}/panos/${startScene.slug}.tiles/preview.jpg">\n`;
+  // og:image — prefer tiles preview, fall back to /media/<slug>.jpg
+  let ogImageUrl = '';
+  if (startScene && publicUrl) {
+    const ext = path.extname(startScene.media?.sourcePath || '.jpg') || '.jpg';
+    ogImageUrl = tiledSlugs.has(startScene.slug)
+      ? `${xmlEsc(publicUrl)}/panos/${startScene.slug}.tiles/preview.jpg`
+      : `${xmlEsc(publicUrl)}/media/${startScene.slug}${ext}`;
+    headExtras += `  <meta property="og:image" content="${ogImageUrl}">\n`;
+    headExtras += `  <meta property="og:image:width" content="1200">\n`;
+    headExtras += `  <meta property="og:image:height" content="630">\n`;
+    headExtras += `  <meta name="twitter:card" content="summary_large_image">\n`;
+    headExtras += `  <meta name="twitter:title" content="${pageTitle}">\n`;
+    if (description) headExtras += `  <meta name="twitter:description" content="${description}">\n`;
+    headExtras += `  <meta name="twitter:image" content="${ogImageUrl}">\n`;
   }
   if (keywords.length) headExtras += `  <meta name="keywords" content="${xmlEsc(keywords.join(', '))}">\n`;
 
@@ -1300,6 +1315,71 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     ? `krp.call("loadscene(${sceneXmlName(startSceneSlug)},null,MERGE,BLEND(0.5));");`
     : '';
 
+  // ── Header logo ───────────────────────────────────────────────────────
+  const logoExt: string = branding.logoPath ? path.extname(branding.logoPath as string) : '';
+  const logoImgHtml: string = branding.logoPath
+    ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
+    : '';
+
+  // ── Header action buttons ─────────────────────────────────────────────
+  // Map is shown when scenes have GPS. mapMode config controls appearance only.
+  const showMap: boolean = hasMap;
+  const mapHdrBtn: string = showMap
+    ? `<button class="hdr-btn" id="map-hdr-btn" onclick="_toggleMap()" title="Map">&#x1F5FA;</button>` : '';
+  const screenshotBtn = `<button class="hdr-btn" id="screenshot-btn" onclick="_takeScreenshot()" title="Screenshot">&#x1F4F7;</button>`;
+  const FLAG_MAP: Record<string, string> = {
+    en:'🇬🇧', fr:'🇫🇷', de:'🇩🇪', es:'🇪🇸', it:'🇮🇹',
+    pt:'🇵🇹', nl:'🇳🇱', pl:'🇵🇱', ru:'🇷🇺', zh:'🇨🇳',
+    ja:'🇯🇵', ko:'🇰🇷', ar:'🇸🇦', tr:'🇹🇷', sv:'🇸🇪',
+    da:'🇩🇰', fi:'🇫🇮', nb:'🇳🇴', no:'🇳🇴', uk:'🇺🇦',
+  };
+  const langHdrBtns: string = allLangs.length > 1
+    ? `<select id="lang-sel" onchange="var s=_curScene;location.href='/'+this.value+'/'+(s?'scene/'+s+'/'+this.value+'/':'');">` +
+      allLangs.map((l: string) => {
+        const flag: string = FLAG_MAP[l] || '🌐';
+        return `<option value="${xmlEsc(l)}"${l === lang ? ' selected' : ''}>${flag} ${l.toUpperCase()}</option>`;
+      }).join('') +
+      `</select>`
+    : '';
+  const shareHdrLinks: string[] = [];
+  if (share.facebook) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="Facebook">f</a>`);
+  if (share.twitter)  shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener');return false;" title="X">𝕏</a>`);
+  if (share.whatsapp) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener');return false;" title="WhatsApp">W</a>`);
+  if (share.linkedin) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="LinkedIn">in</a>`);
+  if (share.email)    shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="location.href='mailto:?subject='+encodeURIComponent(document.title)+'&body='+encodeURIComponent(location.href);return false;" title="Email">@</a>`);
+  const shareHdrHtml: string = shareHdrLinks.join('');
+
+  // ── Cookie consent ───────────────────────────────────────────────────
+  const modules = project.modules || {};
+  const cookieEnabled: boolean = !!(modules.cookieConsent);
+  const cookieTextStr: string = cookieEnabled
+    ? (modules.cookieText ? (modules.cookieText[lang] || modules.cookieText['en'] || Object.values(modules.cookieText)[0] || '') : '')
+      || 'This website uses cookies to enhance your virtual tour experience. By continuing, you accept our cookie policy.'
+    : '';
+  const cookieHtml: string = cookieEnabled
+    ? `  <div id="cookie-banner">\n    <div id="cookie-text">${xmlEsc(cookieTextStr)}</div>\n    <button id="cookie-accept" onclick="_acceptCookies()">Accept</button>\n  </div>`
+    : '';
+
+  // ── iOS dock scene cards ─────────────────────────────────────────────
+  const sceneCardsHtml: string = (scenes as any[]).map((scene: any) => {
+    const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
+    const prev = tiledSlugs.has(scene.slug)
+      ? `/panos/${scene.slug}.tiles/preview.jpg`
+      : `/media/${scene.slug}${ext}`;
+    const sTitle = xmlEsc(loc(scene.title, lang) || scene.slug);
+    return `<div class="sc-wrap" data-slug="${xmlEsc(scene.slug)}" data-title="${sTitle}" onclick="_navTo('${xmlEsc(scene.slug)}')">` +
+      `<div class="sc-img"><img src="${xmlEsc(prev)}" alt="${sTitle}" loading="lazy"></div>` +
+      `</div>`;
+  }).join('');
+
+  const hsStyle: string = (branding.hotspotPreviewStyle as string) || 'card';
+  const hsPreviewCss = hsStyle === 'compact'
+    ? `    #hs-preview{position:fixed;z-index:200;border-radius:20px;background:rgba(8,8,10,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 4px 16px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:nowrap}\n    #hs-preview.visible{opacity:1;transform:translateY(0)}\n    #hs-preview img{display:none}\n    #hs-preview-title{padding:7px 16px 8px;font-size:13px;font-weight:600;color:#fff;line-height:1.2}\n`
+    : hsStyle === 'overlay'
+    ? `    #hs-preview{position:fixed;z-index:200;width:220px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.6);pointer-events:none;opacity:0;transform:scale(.96);transition:opacity .18s,transform .18s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:scale(1)}\n    #hs-preview img{width:100%;height:130px;object-fit:cover;display:block}\n    #hs-preview-title{position:absolute;bottom:0;left:0;right:0;padding:28px 12px 10px;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 100%);font-size:13px;font-weight:600;color:#fff;line-height:1.3}\n`
+    : /* card (default) */
+      `    #hs-preview{position:fixed;z-index:200;width:200px;border-radius:12px;overflow:hidden;background:rgba(8,8,10,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 32px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(6px) scale(.97);transition:opacity .18s,transform .18s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:translateY(0) scale(1)}\n    #hs-preview img{width:100%;height:110px;object-fit:cover;display:block}\n    #hs-preview-title{padding:8px 12px 10px;font-size:13px;font-weight:600;color:#fff;line-height:1.3}\n`;
+
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -1307,125 +1387,387 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${pageTitle}</title>
-${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}${hasMap ? '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n' : ''}  <style>
+${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}${showMap ? '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n' : ''}  <style>
+    :root{
+      --primary:${primaryColor};
+      --accent:${accentColor};
+      --radius:12px;
+      --spacing:8px;
+      --hdr-h:56px;
+    }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html,body{width:100%;height:100%;overflow:hidden;background:${primaryColor}}
-    #pano{position:absolute;inset:0}
-    #info-panel{
-      position:fixed;right:0;top:0;bottom:0;width:340px;z-index:50;
-      background:rgba(8,8,10,.9);
-      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-      color:#fff;
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
-      padding:52px 28px 32px 28px;
-      display:flex;flex-direction:column;
-      transform:translateX(100%);
-      transition:transform .45s cubic-bezier(.22,1,.36,1);
-      overflow-y:auto;
+    html,body{width:100%;height:100%;overflow:hidden;background:var(--primary);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
+    #pano{position:absolute;inset:0;z-index:0}
+
+    /* ── Header ─────────────────────────────────── */
+    #tour-hdr{
+      position:fixed;top:0;left:0;right:0;height:56px;z-index:60;
+      background:#fff;
+      box-shadow:0 1px 0 rgba(0,0,0,.09),0 2px 10px rgba(0,0,0,.06);
+      display:flex;align-items:center;padding:0 14px;gap:10px;
     }
-    #info-panel.open{transform:translateX(0)}
-    #panel-close{
-      position:absolute;top:12px;right:12px;
-      width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.15);
-      background:rgba(255,255,255,.08);color:#fff;font-size:18px;
-      cursor:pointer;display:flex;align-items:center;justify-content:center;
-      transition:background .2s;line-height:1;
+    #hdr-logo{display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0}
+    #hdr-logo-img{height:30px;max-width:130px;width:auto;object-fit:contain;display:block}
+    #hdr-logo-text{font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+    .hdr-sep{width:1px;height:22px;background:rgba(0,0,0,.1);flex-shrink:0}
+    #hdr-title{
+      position:absolute;left:50%;transform:translateX(-50%);
+      font-size:14px;font-weight:600;color:#1a1a1a;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      max-width:40%;text-align:center;pointer-events:none;
     }
-    #panel-close:hover{background:rgba(255,255,255,.2)}
-    #panel-category{
-      display:none;align-items:center;
-      font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-      padding:4px 10px;border-radius:20px;align-self:flex-start;margin-bottom:14px;
-      border:1px solid transparent;
+    #hdr-actions{display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto}
+    .hdr-btn{
+      height:30px;min-width:30px;border:1px solid rgba(0,0,0,.14);border-radius:6px;
+      background:transparent;color:#555;cursor:pointer;
+      font-size:11px;font-weight:600;padding:0 9px;
+      display:inline-flex;align-items:center;justify-content:center;gap:4px;
+      text-decoration:none;transition:background .15s,color .15s;
     }
-    #panel-title{font-size:23px;font-weight:700;line-height:1.2;margin-bottom:10px}
-    #panel-rule{width:36px;height:2px;border-radius:1px;background:${accentColor};opacity:.7;margin-bottom:14px}
-    #panel-desc{font-size:14px;line-height:1.7;color:rgba(255,255,255,.65);flex:1}
-    #panel-toggle{
-      position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:51;
-      background:rgba(8,8,10,.8);border:1px solid rgba(255,255,255,.12);border-right:none;
-      border-radius:8px 0 0 8px;padding:14px 8px;cursor:pointer;color:rgba(255,255,255,.7);
-      font-size:11px;writing-mode:vertical-rl;letter-spacing:.06em;text-transform:uppercase;
-      font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-      transition:right .45s cubic-bezier(.22,1,.36,1),background .2s,color .2s;
+    .hdr-btn:hover{background:#f2f2f2;color:#111}
+    .lang-act{background:${accentColor}!important;color:#fff!important;border-color:${accentColor}!important}
+    #lang-sel{
+      height:30px;border:1px solid rgba(0,0,0,.14);border-radius:6px;
+      background:transparent;color:#555;font-size:13px;font-weight:600;
+      padding:0 6px;cursor:pointer;outline:none;
     }
-    #panel-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
-    #panel-toggle.open{right:340px}${shareStyles}${hasMap ? `
-    #map-btn{
-      position:fixed;top:50%;left:0;transform:translateY(-50%);z-index:51;
-      background:rgba(8,8,10,.8);border:1px solid rgba(255,255,255,.12);border-left:none;
-      border-radius:0 8px 8px 0;padding:14px 8px;cursor:pointer;color:rgba(255,255,255,.7);
-      font-size:11px;writing-mode:vertical-rl;letter-spacing:.06em;text-transform:uppercase;
-      font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-      transition:background .2s,color .2s;
-    }
-    #map-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+
+    /* ── Map panel ───────────────────────────────── */
     #map-panel{
-      position:fixed;left:0;top:0;bottom:0;width:360px;z-index:50;
+      position:fixed;left:0;top:56px;bottom:0;width:360px;z-index:55;
       display:flex;flex-direction:column;
       transform:translateX(-100%);transition:transform .45s cubic-bezier(.22,1,.36,1);
     }
     #map-panel.open{transform:translateX(0)}
     #map-close{
-      position:absolute;top:12px;right:12px;z-index:500;
-      width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.3);
-      background:rgba(8,8,10,.85);color:#fff;font-size:18px;line-height:1;
-      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      position:absolute;top:10px;right:10px;z-index:500;
+      width:30px;height:30px;border-radius:50%;
+      border:1px solid rgba(255,255,255,.3);background:rgba(8,8,10,.85);
+      color:#fff;font-size:16px;line-height:1;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
     }
     #map-close:hover{background:rgba(255,255,255,.2)}
-    #leaflet-map{flex:1}` : ''}
+    #leaflet-map{flex:1}
+
+    /* ── Hotspot preview ─────────────────────────── */
+${hsPreviewCss}
+    /* ── iOS Dock strip ──────────────────────────── */
+    #strip-outer{
+      position:fixed;bottom:0;left:0;right:0;z-index:50;
+      display:flex;justify-content:center;
+      padding-bottom:10px;pointer-events:none;
+    }
+    #strip-scroll{
+      display:flex;align-items:flex-end;gap:6px;
+      height:128px;padding-top:76px;
+      overflow-x:auto;overflow-y:hidden;
+      max-width:100%;pointer-events:all;scrollbar-width:none;
+    }
+    #strip-scroll::-webkit-scrollbar{display:none}
+    .sc-wrap{
+      flex-shrink:0;position:relative;cursor:pointer;
+      transform-origin:bottom center;
+      transition:transform .14s cubic-bezier(.22,1,.36,1),
+                 margin-left .14s cubic-bezier(.22,1,.36,1),
+                 margin-right .14s cubic-bezier(.22,1,.36,1);
+    }
+    .sc-wrap::after{
+      content:attr(data-title);
+      position:absolute;bottom:calc(100% + 8px);left:50%;
+      transform:translateX(-50%);
+      background:rgba(0,0,0,.8);color:#fff;
+      font-size:12px;font-weight:600;font-family:-apple-system,sans-serif;
+      white-space:nowrap;padding:5px 10px;border-radius:6px;
+      pointer-events:none;opacity:0;transition:opacity .15s;
+    }
+    .sc-wrap:hover::after{opacity:1}
+    .sc-img{width:80px;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.55)}
+    .sc-img img{width:80px;height:45px;object-fit:cover;display:block}
+    .sc-wrap.cur .sc-img{box-shadow:0 0 0 3px ${accentColor},0 4px 16px rgba(0,0,0,.55)}
+
+    /* ── Info panel ──────────────────────────────── */
+    #info-panel{
+      position:fixed;right:16px;top:68px;width:300px;
+      background:rgba(255,255,255,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:22px;
+      opacity:0;pointer-events:none;transform:translateY(-6px);
+      transition:opacity .22s,transform .22s;z-index:55;
+      max-height:calc(100vh - 96px - 130px);overflow-y:auto;
+    }
+    #info-panel.open{opacity:1;pointer-events:all;transform:translateY(0)}
+    #info-panel-cat{
+      display:none;font-size:10px;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;padding:3px 9px;border-radius:20px;margin-bottom:10px;
+    }
+    #info-panel-title{font-size:22px;font-weight:800;color:#111;line-height:1.2;margin-bottom:10px}
+    #info-panel-rule{height:1px;background:rgba(0,0,0,.08);margin-bottom:12px;display:none}
+    #info-panel-desc{font-size:15px;color:#444;line-height:1.65}
+
+    /* ── Text popup ──────────────────────────────── */
+    #text-popup{
+      position:fixed;inset:0;z-index:200;
+      background:rgba(0,0,0,.52);
+      display:flex;align-items:center;justify-content:center;padding:40px;
+      opacity:0;pointer-events:none;transition:opacity .2s;
+    }
+    #text-popup.open{opacity:1;pointer-events:all}
+    #text-popup-inner{
+      background:#fff;border-radius:20px;
+      max-width:680px;width:100%;max-height:80vh;overflow-y:auto;
+      padding:48px 52px 52px;position:relative;
+    }
+    #text-popup-close{
+      position:absolute;top:14px;right:14px;
+      width:34px;height:34px;border-radius:50%;
+      border:none;background:#f0f0f0;cursor:pointer;
+      font-size:16px;display:flex;align-items:center;justify-content:center;
+    }
+    #text-popup-close:hover{background:#e0e0e0}
+    #text-popup-title{font-size:clamp(22px,4vw,34px);font-weight:800;color:#111;margin-bottom:18px;line-height:1.2}
+    #text-popup-body{font-size:clamp(15px,2.2vw,19px);line-height:1.72;color:#2a2a2a}
+    #text-popup-body p{margin-bottom:1em}
+
+    /* ── Video popup ─────────────────────────────── */
+    #video-popup{
+      position:fixed;inset:0;z-index:200;
+      background:rgba(0,0,0,.9);
+      display:flex;align-items:center;justify-content:center;padding:32px;
+      opacity:0;pointer-events:none;transition:opacity .2s;
+    }
+    #video-popup.open{opacity:1;pointer-events:all}
+    #video-popup-inner{position:relative;width:100%;max-width:900px}
+    #video-popup-close{
+      position:absolute;top:-44px;right:0;
+      background:rgba(255,255,255,.15);color:#fff;border:none;
+      width:36px;height:36px;border-radius:50%;cursor:pointer;
+      font-size:18px;display:flex;align-items:center;justify-content:center;
+    }
+    #video-popup-close:hover{background:rgba(255,255,255,.3)}
+    #video-aspect{position:relative;padding-top:56.25%}
+    #video-iframe,#video-tag{
+      position:absolute;top:0;left:0;width:100%;height:100%;
+      border:none;border-radius:8px;background:#000;
+    }
+
+    /* ── Cookie banner ───────────────────────────── */
+    #cookie-banner{
+      position:fixed;bottom:75px;left:50%;transform:translateX(-50%);
+      z-index:48;background:rgba(18,18,22,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+      border:1px solid rgba(255,255,255,.1);border-radius:12px;
+      padding:14px 20px;display:flex;align-items:center;gap:16px;
+      max-width:640px;width:calc(100% - 32px);
+    }
+    #cookie-text{flex:1;font-size:13px;color:rgba(255,255,255,.88);line-height:1.5;font-family:-apple-system,sans-serif}
+    #cookie-accept{
+      flex-shrink:0;background:${accentColor};color:#fff;
+      border:none;border-radius:7px;padding:7px 16px;
+      cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap;
+    }
+    #cookie-accept:hover{filter:brightness(1.1)}
+    ${copyright ? `#tour-copyright{position:fixed;bottom:0;right:12px;z-index:45;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;padding-bottom:2px}` : ''}
+
+    /* ── Screenshot toast ───────────────────────────── */
+    #screenshot-toast{
+      position:fixed;top:68px;left:50%;transform:translateX(-50%);
+      background:rgba(18,18,22,.92);color:#fff;
+      padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
+      z-index:300;opacity:0;pointer-events:none;
+      transition:opacity .2s;white-space:nowrap;
+    }
+    #screenshot-toast.visible{opacity:1}
+
+    /* ── Mobile fullscreen description overlay ──────── */
+    #desc-overlay{
+      display:none;position:fixed;inset:0;z-index:250;
+      background:rgba(0,0,0,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      flex-direction:column;padding:0;
+      transform:translateY(100%);transition:transform .3s cubic-bezier(.22,1,.36,1);
+    }
+    #desc-overlay.open{transform:translateY(0)}
+    #desc-overlay-inner{
+      position:relative;flex:1;overflow-y:auto;
+      padding:56px 24px 40px;
+      color:#fff;
+    }
+    #desc-overlay-close{
+      position:absolute;top:12px;right:12px;
+      width:44px;height:44px;border-radius:50%;
+      border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);
+      color:#fff;font-size:20px;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+    }
+    #desc-overlay-title{font-size:clamp(22px,6vw,34px);font-weight:800;line-height:1.2;margin-bottom:16px}
+    #desc-overlay-body{font-size:clamp(15px,4vw,19px);line-height:1.7;color:rgba(255,255,255,.88)}
+
+    /* ── Mobile responsive ──────────────────────────── */
+    @media(max-width:768px){
+      #tour-hdr{height:50px;padding:0 10px;gap:6px}
+      :root{--hdr-h:50px}
+      #hdr-logo-img{height:24px;max-width:100px}
+      #hdr-logo-text{font-size:12px;max-width:110px}
+      #hdr-title{max-width:35%;font-size:13px}
+      #map-panel{width:100%}
+      #info-panel{
+        right:0;left:0;top:auto;bottom:0;width:100%;
+        max-height:60vh;border-radius:16px 16px 0 0;
+        box-shadow:0 -4px 32px rgba(0,0,0,.25);
+      }
+      #strip-scroll{height:100px;padding-top:56px}
+      .sc-img{width:68px}
+      .sc-img img{width:68px;height:38px}
+      #text-popup-inner{padding:32px 24px 36px;border-radius:16px 16px 0 0;max-height:90vh}
+      #desc-overlay{display:flex}
+      .hdr-btn{min-width:28px;height:28px;font-size:10px;padding:0 6px}
+      #lang-sel{height:28px;font-size:12px}
+    }
+    @media(max-width:480px){
+      #hdr-title{display:none}
+    }
+    @media(hover:none){
+      .sc-wrap::after{display:none}
+    }
   </style>
 </head>
 <body>
   <div id="pano"></div>
-  <aside id="info-panel">
-    <button id="panel-close" aria-label="Close">&#x2715;</button>
-    <div id="panel-category"></div>
-    <h1 id="panel-title"></h1>
-    <div id="panel-rule"></div>
-    <p id="panel-desc"></p>
-  </aside>
-  <button id="panel-toggle">Info</button>
-${hasMap ? `  <button id="map-btn">Map</button>
-  <div id="map-panel">
-    <button id="map-close" aria-label="Close">&#x2715;</button>
+
+  <div id="hs-preview" aria-hidden="true">
+    <img id="hs-preview-img" src="" alt="">
+    <div id="hs-preview-title"></div>
+  </div>
+
+  <header id="tour-hdr">
+    <div id="hdr-logo">
+      ${logoImgHtml}
+      <span id="hdr-logo-text">${xmlEsc(projectTitle)}</span>
+    </div>
+    <div id="hdr-title"></div>
+    <div id="hdr-actions">
+      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}${screenshotBtn}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${modules.feedbackMailto ? `<a class="hdr-btn" href="mailto:${xmlEsc(modules.feedbackMailto)}" title="Feedback">&#x2709;</a>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}
+    </div>
+  </header>
+
+${showMap ? `  <div id="map-panel">
+    <button id="map-close" aria-label="Close map">&#x2715;</button>
     <div id="leaflet-map"></div>
-  </div>\n` : ''}${shareBar}${copyright ? `  <div style="position:fixed;bottom:4px;left:50%;transform:translateX(-50%);font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.35);pointer-events:none;z-index:50">${copyright}</div>\n` : ''}  <script>
+  </div>\n` : ''}
+  <div id="info-panel">
+    <span id="info-panel-cat"></span>
+    <h2 id="info-panel-title"></h2>
+    <div id="info-panel-rule"></div>
+    <p id="info-panel-desc"></p>
+  </div>
+
+  <div id="text-popup" role="dialog" aria-modal="true">
+    <div id="text-popup-inner">
+      <button id="text-popup-close" onclick="closeTextPopup()" aria-label="Close">&#x2715;</button>
+      <h2 id="text-popup-title"></h2>
+      <div id="text-popup-body"></div>
+    </div>
+  </div>
+
+  <div id="video-popup" role="dialog" aria-modal="true">
+    <div id="video-popup-inner">
+      <button id="video-popup-close" onclick="closeVideoPopup()" aria-label="Close">&#x2715;</button>
+      <div id="video-aspect">
+        <iframe id="video-iframe" src="" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>
+        <video id="video-tag" controls playsinline style="display:none;background:#000"></video>
+      </div>
+    </div>
+  </div>
+
+  <div id="strip-outer">
+    <div id="strip-scroll">${sceneCardsHtml}</div>
+  </div>
+  ${cookieHtml}
+  ${copyright ? `<div id="tour-copyright">${xmlEsc(copyright)}</div>` : ''}
+  <div id="screenshot-toast"></div>
+
+  <!-- Mobile fullscreen description overlay -->
+  <div id="desc-overlay" role="dialog" aria-modal="true">
+    <div id="desc-overlay-inner">
+      <button id="desc-overlay-close" onclick="_closeDescOverlay()" aria-label="Close">&#x2715;</button>
+      <h2 id="desc-overlay-title"></h2>
+      <div id="desc-overlay-body"></div>
+    </div>
+  </div>
+  <script>
   var TOUR = ${tourDataJson};
   var _krpano    = null;
   var _curScene  = '';
   var _firstDone = false;
+  var _mx = 0, _my = 0;
+  document.addEventListener('mousemove', function(e){ _mx = e.clientX; _my = e.clientY; _positionPreview(); });
 
-  function _showPanel(slug) {
+  function _positionPreview() {
+    var el = document.getElementById('hs-preview');
+    if (!el || !el.classList.contains('visible')) return;
+    var w = el.offsetWidth || 200, h = el.offsetHeight || 140;
+    var x = _mx + 18, y = _my - Math.round(h / 2);
+    if (x + w > window.innerWidth)  x = _mx - w - 18;
+    if (y < 8) y = 8;
+    if (y + h > window.innerHeight) y = window.innerHeight - h - 8;
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+  }
+  window.showHotspotPreview = function(slug) {
     var scene = TOUR.scenes[slug];
     if (!scene) return;
-    var catId = scene.categoryIds && scene.categoryIds[0];
-    var cat   = catId ? TOUR.categories[catId] : null;
-    var catEl = document.getElementById('panel-category');
-    if (cat) {
-      catEl.textContent = cat.name;
-      var c = cat.color || '${accentColor}';
-      catEl.style.cssText = 'display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:20px;align-self:flex-start;margin-bottom:14px;border:1px solid ' + c + '55;background:' + c + '1a;color:' + c;
-    } else {
-      catEl.style.display = 'none';
-    }
-    document.getElementById('panel-title').textContent = scene.title || slug;
-    document.getElementById('panel-desc').textContent  = scene.description || '';
-    document.title = (scene.title || slug) + ' — ' + TOUR.projectTitle;
-    document.getElementById('info-panel').classList.add('open');
-    document.getElementById('panel-toggle').classList.add('open');
+    var el  = document.getElementById('hs-preview');
+    var img = document.getElementById('hs-preview-img');
+    var ttl = document.getElementById('hs-preview-title');
+    img.src = scene.preview || '';
+    img.alt = scene.title   || slug;
+    ttl.textContent = scene.title || slug;
+    _positionPreview();
+    el.classList.add('visible');
+  };
+  window.hideHotspotPreview = function() {
+    document.getElementById('hs-preview').classList.remove('visible');
+  };
+
+  function _navTo(slug) {
+    if (_krpano) _krpano.call('loadscene(scene_' + slug + ',null,MERGE,BLEND(0.5));');
   }
 
   function _onScene(xmlName) {
     var slug = (xmlName || '').replace(/^scene_/, '');
     if (!slug || !TOUR.scenes[slug] || slug === _curScene) return;
     _curScene = slug;
-    _showPanel(slug);
+    var scene = TOUR.scenes[slug];
+    var titleEl = document.getElementById('hdr-title');
+    if (titleEl) titleEl.textContent = scene.title || slug;
+    document.title = (scene.title || slug) + ' — ' + TOUR.projectTitle;
+    document.querySelectorAll('.sc-wrap').forEach(function(el) {
+      el.classList.toggle('cur', el.getAttribute('data-slug') === slug);
+    });
+    var active = document.querySelector('.sc-wrap.cur');
+    if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    // Update info panel
+    var catId = scene.categoryIds && scene.categoryIds[0];
+    var cat = catId && TOUR.categories ? TOUR.categories[catId] : null;
+    var catEl = document.getElementById('info-panel-cat');
+    if (catEl) {
+      if (cat) {
+        catEl.style.display = 'inline-block';
+        catEl.textContent = cat.name || '';
+        catEl.style.color = cat.color || '#333';
+        catEl.style.border = '1px solid ' + (cat.color || '#333') + '55';
+        catEl.style.background = (cat.color || '#333') + '18';
+      } else { catEl.style.display = 'none'; }
+    }
+    var ttlEl = document.getElementById('info-panel-title');
+    if (ttlEl) ttlEl.textContent = scene.title || slug;
+    var descEl = document.getElementById('info-panel-desc');
+    if (descEl) descEl.textContent = scene.description || '';
+    var ruleEl = document.getElementById('info-panel-rule');
+    if (ruleEl) ruleEl.style.display = scene.description ? 'block' : 'none';
     var newPath = '/scene/' + slug + '/' + TOUR.lang + '/';
     if (window.location.pathname !== newPath) {
       try {
         if (!_firstDone) { history.replaceState({ scene: slug }, '', newPath); }
-        else             { history.pushState  ({ scene: slug }, '', newPath); }
+        else             { history.pushState({ scene: slug }, '', newPath); }
       } catch(e) {}
     }
     _firstDone = true;
@@ -1436,28 +1778,227 @@ ${hasMap ? `  <button id="map-btn">Map</button>
     if (slug && _krpano) _krpano.call('loadscene(scene_' + slug + ',null,MERGE,BLEND(0.5));');
   });
 
-  document.getElementById('panel-close').addEventListener('click', function() {
-    document.getElementById('info-panel').classList.remove('open');
-    document.getElementById('panel-toggle').classList.remove('open');
+  function _toggleInfo() {
+    // On mobile (pointer:coarse or narrow screen) → fullscreen overlay
+    if (window.matchMedia('(max-width:768px),(pointer:coarse)').matches) {
+      _openDescOverlay();
+      return;
+    }
+    var p = document.getElementById('info-panel');
+    if (!p) return;
+    p.classList.toggle('open');
+    var b = document.getElementById('info-btn');
+    if (b) b.style.background = p.classList.contains('open') ? '#f0f0f0' : '';
+  }
+
+  // iOS dock — scale + margin push (no overlap)
+  (function() {
+    var outer = document.getElementById('strip-outer');
+    var orig  = null;
+    function cs() { return Array.from(document.querySelectorAll('.sc-wrap')); }
+    function reset() {
+      orig = null;
+      cs().forEach(function(c) { c.style.transform = ''; c.style.marginLeft = ''; c.style.marginRight = ''; });
+    }
+    function update(mx) {
+      var els = cs(); if (!els.length) return;
+      if (!orig) {
+        orig = els.map(function(c) { var r = c.getBoundingClientRect(); return r.left + r.width / 2; });
+      }
+      var W = els[0].offsetWidth || 80;
+      els.forEach(function(c, i) {
+        var dist = Math.abs(mx - orig[i]);
+        var s = 1 + 1.15 * Math.exp(-(dist * dist) / (2 * 85 * 85));
+        var xtra = ((s - 1) * W / 2).toFixed(1);
+        c.style.transform = 'scale(' + s.toFixed(3) + ')';
+        c.style.marginLeft  = xtra + 'px';
+        c.style.marginRight = xtra + 'px';
+      });
+    }
+    if (outer) {
+      outer.addEventListener('mouseenter', function() { orig = null; });
+      outer.addEventListener('mousemove',  function(e) { update(e.clientX); });
+      outer.addEventListener('mouseleave', reset);
+    }
+  })();
+
+  // Text hotspot popup
+  window.showTextHs = function(id) {
+    var data = TOUR.hotspotTexts && TOUR.hotspotTexts[id];
+    if (!data) return;
+    document.getElementById('text-popup-title').textContent = data.title || '';
+    document.getElementById('text-popup-body').innerHTML = data.body || '';
+    document.getElementById('text-popup').classList.add('open');
+  };
+  window.closeTextPopup = function() {
+    document.getElementById('text-popup').classList.remove('open');
+  };
+  document.getElementById('text-popup').addEventListener('click', function(e) {
+    if (e.target === this) closeTextPopup();
   });
-  document.getElementById('panel-toggle').addEventListener('click', function() {
-    var open = document.getElementById('info-panel').classList.toggle('open');
-    document.getElementById('panel-toggle').classList.toggle('open', open);
+
+  // Video hotspot popup
+  function _toEmbedUrl(url) {
+    var yt = url.match(/(?:youtube\\.com\\/watch\\?v=|youtu\\.be\\/)([A-Za-z0-9_-]{11})/);
+    if (yt) return 'https://www.youtube.com/embed/' + yt[1] + '?autoplay=1';
+    var vi = url.match(/vimeo\\.com\\/(\\d+)/);
+    if (vi) return 'https://player.vimeo.com/video/' + vi[1] + '?autoplay=1';
+    return null;
+  }
+  window.showVideoHs = function(id) {
+    var data = TOUR.hotspotVideos && TOUR.hotspotVideos[id];
+    if (!data || !data.url) return;
+    var popup = document.getElementById('video-popup');
+    var frame = document.getElementById('video-iframe');
+    var vid   = document.getElementById('video-tag');
+    var embed = _toEmbedUrl(data.url);
+    if (embed) {
+      frame.src = embed; frame.style.display = '';
+      vid.style.display = 'none'; vid.src = '';
+    } else {
+      vid.src = data.url; vid.style.display = 'block';
+      frame.style.display = 'none'; frame.src = '';
+    }
+    popup.classList.add('open');
+  };
+  window.closeVideoPopup = function() {
+    var popup = document.getElementById('video-popup');
+    popup.classList.remove('open');
+    document.getElementById('video-iframe').src = '';
+    var vid = document.getElementById('video-tag');
+    if (vid.pause) vid.pause(); vid.src = '';
+  };
+  document.getElementById('video-popup').addEventListener('click', function(e) {
+    if (e.target === this) closeVideoPopup();
   });
+
+  // Cookie consent
+  (function() {
+    var b = document.getElementById('cookie-banner');
+    if (!b) return;
+    try { if (localStorage.getItem('cc_ok')) { b.style.display = 'none'; } } catch(e) {}
+  })();
+  window._acceptCookies = function() {
+    try { localStorage.setItem('cc_ok', '1'); } catch(e) {}
+    var b = document.getElementById('cookie-banner');
+    if (b) b.style.display = 'none';
+  };
+
+  function _toggleFs() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen && document.exitFullscreen();
+    }
+  }
+  document.addEventListener('fullscreenchange', function() {
+    var b = document.getElementById('fs-btn');
+    if (b) b.innerHTML = document.fullscreenElement ? '&#x26F7;' : '&#x26F6;';
+  });
+
+  // Screenshot
+  window._takeScreenshot = function() {
+    var toast = document.getElementById('screenshot-toast');
+    if (!toast) return;
+    // Try krpano makeScreenshot if available
+    if (_krpano && _krpano.get) {
+      try {
+        var data = _krpano.get('screenshotdata');
+        if (!data) {
+          // Use HTML canvas to capture the pano element
+          var pano = document.getElementById('pano');
+          var canvas = pano ? pano.querySelector('canvas') : null;
+          if (canvas) {
+            data = canvas.toDataURL('image/jpeg', 0.92);
+          }
+        }
+        if (data && data.length > 100) {
+          var a = document.createElement('a');
+          a.href = data;
+          var ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+          a.download = (TOUR.projectTitle||'tour').replace(/[^a-z0-9]/gi,'_').toLowerCase() + '-' + (_curScene||'scene') + '-' + ts + '.jpg';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          toast.textContent = 'Screenshot saved!';
+          toast.classList.add('visible');
+          setTimeout(function(){ toast.classList.remove('visible'); }, 2500);
+          return;
+        }
+      } catch(e) {}
+    }
+    // Fallback: Web Share API or download link
+    var pano = document.getElementById('pano');
+    var canvas = pano ? pano.querySelector('canvas') : null;
+    if (canvas) {
+      canvas.toBlob(function(blob) {
+        if (!blob) return;
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        var ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+        a.download = (TOUR.projectTitle||'tour').replace(/[^a-z0-9]/gi,'_').toLowerCase() + '-' + (_curScene||'scene') + '-' + ts + '.jpg';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.textContent = 'Screenshot saved!';
+        toast.classList.add('visible');
+        setTimeout(function(){ toast.classList.remove('visible'); }, 2500);
+      }, 'image/jpeg', 0.92);
+    } else {
+      toast.textContent = 'Screenshot unavailable in this browser';
+      toast.classList.add('visible');
+      setTimeout(function(){ toast.classList.remove('visible'); }, 2500);
+    }
+  };
+
+  // Mobile description overlay
+  window._openDescOverlay = function() {
+    var scene = _curScene ? TOUR.scenes[_curScene] : null;
+    if (!scene) return;
+    document.getElementById('desc-overlay-title').textContent = scene.title || _curScene;
+    document.getElementById('desc-overlay-body').textContent = scene.description || '';
+    var el = document.getElementById('desc-overlay');
+    el.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  };
+  window._closeDescOverlay = function() {
+    document.getElementById('desc-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  };
+
+  // Mobile Web Share API
+  window._mobileShare = function() {
+    var scene = _curScene ? TOUR.scenes[_curScene] : null;
+    if (navigator.share) {
+      navigator.share({
+        title: (scene ? scene.title : TOUR.projectTitle) || TOUR.projectTitle,
+        text: scene ? scene.description || TOUR.projectTitle : TOUR.projectTitle,
+        url: window.location.href,
+      }).catch(function(){});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href).then(function() {
+        var t = document.getElementById('screenshot-toast');
+        if (t) { t.textContent = 'Link copied!'; t.classList.add('visible'); setTimeout(function(){ t.classList.remove('visible'); }, 2000); }
+      });
+    }
+  };
   </script>
-${hasMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
   var _lmap = null;
+  var MAP_TILES = {
+    streets: { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:19 },
+    satellite: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'&copy; Esri &mdash; Esri, i-cubed, USDA, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community', maxZoom:18 },
+    light: { url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom:20 },
+    dark: { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom:20 },
+  };
+  var _mapTileStyle = '${xmlEsc((modules.mapMode as { tileStyle?: string } | undefined)?.tileStyle || 'streets')}';
   function _openMap() {
     var p = document.getElementById('map-panel');
     p.classList.add('open');
     if (_lmap) { setTimeout(function(){ _lmap.invalidateSize(); }, 300); return; }
     setTimeout(function() {
       _lmap = L.map('leaflet-map');
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom:19
-      }).addTo(_lmap);
+      var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
+      L.tileLayer(ts.url,{ attribution:ts.attr, maxZoom:ts.maxZoom }).addTo(_lmap);
       var bounds = [];
       Object.keys(TOUR.scenes).forEach(function(slug) {
         var sc = TOUR.scenes[slug];
@@ -1480,12 +2021,8 @@ ${hasMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></sc
       else if (bounds.length > 1) { _lmap.fitBounds(bounds, {padding:[32,32]}); }
     }, 300);
   }
-  function _closeMap() {
-    document.getElementById('map-panel').classList.remove('open');
-  }
-  document.getElementById('map-btn').addEventListener('click', function() {
-    document.getElementById('map-panel').classList.contains('open') ? _closeMap() : _openMap();
-  });
+  function _closeMap() { document.getElementById('map-panel').classList.remove('open'); }
+  function _toggleMap() { document.getElementById('map-panel').classList.contains('open') ? _closeMap() : _openMap(); }
   document.getElementById('map-close').addEventListener('click', _closeMap);
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){
@@ -1544,13 +2081,36 @@ function generateSitemap(project: any): string {
   return xml;
 }
 
+// SVG inner content for each built-in Lucide icon (24×24 viewBox, stroke-based)
+const BUILTIN_ICON_SVG: Record<string, string> = {
+  building:   `<rect width="16" height="20" x="4" y="2" rx="2" ry="2"></rect><path d="M9 22v-4h6v4"></path><path d="M8 6h.01"></path><path d="M16 6h.01"></path><path d="M12 6h.01"></path><path d="M12 10h.01"></path><path d="M12 14h.01"></path><path d="M16 10h.01"></path><path d="M16 14h.01"></path><path d="M8 10h.01"></path><path d="M8 14h.01"></path>`,
+  skyscraper: `<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path>`,
+  museum:     `<line x1="3" x2="21" y1="22" y2="22"></line><line x1="6" x2="6" y1="18" y2="11"></line><line x1="10" x2="10" y1="18" y2="11"></line><line x1="14" x2="14" y1="18" y2="11"></line><line x1="18" x2="18" y1="18" y2="11"></line><polygon points="12 2 20 7 4 7"></polygon>`,
+  shop:       `<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path>`,
+  music:      `<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>`,
+  leaf:       `<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path>`,
+  camera:     `<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle>`,
+  star:       `<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>`,
+  heart:      `<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path>`,
+  mappin:     `<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path><circle cx="12" cy="10" r="3"></circle>`,
+  flag:       `<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" x2="4" y1="22" y2="15"></line>`,
+  home:       `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>`,
+  info:       `<circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path>`,
+  eye:        `<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle>`,
+};
+
 function generateHotspotSvg(color: string, label: string, iconSvg?: string | null): string {
   const c = /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#555555';
   let inner = '';
-  if (iconSvg) {
+  if (iconSvg?.startsWith('builtin:')) {
+    const builtinContent = BUILTIN_ICON_SVG[iconSvg.slice(8)];
+    if (builtinContent) {
+      // stroke-based Lucide icon, centered in the 40×48 pin (24×24 → translate(8,8))
+      inner = `<g transform="translate(8,8)" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${builtinContent}</g>`;
+    }
+  } else if (iconSvg) {
     const m = iconSvg.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
     if (m) {
-      // centre a 24×24 icon at (20,20) → translate(8,8)
       inner = `<g transform="translate(8,8)" fill="white" stroke="none">${m[1]}</g>`;
     }
   }
@@ -1558,10 +2118,15 @@ function generateHotspotSvg(color: string, label: string, iconSvg?: string | nul
     const letter = xmlEsc((label || '?').charAt(0).toUpperCase());
     inner = `<text x="20" y="25" text-anchor="middle" dominant-baseline="auto" font-family="system-ui,sans-serif" font-size="15" font-weight="700" fill="white">${letter}</text>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48">
-  <defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/></filter></defs>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="144" viewBox="0 0 40 48">
+  <defs>
+    <filter id="sh" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
   <path d="M20,2 C10.06,2 2,10.06 2,20 C2,31 20,46 20,46 C20,46 38,31 38,20 C38,10.06 29.94,2 20,2Z" fill="${c}" filter="url(#sh)"/>
-  <circle cx="20" cy="20" r="10" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
+  <path d="M20,2.5 C10.35,2.5 2.5,10.35 2.5,20 C2.5,31 20,45.5 20,45.5 C20,45.5 37.5,31 37.5,20 C37.5,10.35 29.65,2.5 20,2.5Z" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <path d="M20,4.5 C11.44,4.5 4.5,11.44 4.5,20 C4.5,29.8 20,43 20,43 C20,43 35.5,29.8 35.5,20 C35.5,11.44 28.56,4.5 20,4.5Z" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
   ${inner}
 </svg>`;
 }
@@ -1777,13 +2342,18 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       }
     }
 
-    // ── vtour skin ─────────────────────────────────────────────────────────
-    try {
-      await fs.access(skinSrc);
-      const skinCount = await copyDir(skinSrc, path.join(outputDir, 'skin'));
-      progress(`Skin copied (${skinCount} files)`, 'ok');
-    } catch {
-      progress('vtour skin not found — tour.xml skin include may fail', 'info');
+    // ── Assets (logo, branding) ────────────────────────────────────────────
+    const assetsOutDir = path.join(outputDir, 'assets');
+    await fs.mkdir(assetsOutDir, { recursive: true });
+    const logoSrcPath: string | undefined = project.branding?.logoPath;
+    if (logoSrcPath) {
+      try {
+        const logoExt = path.extname(logoSrcPath);
+        await fs.copyFile(logoSrcPath, path.join(assetsOutDir, `logo${logoExt}`));
+        progress('Logo copied to assets/', 'ok');
+      } catch {
+        progress('Logo file not found — header logo will not display', 'info');
+      }
     }
 
     // ── krpano plugins (webvr, gyro2, etc.) ────────────────────────────────
@@ -1992,6 +2562,11 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     const hotspotsDir = path.join(outputDir, 'hotspots');
     await fs.mkdir(hotspotsDir, { recursive: true });
     await fs.writeFile(path.join(hotspotsDir, 'default.svg'), generateHotspotSvg('#6b7280', '?'), 'utf8');
+    // Special-type hotspot pins
+    await fs.writeFile(path.join(hotspotsDir, 'hs-text.svg'), generateHotspotSvg('#6366f1', 'i', 'builtin:info'), 'utf8');
+    await fs.writeFile(path.join(hotspotsDir, 'hs-video.svg'), generateHotspotSvg('#f59e0b', 'v',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="white" stroke="white" stroke-linejoin="round"/></svg>'), 'utf8');
+    await fs.writeFile(path.join(hotspotsDir, 'hs-external.svg'), generateHotspotSvg('#3b82f6', 'e', 'builtin:eye'), 'utf8');
     for (const cat of (project.categories || []) as Array<{ slug?: string; color?: string; name?: Record<string, string> | string; iconSvg?: string }>) {
       if (!cat.slug) continue;
       const label = typeof cat.name === 'string' ? cat.name : (Object.values(cat.name || {})[0] || cat.slug);
