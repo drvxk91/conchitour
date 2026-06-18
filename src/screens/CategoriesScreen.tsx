@@ -48,6 +48,36 @@ function CategoryIcon({ iconSvg, color, size = 20 }: { iconSvg?: string; color: 
   return <MapPin size={size} color={color} />;
 }
 
+function HotspotPinPreview({ iconSvg, color, size = 40 }: { iconSvg?: string; color: string; size?: number }) {
+  const height = Math.round(size * 1.2);
+  const iconPx = Math.round(size * 0.34);
+  const iconTop = Math.round(size * 0.5) - Math.round(iconPx / 2);
+  const iconLeft = Math.round(size * 0.5) - Math.round(iconPx / 2);
+  return (
+    <div className="relative flex-shrink-0" style={{ width: size, height }}>
+      <svg
+        width={size}
+        height={height}
+        viewBox="0 0 40 48"
+        className="absolute inset-0"
+        style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.35))' }}
+      >
+        <path
+          d="M20,2 C10.06,2 2,10.06 2,20 C2,31 20,46 20,46 C20,46 38,31 38,20 C38,10.06 29.94,2 20,2Z"
+          fill={color}
+        />
+        <circle cx="20" cy="20" r="10" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.65)" strokeWidth="1.5"/>
+      </svg>
+      <div
+        className="absolute flex items-center justify-center"
+        style={{ top: iconTop, left: iconLeft, width: iconPx, height: iconPx }}
+      >
+        <CategoryIcon iconSvg={iconSvg} color="white" size={iconPx} />
+      </div>
+    </div>
+  );
+}
+
 // ── Category modal ────────────────────────────────────────────────────────────
 
 interface ModalProps {
@@ -122,16 +152,12 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto">
-          {/* Preview circle */}
+          {/* Pin preview */}
           <div className="flex items-center gap-4">
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center shadow-md flex-shrink-0"
-              style={{ backgroundColor: color + '33', border: `3px solid ${color}` }}
-            >
-              <CategoryIcon iconSvg={iconSvg} color={color} size={22} />
-            </div>
+            <HotspotPinPreview iconSvg={iconSvg} color={color} size={44} />
             <div className="flex-1 text-sm text-ink-faded">
               {defaultName || <span className="italic">No name set</span>}
+              <p className="text-[11px] mt-1 text-ink-faded/60">Hotspot pin preview</p>
             </div>
           </div>
 
@@ -405,13 +431,8 @@ export function CategoriesScreen() {
                 data-testid={`category-card-${cat.id}`}
                 className="bg-paper border border-line rounded-xl p-4 flex items-start gap-3 hover:border-line-strong transition-colors"
               >
-                {/* Icon circle */}
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm"
-                  style={{ backgroundColor: cat.color + '22', border: `2px solid ${cat.color}` }}
-                >
-                  <CategoryIcon iconSvg={cat.iconSvg} color={cat.color} size={18} />
-                </div>
+                {/* Hotspot pin preview */}
+                <HotspotPinPreview iconSvg={cat.iconSvg} color={cat.color} size={36} />
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
