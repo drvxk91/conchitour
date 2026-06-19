@@ -41,9 +41,10 @@ export function ParcoursGraph() {
 
   return (
     <footer
-      className="h-[120px] border-t border-line bg-paper flex-shrink-0 overflow-x-auto"
+      className="h-[148px] border-t border-line bg-paper flex-shrink-0"
       data-testid="parcours-graph"
     >
+      <div className="h-full overflow-x-auto">
       <div className="h-full flex items-center gap-0 px-4 min-w-max">
         {scenes.map((scene, i) => {
           const isActive  = scene.id === activeSceneId;
@@ -95,6 +96,7 @@ export function ParcoursGraph() {
             </div>
           );
         })}
+      </div>
       </div>
     </footer>
   );

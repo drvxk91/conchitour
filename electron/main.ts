@@ -1180,7 +1180,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function generateTourHtml(project: any, lang: string, startSceneSlug: string | null, tiledSlugs: Set<string>): string {
+function generateTourHtml(project: any, lang: string, startSceneSlug: string | null, tiledSlugs: Set<string>, hasSharePreview = false): string {
   const meta      = project.meta     || {};
   const seo       = project.seo      || {};
   const branding  = project.branding || {};
@@ -1261,6 +1261,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     categories: categoriesData,
     hotspotTexts,
     hotspotVideos,
+    hotspotSizePx: branding.hotspotSizePx || 32,
   });
 
   const hasMap = scenes.some((s: any) => s.geo?.lat != null && s.geo?.lng != null);
@@ -1274,20 +1275,26 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   headExtras += `  <meta property="og:title" content="${pageTitle}">\n`;
   if (description) headExtras += `  <meta property="og:description" content="${description}">\n`;
   headExtras += '  <meta property="og:type" content="website">\n';
-  // og:image — prefer tiles preview, fall back to /media/<slug>.jpg
+  // og:image — prefer compiled share-preview.jpg, fall back to tiles preview or media file
   let ogImageUrl = '';
-  if (startScene && publicUrl) {
-    const ext = path.extname(startScene.media?.sourcePath || '.jpg') || '.jpg';
-    ogImageUrl = tiledSlugs.has(startScene.slug)
-      ? `${xmlEsc(publicUrl)}/panos/${startScene.slug}.tiles/preview.jpg`
-      : `${xmlEsc(publicUrl)}/media/${startScene.slug}${ext}`;
-    headExtras += `  <meta property="og:image" content="${ogImageUrl}">\n`;
-    headExtras += `  <meta property="og:image:width" content="1200">\n`;
-    headExtras += `  <meta property="og:image:height" content="630">\n`;
-    headExtras += `  <meta name="twitter:card" content="summary_large_image">\n`;
-    headExtras += `  <meta name="twitter:title" content="${pageTitle}">\n`;
-    if (description) headExtras += `  <meta name="twitter:description" content="${description}">\n`;
-    headExtras += `  <meta name="twitter:image" content="${ogImageUrl}">\n`;
+  if (publicUrl) {
+    if (hasSharePreview) {
+      ogImageUrl = `${xmlEsc(publicUrl)}/share-preview.jpg`;
+    } else if (startScene) {
+      const ext = path.extname(startScene.media?.sourcePath || '.jpg') || '.jpg';
+      ogImageUrl = tiledSlugs.has(startScene.slug)
+        ? `${xmlEsc(publicUrl)}/panos/${startScene.slug}.tiles/preview.jpg`
+        : `${xmlEsc(publicUrl)}/media/${startScene.slug}${ext}`;
+    }
+    if (ogImageUrl) {
+      headExtras += `  <meta property="og:image" content="${ogImageUrl}">\n`;
+      headExtras += `  <meta property="og:image:width" content="1200">\n`;
+      headExtras += `  <meta property="og:image:height" content="630">\n`;
+      headExtras += `  <meta name="twitter:card" content="summary_large_image">\n`;
+      headExtras += `  <meta name="twitter:title" content="${pageTitle}">\n`;
+      if (description) headExtras += `  <meta name="twitter:description" content="${description}">\n`;
+      headExtras += `  <meta name="twitter:image" content="${ogImageUrl}">\n`;
+    }
   }
   if (keywords.length) headExtras += `  <meta name="keywords" content="${xmlEsc(keywords.join(', '))}">\n`;
 
@@ -1334,7 +1341,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     da:'🇩🇰', fi:'🇫🇮', nb:'🇳🇴', no:'🇳🇴', uk:'🇺🇦',
   };
   const langHdrBtns: string = allLangs.length > 1
-    ? `<select id="lang-sel" onchange="var s=_curScene;location.href='/'+this.value+'/'+(s?'scene/'+s+'/'+this.value+'/':'');">` +
+    ? `<select id="lang-sel" onchange="var p=window.location.pathname,m=p.match(/\\/scene\\/([^/]+)\\//),s=_curScene||(m?m[1]:'');location.href=s?'/scene/'+s+'/'+this.value+'/':'/'+this.value+'/';">` +
       allLangs.map((l: string) => {
         const flag: string = FLAG_MAP[l] || '🌐';
         return `<option value="${xmlEsc(l)}"${l === lang ? ' selected' : ''}>${flag} ${l.toUpperCase()}</option>`;
@@ -1627,6 +1634,14 @@ ${hsPreviewCss}
     @media(hover:none){
       .sc-wrap::after{display:none}
     }
+    .map-pin-popup{width:200px}
+    .map-pin-thumb{width:100%;height:100px;object-fit:cover;display:block;border-radius:0}
+    .map-pin-body{padding:8px 10px 10px}
+    .map-pin-title{font-size:13px;font-weight:600;color:#111;margin:0 0 6px;line-height:1.3}
+    .map-pin-visit{width:100%;padding:5px 0;background:${accentColor};color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+    .map-pin-visit:hover{opacity:.85}
+    .map-popup-wrap .leaflet-popup-content-wrapper{border-radius:10px;padding:0;overflow:hidden}
+    .map-popup-wrap .leaflet-popup-content{margin:0}
   </style>
 </head>
 <body>
@@ -1999,6 +2014,16 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
       _lmap = L.map('leaflet-map');
       var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
       L.tileLayer(ts.url,{ attribution:ts.attr, maxZoom:ts.maxZoom }).addTo(_lmap);
+      var sz = TOUR.hotspotSizePx || 32;
+      function _mapPinSvg(color, letter) {
+        var c = /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#555555';
+        var l = String(letter || '?').charAt(0).toUpperCase().replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 48" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">'
+          + '<path d="M20,2 C10.06,2 2,10.06 2,20 C2,31 20,46 20,46 C20,46 38,31 38,20 C38,10.06 29.94,2 20,2Z" fill="' + c + '"/>'
+          + '<path d="M20,2.5 C10.35,2.5 2.5,10.35 2.5,20 C2.5,31 20,45.5 20,45.5 C20,45.5 37.5,31 37.5,20 C37.5,10.35 29.65,2.5 20,2.5Z" fill="none" stroke="#fff" stroke-width="2"/>'
+          + '<text x="20" y="25" text-anchor="middle" dominant-baseline="auto" font-family="system-ui,sans-serif" font-size="15" font-weight="700" fill="white">' + l + '</text>'
+          + '</svg>';
+      }
       var bounds = [];
       Object.keys(TOUR.scenes).forEach(function(slug) {
         var sc = TOUR.scenes[slug];
@@ -2006,14 +2031,24 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
         var catId = sc.categoryIds && sc.categoryIds[0];
         var cat   = catId ? TOUR.categories[catId] : null;
         var color = cat ? cat.color : '#6b7280';
-        var m = L.circleMarker([sc.gps.lat, sc.gps.lng], {
-          radius:9, fillColor:color, color:'#fff', weight:2, opacity:1, fillOpacity:0.9
+        var letter = (cat ? cat.name : sc.title) || slug;
+        var icon = L.divIcon({
+          html: _mapPinSvg(color, letter),
+          className: '',
+          iconSize:   [sz, Math.round(sz * 1.2)],
+          iconAnchor: [Math.round(sz / 2), Math.round(sz * 1.2)],
+          popupAnchor:[0, -Math.round(sz * 1.2)],
         });
-        m.bindTooltip(sc.title || slug, {direction:'top'});
-        m.on('click', function() {
-          if (_krpano) _krpano.call('loadscene(scene_'+slug+',null,MERGE,BLEND(0.5));');
-          _closeMap();
-        });
+        var safeTitle = (sc.title || slug).replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        var navCall = "if(_krpano)_krpano.call('loadscene(scene_" + slug + ",null,MERGE,BLEND(0.5));');_closeMap();";
+        var popupHtml = '<div class="map-pin-popup">'
+          + '<img class="map-pin-thumb" src="' + (sc.preview || '') + '" alt="' + safeTitle + '">'
+          + '<div class="map-pin-body">'
+          + '<p class="map-pin-title">' + safeTitle + '</p>'
+          + '<button class="map-pin-visit" onclick="' + navCall + '">Visit &rarr;</button>'
+          + '</div></div>';
+        var m = L.marker([sc.gps.lat, sc.gps.lng], { icon: icon });
+        m.bindPopup(popupHtml, { maxWidth: 220, className: 'map-popup-wrap' });
         m.addTo(_lmap);
         bounds.push([sc.gps.lat, sc.gps.lng]);
       });
@@ -2552,6 +2587,39 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     await fs.writeFile(path.join(outputDir, 'tour.xml'), tourXml, 'utf8');
     progress('tour.xml generated', 'ok');
 
+    // ── Share preview for og:image (1200×630 center-crop) ─────────────────
+    let sharePreviewGenerated = false;
+    {
+      const br = project.branding || {};
+      const startSc = scenes.find((s: any) => s.id === br.startSceneId) ?? scenes[0];
+      const srcPath: string | undefined = startSc?.media?.sourcePath;
+      if (srcPath) {
+        try {
+          await fs.access(srcPath);
+          const sharp = (await import('sharp')).default;
+          const meta  = await sharp(srcPath).metadata();
+          const w = meta.width  ?? 1200;
+          const h = meta.height ?? 630;
+          const targetAR = 1200 / 630;
+          const srcAR = w / h;
+          let cropW: number, cropH: number;
+          if (srcAR > targetAR) { cropH = h; cropW = Math.round(h * targetAR); }
+          else                   { cropW = w; cropH = Math.round(w / targetAR); }
+          const left = Math.max(0, Math.round((w - cropW) / 2));
+          const top  = Math.max(0, Math.round((h - cropH) / 2));
+          await sharp(srcPath)
+            .extract({ left, top, width: Math.min(cropW, w), height: Math.min(cropH, h) })
+            .resize(1200, 630)
+            .jpeg({ quality: 85 })
+            .toFile(path.join(outputDir, 'share-preview.jpg'));
+          sharePreviewGenerated = true;
+          progress('share-preview.jpg generated (1200×630)', 'ok');
+        } catch {
+          progress('share-preview.jpg skipped — source file not accessible', 'info');
+        }
+      }
+    }
+
     // ── Per-language HTML pages ────────────────────────────────────────────
     const langs: string[] = project.languages?.available?.length
       ? project.languages.available
@@ -2583,7 +2651,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       await fs.mkdir(langDir, { recursive: true });
 
       // /:lang/index.html — tour entry point for this language
-      const rootHtml = generateTourHtml(project, lang, null, tiledSlugsSet);
+      const rootHtml = generateTourHtml(project, lang, null, tiledSlugsSet, sharePreviewGenerated);
       await fs.writeFile(path.join(langDir, 'index.html'), rootHtml, 'utf8');
 
       // /:lang/scene/:slug/index.html — per-scene deep-link
@@ -2592,7 +2660,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       for (const scene of scenes) {
         const dir = path.join(sceneLangDir, scene.slug);
         await fs.mkdir(dir, { recursive: true });
-        const sceneHtml = generateTourHtml(project, lang, scene.slug, tiledSlugsSet);
+        const sceneHtml = generateTourHtml(project, lang, scene.slug, tiledSlugsSet, sharePreviewGenerated);
         await fs.writeFile(path.join(dir, 'index.html'), sceneHtml, 'utf8');
       }
     }
