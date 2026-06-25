@@ -1165,7 +1165,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     const lngAttr   = scene.geo?.lng != null ? ` lng="${scene.geo.lng}"` : '';
 
     xml += `  <scene name="${sName}" title="${sTitle}"${thumbAttr}${latAttr}${lngAttr} heading="${heading}">\n`;
-    xml += `    <view hlookat="${hlookat.toFixed(1)}" vlookat="${vlookat.toFixed(1)}" fovtype="MFOV" fov="${fov.toFixed(1)}" maxpixelzoom="2.0" fovmin="50" fovmax="140"/>\n`;
+    xml += `    <view hlookat="${hlookat.toFixed(1)}" vlookat="${vlookat.toFixed(1)}" fovtype="HFOV" fov="${fov.toFixed(1)}" maxpixelzoom="2.0" fovmin="50" fovmax="140"/>\n`;
 
     if (useTiles) {
       xml += `    <preview url="/panos/${scene.slug}.tiles/preview.jpg"/>\n`;
@@ -1308,7 +1308,15 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   }
   const categoriesIndexData: Record<string, unknown> = {};
   for (const cat of categories) {
-    categoriesIndexData[(cat.slug as string)] = { name: cat.name || {}, color: cat.color || accentColor };
+    const rawCatIcon = (cat as any).iconSvg as string | null | undefined;
+    let resolvedCatIcon: string | null = null;
+    if (rawCatIcon?.startsWith('builtin:')) {
+      const inner = BUILTIN_ICON_SVG[rawCatIcon.slice(8)];
+      if (inner) resolvedCatIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+    } else if (rawCatIcon) {
+      resolvedCatIcon = rawCatIcon;
+    }
+    categoriesIndexData[(cat.slug as string)] = { name: cat.name || {}, color: cat.color || accentColor, iconSvg: resolvedCatIcon };
   }
   const scenesIndexJson     = JSON.stringify(scenesIndexData).replace(/<\//g, '<\\/');
   const categoriesIndexJson = JSON.stringify(categoriesIndexData).replace(/<\//g, '<\\/');
@@ -1561,7 +1569,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     : hsStyle === 'overlay'
     ? `    #hs-preview{position:fixed;z-index:200;width:220px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.6);pointer-events:none;opacity:0;transform:scale(.96);transition:opacity .18s,transform .18s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:scale(1)}\n    #hs-preview img{width:100%;height:130px;object-fit:cover;display:block}\n    #hs-preview-title{position:absolute;bottom:0;left:0;right:0;padding:28px 12px 10px;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 100%);font-size:13px;font-weight:600;color:#fff;line-height:1.3}\n`
     : /* card (default) — Dubai360 style */
-      `    #hs-preview{position:fixed;z-index:9500;width:280px;border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 12px 32px rgba(0,0,0,.35);pointer-events:none;opacity:0;transform:translateY(4px) scale(.98);transition:opacity .15s,transform .15s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:translateY(0) scale(1)}\n    #hs-preview .hsp-img-wrap{width:100%;height:140px;background:#222;overflow:hidden}\n    #hs-preview .hsp-img{width:100%;height:100%;object-fit:cover;display:block}\n    #hs-preview .hsp-badges{display:flex;justify-content:center;gap:6px;padding:8px;background:rgba(247,247,250,1);min-height:36px;align-items:center}\n    #hs-preview .hsp-badge{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);font-size:11px;font-weight:700;flex-shrink:0}\n    #hs-preview .hsp-title{padding:10px 14px;text-align:center;color:rgb(20,20,30);font-size:13px;font-weight:600;line-height:1.25;background:#fff}\n`;
+      `    #hs-preview{position:fixed;z-index:9500;width:280px;border-radius:12px;overflow:visible;background:#fff;box-shadow:0 12px 32px rgba(0,0,0,.35);pointer-events:none;opacity:0;transform:translateY(4px) scale(.98);transition:opacity .15s,transform .15s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:translateY(0) scale(1)}\n    #hs-preview .hsp-img-wrap{width:100%;height:140px;background:#222;overflow:hidden;border-radius:12px 12px 0 0}\n    #hs-preview .hsp-img{width:100%;height:100%;object-fit:cover;display:block}\n    #hs-preview .hsp-badges{position:absolute;top:140px;left:50%;transform:translate(-50%,-50%);display:flex;gap:8px;z-index:2}\n    #hs-preview .hsp-badge{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);border:2px solid #fff;flex-shrink:0}\n    #hs-preview .hsp-badge svg{width:14px;height:14px}\n    #hs-preview .hsp-title{padding:24px 14px 14px;text-align:center;color:rgb(20,20,30);font-size:13px;font-weight:600;line-height:1.25;background:#fff;border-radius:0 0 12px 12px}\n`;
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
@@ -2087,7 +2095,10 @@ ${showMap ? `  <div id="map-panel">
         if (!cat) return;
         var nameMap = cat.name || {};
         var name = nameMap[window._curLang] || nameMap[window.__defaultLang] || Object.values(nameMap)[0] || catSlug;
-        bHtml += '<div class="hsp-badge" style="background:' + (cat.color || '#6b7280') + '" title="' + name + '">' + name.charAt(0).toUpperCase() + '</div>';
+        var iconContent = cat.iconSvg
+          ? cat.iconSvg
+          : '<span style="font-size:11px;font-weight:700;line-height:1">' + name.charAt(0).toUpperCase() + '</span>';
+        bHtml += '<div class="hsp-badge" style="background:' + (cat.color || '#6b7280') + '" title="' + name + '">' + iconContent + '</div>';
       });
       bdg.innerHTML = bHtml;
     }
@@ -2437,17 +2448,13 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
           iconAnchor: [32, 32],
           popupAnchor:[0, -20],
         });
-        var safeTitle = _displayTitle(slug).replace(/</g,'&lt;').replace(/"/g,'&quot;');
-        var navCall = "if(_krpano)_krpano.call('loadscene(scene_" + slug + ",null,MERGE,BLEND(0.5));');";
-        var popupHtml = '<div class="map-pin-popup">'
-          + '<img class="map-pin-thumb" src="' + (sc.preview || '') + '" alt="' + safeTitle + '">'
-          + '<div class="map-pin-body">'
-          + '<p class="map-pin-title">' + safeTitle + '</p>'
-          + '<button class="map-pin-visit" onclick="' + navCall + '">Visit &rarr;</button>'
-          + '</div></div>';
         var m = L.marker([sc.gps.lat, sc.gps.lng], { icon: icon });
-        m.bindPopup(popupHtml, { maxWidth: 220, className: 'map-popup-wrap' });
         m.addTo(_lmap);
+        m.on('click', function() {
+          window.hideHotspotPreview();
+          _closeMap();
+          _navTo(slug);
+        });
         m.on('mouseover', function() {
           showHotspotPreview(slug);
           if (window.__mapTourSync && window._krpano && window.__sceneHotspotMap) {
@@ -2496,18 +2503,25 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
     if (prevSlug) _refreshIcon(prevSlug, false);
     _refreshIcon(newSlug, true);
 
-    // Draw transition polyline then fade out after 1.5s
+    // Draw animated transition polyline (fade in → flow → fade out)
     var prevSc = prevSlug ? TOUR.scenes[prevSlug] : null;
     var newSc  = TOUR.scenes[newSlug];
     if (_transLine) { _lmap.removeLayer(_transLine); _transLine = null; }
     if (prevSc && prevSc.gps && newSc && newSc.gps) {
-      _transLine = L.polyline(
+      var poly = L.polyline(
         [[prevSc.gps.lat, prevSc.gps.lng],[newSc.gps.lat, newSc.gps.lng]],
-        { color:'rgba(255,255,255,0.75)', weight:2, dashArray:'6 4' }
+        { color:'white', weight:3, opacity:0, dashArray:'8 8', dashOffset:'0' }
       ).addTo(_lmap);
-      setTimeout(function() {
-        if (_transLine) { _lmap.removeLayer(_transLine); _transLine = null; }
-      }, 1600);
+      _transLine = poly;
+      var tStart = performance.now();
+      (function animTrans() {
+        var dt = performance.now() - tStart;
+        var fadeIn  = Math.min(1, dt / 400);
+        var fadeOut = Math.max(0, Math.min(1, (dt - 1200) / 400));
+        poly.setStyle({ opacity: fadeIn - fadeOut, dashOffset: String(-((dt / 30) % 16)) });
+        if (dt < 1600) { requestAnimationFrame(animTrans); }
+        else { if (_transLine === poly) { _lmap.removeLayer(poly); _transLine = null; } }
+      })();
     }
 
     // Auto-pan if new marker out of view
