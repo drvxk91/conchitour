@@ -782,6 +782,16 @@ ipcMain.handle('project:copy-source', async (_e, srcPath: string) => {
   return name;
 });
 
+ipcMain.handle('thumb:save', async (_e, slug: string, dataUrl: string) => {
+  if (!currentProjectDir) return false;
+  const thumbsDir = path.join(currentProjectDir, 'thumbs');
+  await fs.mkdir(thumbsDir, { recursive: true });
+  const base64 = dataUrl.split(',')[1];
+  if (!base64) return false;
+  await fs.writeFile(path.join(thumbsDir, `${slug}.jpg`), Buffer.from(base64, 'base64'));
+  return true;
+});
+
 // Build file menu and send actions to renderer
 function setupAppMenu() {
   const sendAction = (action: string) => sendToRenderer(`menu:${action}`);
@@ -1063,6 +1073,39 @@ async function detectTileInfo(panosDir: string, slug: string): Promise<TileInfo 
   return levels.length > 0 ? { tileSize, levels } : null;
 }
 
+// ── Geo helpers (inlined from src/lib/geo.ts — same formulas, no import needed) ──
+// heading = compass bearing (0–360, CW from north) the camera lens faced at capture
+// ath = 0 is the image center; positive ath is rightward (east when heading=0)
+
+function geoHaversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6_371_000;
+  const φ1 = (a.lat * Math.PI) / 180, φ2 = (b.lat * Math.PI) / 180;
+  const Δφ = ((b.lat - a.lat) * Math.PI) / 180, Δλ = ((b.lng - a.lng) * Math.PI) / 180;
+  const s = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+function geoBearing(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const φ1 = (from.lat * Math.PI) / 180, φ2 = (to.lat * Math.PI) / 180;
+  const Δλ = ((to.lng - from.lng) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+// ath = ((bearing − heading + 540) % 360) − 180  (canonical formula, range [−180, 180])
+function geoAth(bearing: number, heading: number): number {
+  let a = ((bearing - heading + 540) % 360) - 180;
+  // clamp edge case: exactly +180 stays at −180 to avoid visual jump
+  if (a > 180) a -= 360;
+  return a;
+}
+
+function geoAtv(distM: number, heightDiffM: number): number {
+  if (distM <= 0) return 0;
+  return -(Math.atan2(heightDiffM, distM) * 180) / Math.PI;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | null>): string {
   const lang: string = project.languages?.default || 'en';
@@ -1144,8 +1187,6 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const hs of ((scene.hotspots ?? []) as any[])) {
       const hsName = hotspotXmlName(hs.id);
-      const ath: string = (hs.ath as number).toFixed(2);
-      const atv: string = (hs.atv as number).toFixed(2);
 
       if (hs.type === 'link') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1153,21 +1194,46 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
         if (!targetScene) continue;
         const linkedScene = sceneXmlName(targetScene.slug);
         const tooltip = xmlEsc(loc(targetScene.title, lang) || targetScene.slug);
+
+        // Recompute ath/atv from GPS at compile time (ensures consistency with heading used by radar).
+        // Stored hs.ath/atv may be stale if heading was updated after the last Map auto-compute.
+        let hsAth = hs.ath as number ?? 0;
+        let hsAtv = hs.atv as number ?? 0;
+        const sg = scene.geo, tg = targetScene.geo;
+        if (sg?.lat != null && sg?.lng != null && tg?.lat != null && tg?.lng != null) {
+          const bearing = geoBearing(sg, tg);
+          hsAth = geoAth(bearing, heading);
+          const dist = geoHaversine(sg, tg);
+          const srcH = sg.altitude ?? scene.captureHeightMeters ?? 1.6;
+          const tgtH = tg.altitude ?? targetScene.captureHeightMeters ?? 1.6;
+          hsAtv = geoAtv(dist, tgtH - srcH);
+        }
+        const ath: string = hsAth.toFixed(2);
+        const atv: string = hsAtv.toFixed(2);
         // Use target scene's primary category icon as hotspot pin
         const tCatId: string | undefined = (targetScene.categoryIds as string[])?.[0];
         const tCat = tCatId ? categories.find((c: any) => c.id === tCatId) : null;
         const iconUrl = tCat?.slug ? `/hotspots/cat-${tCat.slug}.svg` : '/hotspots/default.svg';
-        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="js(showHotspotPreview('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.18,0.15);" onout="js(hideHotspotPreview()); tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
-      } else if (hs.type === 'text') {
-        const tooltip = xmlEsc(loc(hs.title, lang) || 'Info');
-        xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-text.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showTextHs('${hs.id}'));"/>\n`;
-      } else if (hs.type === 'external') {
-        const tooltip = xmlEsc(loc(hs.label, lang) || 'Link');
-        const url = xmlEsc(hs.url || '');
-        xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-external.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="openurl(${url}, _blank);"/>\n`;
-      } else if (hs.type === 'video') {
-        const tooltip = xmlEsc(loc(hs.title, lang) || 'Video');
-        xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-video.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showVideoHs('${hs.id}'));"/>\n`;
+        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="js(_onHotspotHover('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.18,0.15);" onout="js(_onHotspotHoverOut('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
+      } else {
+        // Non-link hotspots use stored ath/atv (manually placed by user)
+        const ath: string = (hs.ath as number ?? 0).toFixed(2);
+        const atv: string = (hs.atv as number ?? 0).toFixed(2);
+        if (hs.type === 'text') {
+          const tooltip = xmlEsc(loc(hs.title, lang) || 'Info');
+          xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-text.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showTextHs('${hs.id}'));"/>\n`;
+        } else if (hs.type === 'external') {
+          const tooltip = xmlEsc(loc(hs.label, lang) || 'Link');
+          const url = xmlEsc(hs.url || '');
+          xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-external.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="openurl(${url}, _blank);"/>\n`;
+        } else if (hs.type === 'video') {
+          const tooltip = xmlEsc(loc(hs.title, lang) || 'Video');
+          xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-video.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showVideoHs('${hs.id}'));"/>\n`;
+        } else if (hs.type === 'form') {
+          if (!(modules as any).formsEnabled) continue;
+          const tooltip = xmlEsc(loc(hs.title, lang) || 'Contact');
+          xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-form.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showFormHs('${hs.id}'));"/>\n`;
+        }
       }
     }
 
@@ -1209,60 +1275,144 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const primaryColor: string = branding.primaryColor || '#1a1a1a';
   const accentColor: string  = branding.accentColor  || '#3b82f6';
   const copyright = xmlEsc(meta.copyright || '');
+  const tourTheme = (branding.tourTheme as { fontFamily?: string; headerBg?: string; panelBg?: string; textColor?: string; radius?: string; fontSize?: number } | undefined) || {};
 
   // Build per-lang scene data for the TOUR JS object (all scenes, current lang strings)
   const scenesData: Record<string, unknown> = {};
   for (const scene of scenes) {
     const ext = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
+    const rawTitleStr = loc(scene.title, lang) || '';
+    // Suppress auto-generated filename titles: if title normalizes to the same as slug, hide it.
+    const titleNorm = rawTitleStr.replace(/[-_]/g, ' ').toLowerCase().trim();
+    const slugNorm  = (scene.slug as string).replace(/[-_]/g, ' ').toLowerCase().trim();
+    const titleStr  = (rawTitleStr && titleNorm !== slugNorm) ? rawTitleStr : '';
     scenesData[scene.slug] = {
-      title:       loc(scene.title, lang)       || scene.slug,
+      title:       titleStr,
       description: loc(scene.description, lang) || '',
       categoryIds: scene.categoryIds || [],
       preview: tiledSlugs.has(scene.slug)
-        ? `/panos/${scene.slug}.tiles/preview.jpg`
+        ? `/thumbs/${scene.slug}.jpg`
         : `/media/${scene.slug}${ext}`,
       gps: (scene.geo?.lat != null && scene.geo?.lng != null)
         ? { lat: scene.geo.lat, lng: scene.geo.lng }
         : null,
+      heading:     scene.heading     ?? 0,
+      defaultView: scene.defaultView ?? null,
     };
   }
+
+  // Full multilingual scene index (all langs, raw title records) for runtime _displayTitle
+  const scenesIndexData: Record<string, unknown> = {};
+  for (const scene of scenes) {
+    scenesIndexData[scene.slug] = { title: scene.title || {}, slug: scene.slug };
+  }
+  const categoriesIndexData: Record<string, unknown> = {};
+  for (const cat of categories) {
+    categoriesIndexData[(cat.slug as string)] = { name: cat.name || {}, color: cat.color || accentColor };
+  }
+  const scenesIndexJson     = JSON.stringify(scenesIndexData).replace(/<\//g, '<\\/');
+  const categoriesIndexJson = JSON.stringify(categoriesIndexData).replace(/<\//g, '<\\/');
+
+  // For each scene: which category slugs are reachable via link hotspots (target scene's primary category)
+  const sceneCategoriesIndexData: Record<string, string[]> = {};
+  for (const scene of scenes) {
+    const catSlugSet = new Set<string>();
+    for (const hs of ((scene.hotspots ?? []) as any[])) {
+      if (hs.type === 'link' && hs.targetSceneId) {
+        const tScene = scenes.find((s: any) => s.id === hs.targetSceneId);
+        const tCatId = tScene?.categoryIds?.[0];
+        const tCat = tCatId ? categories.find((c: any) => c.id === tCatId) : null;
+        if (tCat?.slug) catSlugSet.add(tCat.slug as string);
+      }
+    }
+    sceneCategoriesIndexData[scene.slug as string] = Array.from(catSlugSet);
+  }
+  const sceneCategoriesIndexJson = JSON.stringify(sceneCategoriesIndexData).replace(/<\//g, '<\\/');
+
+  // For map↔tour hover sync: map from (sourceSceneSlug → targetSceneSlug → krpano hotspot name)
+  const sceneHotspotMapData: Record<string, Record<string, string>> = {};
+  for (const scene of scenes) {
+    const slugMap: Record<string, string> = {};
+    for (const hs of ((scene.hotspots ?? []) as any[])) {
+      if (hs.type === 'link' && hs.targetSceneId) {
+        const tScene = scenes.find((s: any) => s.id === hs.targetSceneId);
+        if (tScene?.slug) slugMap[tScene.slug as string] = hotspotXmlName(hs.id as string);
+      }
+    }
+    sceneHotspotMapData[scene.slug as string] = slugMap;
+  }
+  const sceneHotspotMapJson = JSON.stringify(sceneHotspotMapData).replace(/<\//g, '<\\/');
 
   // Categories keyed by ID
   const categoriesData: Record<string, unknown> = {};
   for (const cat of categories) {
+    let resolvedIconSvg: string | null = null;
+    if (cat.iconSvg) {
+      const rawIcon = cat.iconSvg as string;
+      if (rawIcon.startsWith('builtin:')) {
+        resolvedIconSvg = BUILTIN_ICON_SVG[rawIcon.slice(8)] ?? null;
+      } else {
+        resolvedIconSvg = rawIcon;
+      }
+    }
     categoriesData[cat.id] = {
       name:    loc(cat.name, lang) || cat.slug,
       color:   cat.color || accentColor,
-      iconSvg: cat.iconSvg || null,
+      iconSvg: resolvedIconSvg,
     };
   }
 
-  // Hotspot content maps (for text/video popup data keyed by hotspot ID)
+  // Hotspot content maps (for text/video/form popup data keyed by hotspot ID)
   const hotspotTexts: Record<string, unknown> = {};
   const hotspotVideos: Record<string, unknown> = {};
+  const hotspotForms: Record<string, unknown> = {};
   for (const scene of scenes as any[]) {
     for (const hs of (scene.hotspots || []) as any[]) {
       if (hs.type === 'text') {
         hotspotTexts[hs.id] = { title: loc(hs.title, lang) || '', body: loc(hs.body, lang) || '' };
       } else if (hs.type === 'video') {
         hotspotVideos[hs.id] = { url: hs.url || '', title: loc(hs.title, lang) || '' };
+      } else if (hs.type === 'form') {
+        hotspotForms[hs.id] = {
+          mailto: hs.mailto || '',
+          subject: loc(hs.subject, lang) || '',
+          fields: hs.fields || [],
+        };
       }
     }
   }
 
+  // Global contact form for the header button (formsEnabled + feedbackMailto)
+  const _mods: any = project.modules || {};
+  if (_mods.formsEnabled && _mods.feedbackMailto?.trim()) {
+    hotspotForms['__contact__'] = {
+      mailto:  _mods.feedbackMailto.trim(),
+      subject: loc(project.meta?.title, lang) || projectTitle,
+      fields: [
+        { name: 'name',    label: 'Name',    type: 'text' },
+        { name: 'email',   label: 'Email',   type: 'email' },
+        { name: 'message', label: 'Message', type: 'textarea' },
+      ],
+    };
+  }
+
+  // Escape </script> so user content never prematurely closes the <script> block.
+  // JSON.stringify doesn't do this — any scene description or hotspot body with
+  // "</script>" would terminate the entire script tag, silently killing all JS.
   const tourDataJson = JSON.stringify({
     lang,
     defaultLang,
     allLangs,
     projectTitle,
     publicUrl: publicUrl || null,
-    startScene: startSceneSlug,
+    startScene: startSceneSlug ?? startScene?.slug ?? null,
     scenes: scenesData,
     categories: categoriesData,
     hotspotTexts,
     hotspotVideos,
+    hotspotForms,
     hotspotSizePx: branding.hotspotSizePx || 32,
-  });
+  }).replace(/<\//g, '<\\/');
 
   const hasMap = scenes.some((s: any) => s.geo?.lat != null && s.geo?.lng != null);
 
@@ -1322,6 +1472,27 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     ? `krp.call("loadscene(${sceneXmlName(startSceneSlug)},null,MERGE,BLEND(0.5));");`
     : '';
 
+  // ── Loading screen ────────────────────────────────────────────────────
+  const loaderExt: string = branding.loaderPath ? path.extname(branding.loaderPath as string) : '';
+  const loaderImgSrc: string = branding.loaderPath ? `/assets/loader${xmlEsc(loaderExt)}` : '';
+  const introText: string = xmlEsc(
+    (branding.introText as Record<string, string> | undefined)?.[lang]
+    || (branding.introText as Record<string, string> | undefined)?.[defaultLang]
+    || ''
+  );
+  const introAnimation: string = (tourTheme as any).introAnimation || 'fade';
+  const introFontSize: number  = Number((tourTheme as any).introFontSize) || 18;
+  const introFontFamily: string = tourTheme.fontFamily === 'serif'
+    ? "Georgia,'Times New Roman',serif"
+    : tourTheme.fontFamily === 'mono'
+    ? "ui-monospace,'SFMono-Regular',Menlo,monospace"
+    : "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+  const splashAnimName: string = introAnimation === 'slide' ? '_splashSlide' : introAnimation === 'zoom' ? '_splashZoom' : '_splashFade';
+
+  // ── Favicon ───────────────────────────────────────────────────────────
+  const faviconExt: string = branding.faviconPath ? path.extname(branding.faviconPath as string) : '';
+  const faviconLinkHtml: string = branding.faviconPath ? `  <link rel="icon" href="/assets/favicon${xmlEsc(faviconExt)}">\n` : '';
+
   // ── Header logo ───────────────────────────────────────────────────────
   const logoExt: string = branding.logoPath ? path.extname(branding.logoPath as string) : '';
   const logoImgHtml: string = branding.logoPath
@@ -1333,7 +1504,6 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const showMap: boolean = hasMap;
   const mapHdrBtn: string = showMap
     ? `<button class="hdr-btn" id="map-hdr-btn" onclick="_toggleMap()" title="Map">&#x1F5FA;</button>` : '';
-  const screenshotBtn = `<button class="hdr-btn" id="screenshot-btn" onclick="_takeScreenshot()" title="Screenshot">&#x1F4F7;</button>`;
   const FLAG_MAP: Record<string, string> = {
     en:'🇬🇧', fr:'🇫🇷', de:'🇩🇪', es:'🇪🇸', it:'🇮🇹',
     pt:'🇵🇹', nl:'🇳🇱', pl:'🇵🇱', ru:'🇷🇺', zh:'🇨🇳',
@@ -1353,7 +1523,8 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   if (share.twitter)  shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener');return false;" title="X">𝕏</a>`);
   if (share.whatsapp) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener');return false;" title="WhatsApp">W</a>`);
   if (share.linkedin) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="LinkedIn">in</a>`);
-  if (share.email)    shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="location.href='mailto:?subject='+encodeURIComponent(document.title)+'&body='+encodeURIComponent(location.href);return false;" title="Email">@</a>`);
+  // Note: share.email is intentionally NOT added to the header (it would duplicate the feedbackMailto button).
+  // Email sharing is available in the bottom share bar only.
   const shareHdrHtml: string = shareHdrLinks.join('');
 
   // ── Cookie consent ───────────────────────────────────────────────────
@@ -1371,11 +1542,16 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const sceneCardsHtml: string = (scenes as any[]).map((scene: any) => {
     const ext: string = path.extname(scene.media?.sourcePath || '.jpg') || '.jpg';
     const prev = tiledSlugs.has(scene.slug)
-      ? `/panos/${scene.slug}.tiles/preview.jpg`
+      ? `/thumbs/${scene.slug}.jpg`
       : `/media/${scene.slug}${ext}`;
-    const sTitle = xmlEsc(loc(scene.title, lang) || scene.slug);
+    const rawT = loc(scene.title, lang) || loc(scene.title, defaultLang) || (Object.values((scene.title as Record<string,string>) || {})[0] || '');
+    const tNorm = rawT.replace(/[-_]/g, ' ').toLowerCase().trim();
+    const sNorm = (scene.slug as string).replace(/[-_]/g, ' ').toLowerCase().trim();
+    const displayT = (rawT && tNorm !== sNorm) ? rawT : '';
+    const sTitle = xmlEsc(displayT);
+    const labelHtml = displayT ? `<div class="sc-label">${sTitle}</div>` : '';
     return `<div class="sc-wrap" data-slug="${xmlEsc(scene.slug)}" data-title="${sTitle}" onclick="_navTo('${xmlEsc(scene.slug)}')">` +
-      `<div class="sc-img"><img src="${xmlEsc(prev)}" alt="${sTitle}" loading="lazy"></div>` +
+      `<div class="sc-img"><img src="${xmlEsc(prev)}" alt="${sTitle}" loading="lazy">${labelHtml}</div>` +
       `</div>`;
   }).join('');
 
@@ -1384,8 +1560,8 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     ? `    #hs-preview{position:fixed;z-index:200;border-radius:20px;background:rgba(8,8,10,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 4px 16px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:nowrap}\n    #hs-preview.visible{opacity:1;transform:translateY(0)}\n    #hs-preview img{display:none}\n    #hs-preview-title{padding:7px 16px 8px;font-size:13px;font-weight:600;color:#fff;line-height:1.2}\n`
     : hsStyle === 'overlay'
     ? `    #hs-preview{position:fixed;z-index:200;width:220px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.6);pointer-events:none;opacity:0;transform:scale(.96);transition:opacity .18s,transform .18s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:scale(1)}\n    #hs-preview img{width:100%;height:130px;object-fit:cover;display:block}\n    #hs-preview-title{position:absolute;bottom:0;left:0;right:0;padding:28px 12px 10px;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 100%);font-size:13px;font-weight:600;color:#fff;line-height:1.3}\n`
-    : /* card (default) */
-      `    #hs-preview{position:fixed;z-index:200;width:200px;border-radius:12px;overflow:hidden;background:rgba(8,8,10,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 32px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(6px) scale(.97);transition:opacity .18s,transform .18s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:translateY(0) scale(1)}\n    #hs-preview img{width:100%;height:110px;object-fit:cover;display:block}\n    #hs-preview-title{padding:8px 12px 10px;font-size:13px;font-weight:600;color:#fff;line-height:1.3}\n`;
+    : /* card (default) — Dubai360 style */
+      `    #hs-preview{position:fixed;z-index:9500;width:280px;border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 12px 32px rgba(0,0,0,.35);pointer-events:none;opacity:0;transform:translateY(4px) scale(.98);transition:opacity .15s,transform .15s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}\n    #hs-preview.visible{opacity:1;transform:translateY(0) scale(1)}\n    #hs-preview .hsp-img-wrap{width:100%;height:140px;background:#222;overflow:hidden}\n    #hs-preview .hsp-img{width:100%;height:100%;object-fit:cover;display:block}\n    #hs-preview .hsp-badges{display:flex;justify-content:center;gap:6px;padding:8px;background:rgba(247,247,250,1);min-height:36px;align-items:center}\n    #hs-preview .hsp-badge{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);font-size:11px;font-weight:700;flex-shrink:0}\n    #hs-preview .hsp-title{padding:10px 14px;text-align:center;color:rgb(20,20,30);font-size:13px;font-weight:600;line-height:1.25;background:#fff}\n`;
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
@@ -1394,25 +1570,30 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${pageTitle}</title>
-${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}${showMap ? '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n' : ''}  <style>
+${faviconLinkHtml}${description ? `  <meta name="description" content="${description}">\n` : ''}${headExtras}${showMap ? '  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n' : ''}  <style>
     :root{
       --primary:${primaryColor};
       --accent:${accentColor};
-      --radius:12px;
+      --radius:${tourTheme.radius === 'sharp' ? '0px' : tourTheme.radius === 'round' ? '20px' : '12px'};
       --spacing:8px;
       --hdr-h:56px;
+      --tt-font:${tourTheme.fontFamily === 'serif' ? "Georgia,'Times New Roman',serif" : tourTheme.fontFamily === 'mono' ? "ui-monospace,'SFMono-Regular',Menlo,monospace" : "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"};
+      --tt-header-bg:${tourTheme.headerBg ? tourTheme.headerBg.replace(/['"\\]/g,'') : 'rgba(255,255,255,.96)'};
+      --tt-panel-bg:${tourTheme.panelBg ? tourTheme.panelBg.replace(/['"\\]/g,'') : 'rgba(255,255,255,.97)'};
+      --tt-text:${tourTheme.textColor ? tourTheme.textColor.replace(/['"\\]/g,'') : '#111'};
+      --tt-font-size:${tourTheme.fontSize ? tourTheme.fontSize + 'px' : '15px'};
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body{width:100%;height:100%;overflow:hidden;background:var(--primary);
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
+      font-family:var(--tt-font)}
     #pano{position:absolute;inset:0;z-index:0}
 
     /* ── Header ─────────────────────────────────── */
     #tour-hdr{
       position:fixed;top:0;left:0;right:0;height:56px;z-index:60;
-      background:#fff;
-      box-shadow:0 1px 0 rgba(0,0,0,.09),0 2px 10px rgba(0,0,0,.06);
-      display:flex;align-items:center;padding:0 14px;gap:10px;
+      background:var(--tt-header-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      box-shadow:0 1px 0 rgba(0,0,0,.08),0 4px 20px rgba(0,0,0,.05);
+      display:flex;align-items:center;padding:0 16px;gap:10px;
     }
     #hdr-logo{display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0}
     #hdr-logo-img{height:30px;max-width:130px;width:auto;object-fit:contain;display:block}
@@ -1420,7 +1601,7 @@ ${description ? `  <meta name="description" content="${description}">\n` : ''}${
     .hdr-sep{width:1px;height:22px;background:rgba(0,0,0,.1);flex-shrink:0}
     #hdr-title{
       position:absolute;left:50%;transform:translateX(-50%);
-      font-size:14px;font-weight:600;color:#1a1a1a;
+      font-size:14px;font-weight:600;color:#111;letter-spacing:-.01em;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
       max-width:40%;text-align:center;pointer-events:none;
     }
@@ -1463,53 +1644,56 @@ ${hsPreviewCss}
     #strip-outer{
       position:fixed;bottom:0;left:0;right:0;z-index:50;
       display:flex;justify-content:center;
-      padding-bottom:10px;pointer-events:none;
+      pointer-events:none;
     }
     #strip-scroll{
-      display:flex;align-items:flex-end;gap:6px;
-      height:128px;padding-top:76px;
-      overflow-x:auto;overflow-y:hidden;
+      display:flex;align-items:flex-end;gap:8px;
+      padding:20px 16px 16px;
+      height:148px;
+      overflow-x:auto;overflow-y:visible;
       max-width:100%;pointer-events:all;scrollbar-width:none;
     }
     #strip-scroll::-webkit-scrollbar{display:none}
     .sc-wrap{
       flex-shrink:0;position:relative;cursor:pointer;
+      transition:transform .2s cubic-bezier(.22,1,.36,1);
       transform-origin:bottom center;
-      transition:transform .14s cubic-bezier(.22,1,.36,1),
-                 margin-left .14s cubic-bezier(.22,1,.36,1),
-                 margin-right .14s cubic-bezier(.22,1,.36,1);
     }
-    .sc-wrap::after{
-      content:attr(data-title);
-      position:absolute;bottom:calc(100% + 8px);left:50%;
-      transform:translateX(-50%);
-      background:rgba(0,0,0,.8);color:#fff;
-      font-size:12px;font-weight:600;font-family:-apple-system,sans-serif;
-      white-space:nowrap;padding:5px 10px;border-radius:6px;
-      pointer-events:none;opacity:0;transition:opacity .15s;
-    }
-    .sc-wrap:hover::after{opacity:1}
-    .sc-img{width:80px;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.55)}
-    .sc-img img{width:80px;height:45px;object-fit:cover;display:block}
-    .sc-wrap.cur .sc-img{box-shadow:0 0 0 3px ${accentColor},0 4px 16px rgba(0,0,0,.55)}
+    .sc-wrap:hover{transform:translateY(-6px) scale(1.04);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+    .sc-wrap::after{content:none}
+    .sc-img{width:160px;border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.5);position:relative}
+    .sc-img img{width:160px;height:100px;object-fit:cover;display:block}
+    .sc-wrap.cur .sc-img{box-shadow:0 0 0 2.5px ${accentColor},0 4px 16px rgba(0,0,0,.55)}
+    .sc-label{position:absolute;left:0;right:0;bottom:0;padding:20px 8px 6px;color:#fff;font-size:12px;font-weight:500;line-height:1.2;text-shadow:0 1px 2px rgba(0,0,0,.6);background:linear-gradient(to top,rgba(0,0,0,.75) 0%,rgba(0,0,0,.45) 60%,rgba(0,0,0,0) 100%);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+    .sc-wrap.cur .sc-label{font-weight:600}
 
     /* ── Info panel ──────────────────────────────── */
     #info-panel{
-      position:fixed;right:16px;top:68px;width:300px;
-      background:rgba(255,255,255,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-      border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:22px;
-      opacity:0;pointer-events:none;transform:translateY(-6px);
-      transition:opacity .22s,transform .22s;z-index:55;
-      max-height:calc(100vh - 96px - 130px);overflow-y:auto;
+      position:fixed;right:16px;top:68px;width:280px;
+      background:var(--tt-panel-bg);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+      border-radius:var(--radius);border:1px solid rgba(0,0,0,.06);
+      box-shadow:0 4px 6px -1px rgba(0,0,0,.07),0 24px 48px -12px rgba(0,0,0,.18);
+      padding:20px;
+      opacity:0;pointer-events:none;transform:translateY(-4px) scale(.98);
+      transition:opacity .2s,transform .2s;z-index:55;
+      max-height:calc(100vh - 96px - 140px);overflow-y:auto;
     }
-    #info-panel.open{opacity:1;pointer-events:all;transform:translateY(0)}
+    #info-panel.open{opacity:1;pointer-events:all;transform:translateY(0) scale(1)}
+    #info-panel-close{
+      position:absolute;top:10px;right:10px;
+      width:26px;height:26px;border-radius:50%;
+      border:none;background:rgba(0,0,0,.06);cursor:pointer;
+      font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;
+      opacity:.55;transition:opacity .15s,background .15s;
+    }
+    #info-panel-close:hover{opacity:1;background:rgba(0,0,0,.12)}
     #info-panel-cat{
       display:none;font-size:10px;font-weight:700;text-transform:uppercase;
-      letter-spacing:.06em;padding:3px 9px;border-radius:20px;margin-bottom:10px;
+      letter-spacing:.08em;padding:3px 8px;border-radius:20px;margin-bottom:12px;
     }
-    #info-panel-title{font-size:22px;font-weight:800;color:#111;line-height:1.2;margin-bottom:10px}
-    #info-panel-rule{height:1px;background:rgba(0,0,0,.08);margin-bottom:12px;display:none}
-    #info-panel-desc{font-size:15px;color:#444;line-height:1.65}
+    #info-panel-title{font-size:19px;font-weight:700;color:var(--tt-text);line-height:1.25;letter-spacing:-.02em;margin-bottom:10px}
+    #info-panel-rule{height:1px;background:rgba(0,0,0,.07);margin-bottom:12px;display:none}
+    #info-panel-desc{font-size:var(--tt-font-size);color:var(--tt-text);line-height:1.7;opacity:.75}
 
     /* ── Text popup ──────────────────────────────── */
     #text-popup{
@@ -1520,7 +1704,7 @@ ${hsPreviewCss}
     }
     #text-popup.open{opacity:1;pointer-events:all}
     #text-popup-inner{
-      background:#fff;border-radius:20px;
+      background:var(--tt-panel-bg);border-radius:var(--radius);
       max-width:680px;width:100%;max-height:80vh;overflow-y:auto;
       padding:48px 52px 52px;position:relative;
     }
@@ -1531,8 +1715,8 @@ ${hsPreviewCss}
       font-size:16px;display:flex;align-items:center;justify-content:center;
     }
     #text-popup-close:hover{background:#e0e0e0}
-    #text-popup-title{font-size:clamp(22px,4vw,34px);font-weight:800;color:#111;margin-bottom:18px;line-height:1.2}
-    #text-popup-body{font-size:clamp(15px,2.2vw,19px);line-height:1.72;color:#2a2a2a}
+    #text-popup-title{font-size:clamp(22px,4vw,34px);font-weight:800;color:var(--tt-text);margin-bottom:18px;line-height:1.2}
+    #text-popup-body{font-size:var(--tt-font-size);line-height:1.72;color:var(--tt-text);opacity:.8}
     #text-popup-body p{margin-bottom:1em}
 
     /* ── Video popup ─────────────────────────────── */
@@ -1557,10 +1741,38 @@ ${hsPreviewCss}
       border:none;border-radius:8px;background:#000;
     }
 
+    /* ── Form popup ─────────────────────────────── */
+    #form-popup{
+      position:fixed;inset:0;z-index:200;
+      background:rgba(0,0,0,.52);
+      display:flex;align-items:center;justify-content:center;padding:40px;
+      opacity:0;pointer-events:none;transition:opacity .2s;
+    }
+    #form-popup.open{opacity:1;pointer-events:all}
+    #form-popup-inner{
+      background:var(--tt-panel-bg);border-radius:var(--radius);
+      max-width:520px;width:100%;max-height:82vh;overflow-y:auto;
+      padding:36px 40px 40px;position:relative;
+    }
+    #form-popup-close{
+      position:absolute;top:12px;right:12px;
+      width:32px;height:32px;border-radius:50%;
+      border:none;background:#f0f0f0;cursor:pointer;font-size:16px;
+      display:flex;align-items:center;justify-content:center;
+    }
+    #form-popup-close:hover{background:#e0e0e0}
+    #form-popup-title{font-size:22px;font-weight:700;color:var(--tt-text);margin-bottom:18px}
+    .form-field{margin-bottom:14px}
+    .form-label{display:block;font-size:13px;font-weight:600;color:var(--tt-text);opacity:.6;margin-bottom:4px}
+    .form-input{width:100%;border:1.5px solid #ddd;border-radius:8px;padding:9px 12px;font-size:15px;outline:none;font-family:inherit;color:var(--tt-text);background:var(--tt-panel-bg)}
+    .form-input:focus{border-color:var(--accent)}
+    .form-submit{width:100%;margin-top:8px;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:calc(var(--radius) / 1.5);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+    .form-submit:hover{opacity:.9}
+
     /* ── Cookie banner ───────────────────────────── */
     #cookie-banner{
-      position:fixed;bottom:75px;left:50%;transform:translateX(-50%);
-      z-index:48;background:rgba(18,18,22,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+      position:fixed;bottom:156px;left:50%;transform:translateX(-50%);
+      z-index:10001;background:rgba(18,18,22,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
       border:1px solid rgba(255,255,255,.1);border-radius:12px;
       padding:14px 20px;display:flex;align-items:center;gap:16px;
       max-width:640px;width:calc(100% - 32px);
@@ -1574,15 +1786,15 @@ ${hsPreviewCss}
     #cookie-accept:hover{filter:brightness(1.1)}
     ${copyright ? `#tour-copyright{position:fixed;bottom:0;right:12px;z-index:45;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;padding-bottom:2px}` : ''}
 
-    /* ── Screenshot toast ───────────────────────────── */
-    #screenshot-toast{
+    /* ── UI toast ───────────────────────────── */
+    #ui-toast{
       position:fixed;top:68px;left:50%;transform:translateX(-50%);
       background:rgba(18,18,22,.92);color:#fff;
       padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
       z-index:300;opacity:0;pointer-events:none;
       transition:opacity .2s;white-space:nowrap;
     }
-    #screenshot-toast.visible{opacity:1}
+    #ui-toast.visible{opacity:1}
 
     /* ── Mobile fullscreen description overlay ──────── */
     #desc-overlay{
@@ -1620,9 +1832,9 @@ ${hsPreviewCss}
         max-height:60vh;border-radius:16px 16px 0 0;
         box-shadow:0 -4px 32px rgba(0,0,0,.25);
       }
-      #strip-scroll{height:100px;padding-top:56px}
+      #strip-scroll{height:90px;padding:8px 8px 10px}
       .sc-img{width:68px}
-      .sc-img img{width:68px;height:38px}
+      .sc-img img{width:68px;height:42px}
       #text-popup-inner{padding:32px 24px 36px;border-radius:16px 16px 0 0;max-height:90vh}
       #desc-overlay{display:flex}
       .hdr-btn{min-width:28px;height:28px;font-size:10px;padding:0 6px}
@@ -1642,14 +1854,100 @@ ${hsPreviewCss}
     .map-pin-visit:hover{opacity:.85}
     .map-popup-wrap .leaflet-popup-content-wrapper{border-radius:10px;padding:0;overflow:hidden}
     .map-popup-wrap .leaflet-popup-content{margin:0}
+    .leaflet-marker-icon{overflow:visible!important}
+    /* ── Map dot markers ──────────────────────────── */
+    .mp{position:relative;width:64px;height:64px;display:flex;align-items:center;justify-content:center}
+    .mp-radar{position:absolute;inset:0;pointer-events:none;transform-origin:50% 50%;transition:transform .08s linear}
+    .mp-dot{
+      position:relative;z-index:1;width:22px;height:22px;border-radius:50%;
+      background:var(--cc);border:2.5px solid #fff;
+      box-shadow:0 0 0 1px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.4);
+      animation:mpPulse 2s ease-in-out infinite;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .mp.mp-off .mp-dot{width:14px;height:14px;border-width:2px;opacity:.7;animation:none}
+    .mp.mp-off .mp-radar{display:none}
+    .mp-icon{width:12px;height:12px;color:#fff;pointer-events:none;flex-shrink:0}
+    .mp.mp-off .mp-icon{width:7px;height:7px}
+    .mp-icon svg{display:block;width:100%;height:100%}
+    @keyframes mpPulse{
+      0%{box-shadow:0 0 0 1px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.4),0 0 0 0 color-mix(in srgb,var(--cc) 60%,transparent)}
+      70%{box-shadow:0 0 0 1px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.4),0 0 0 9px transparent}
+      100%{box-shadow:0 0 0 1px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.4),0 0 0 0 transparent}
+    }
+    .mp{transition:transform .2s ease}
+    .mp:hover,.mp.mp-hover{transform:scale(1.22)!important;z-index:1000!important}
+    .mp.mp-off:hover .mp-dot,.mp.mp-off.mp-hover .mp-dot{box-shadow:0 0 0 1px rgba(0,0,0,.3),0 0 16px rgba(255,255,255,.5)}
+    #map-toast{
+      position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:600;
+      background:rgba(8,8,10,.82);color:#fff;font-size:12px;font-weight:600;
+      font-family:-apple-system,sans-serif;white-space:nowrap;
+      padding:5px 14px 6px;border-radius:20px;pointer-events:none;
+      opacity:0;transition:opacity .25s;max-width:320px;
+      text-overflow:ellipsis;overflow:hidden;
+    }
+    #map-toast.visible{opacity:1}
+    /* ── Loading splash ─────────────────────────────────── */
+    #splash{
+      position:fixed;inset:0;z-index:9999;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:${primaryColor};
+      transition:opacity .5s ease;
+    }
+    #splash.hidden{opacity:0;pointer-events:none}
+    #splash-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+    ${loaderImgSrc ? `#splash::before{content:'';position:absolute;inset:0;z-index:1;background:rgba(0,0,0,.36)}` : ''}
+    #splash-content{
+      position:relative;z-index:2;
+      text-align:center;padding:0 40px;
+      max-width:700px;width:100%;
+      animation:${splashAnimName} .9s cubic-bezier(.22,1,.36,1) .3s both;
+    }
+    #splash-title{
+      font-family:${introFontFamily};
+      font-size:${Math.round(introFontSize * 1.65)}px;
+      font-weight:800;color:#fff;
+      text-shadow:0 2px 24px rgba(0,0,0,.45);
+      letter-spacing:-.025em;line-height:1.15;
+      margin-bottom:${introText ? '16px' : '0'};
+    }
+    #splash-intro{
+      font-family:${introFontFamily};
+      font-size:${introFontSize}px;
+      color:rgba(255,255,255,.88);
+      text-shadow:0 1px 14px rgba(0,0,0,.5);
+      line-height:1.7;font-weight:400;
+      white-space:pre-line;
+    }
+    #splash-spinner{
+      position:absolute;bottom:40px;left:50%;margin-left:-18px;
+      z-index:2;
+      width:36px;height:36px;border-radius:50%;
+      border:3px solid rgba(255,255,255,.25);border-top-color:#fff;
+      animation:_spin .8s linear infinite;
+    }
+    @keyframes _spin{to{transform:rotate(360deg)}}
+    @keyframes _splashFade{from{opacity:0}to{opacity:1}}
+    @keyframes _splashSlide{from{opacity:0;transform:translateY(36px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes _splashZoom{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
   </style>
 </head>
 <body>
   <div id="pano"></div>
 
+  <div id="splash">
+    ${loaderImgSrc ? `<img id="splash-img" src="${loaderImgSrc}" alt="">` : ''}
+    <div id="splash-content">
+      <div id="splash-title">${xmlEsc(projectTitle)}</div>
+      ${introText ? `<p id="splash-intro">${introText}</p>` : ''}
+    </div>
+    <div id="splash-spinner"></div>
+  </div>
+
   <div id="hs-preview" aria-hidden="true">
-    <img id="hs-preview-img" src="" alt="">
-    <div id="hs-preview-title"></div>
+    <div class="hsp-img-wrap"><img class="hsp-img" src="" alt=""/></div>
+    <div class="hsp-badges"></div>
+    <div class="hsp-title"></div>
   </div>
 
   <header id="tour-hdr">
@@ -1659,15 +1957,17 @@ ${hsPreviewCss}
     </div>
     <div id="hdr-title"></div>
     <div id="hdr-actions">
-      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}${screenshotBtn}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${modules.feedbackMailto ? `<a class="hdr-btn" href="mailto:${xmlEsc(modules.feedbackMailto)}" title="Feedback">&#x2709;</a>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}
+      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}
     </div>
   </header>
 
 ${showMap ? `  <div id="map-panel">
     <button id="map-close" aria-label="Close map">&#x2715;</button>
+    <div id="map-toast"></div>
     <div id="leaflet-map"></div>
   </div>\n` : ''}
   <div id="info-panel">
+    <button id="info-panel-close" onclick="_toggleInfo()" aria-label="Close">&#x2715;</button>
     <span id="info-panel-cat"></span>
     <h2 id="info-panel-title"></h2>
     <div id="info-panel-rule"></div>
@@ -1692,12 +1992,21 @@ ${showMap ? `  <div id="map-panel">
     </div>
   </div>
 
+  <div id="form-popup" role="dialog" aria-modal="true">
+    <div id="form-popup-inner">
+      <button id="form-popup-close" onclick="closeFormPopup()" aria-label="Close">&#x2715;</button>
+      <h2 id="form-popup-title"></h2>
+      <div id="form-popup-fields"></div>
+      <button class="form-submit" onclick="_submitForm()">Send</button>
+    </div>
+  </div>
+
   <div id="strip-outer">
     <div id="strip-scroll">${sceneCardsHtml}</div>
   </div>
   ${cookieHtml}
   ${copyright ? `<div id="tour-copyright">${xmlEsc(copyright)}</div>` : ''}
-  <div id="screenshot-toast"></div>
+  <div id="ui-toast"></div>
 
   <!-- Mobile fullscreen description overlay -->
   <div id="desc-overlay" role="dialog" aria-modal="true">
@@ -1709,11 +2018,40 @@ ${showMap ? `  <div id="map-panel">
   </div>
   <script>
   var TOUR = ${tourDataJson};
+  window.__scenesIndex = ${scenesIndexJson};
+  window.__categoriesIndex = ${categoriesIndexJson};
+  window.__sceneCategoriesIndex = ${sceneCategoriesIndexJson};
+  window.__sceneHotspotMap = ${sceneHotspotMapJson};
+  window.__mapTourSync = ${JSON.stringify(!!(project as any).modules?.mapTourSync)};
+  window.__defaultLang = '${defaultLang}';
+  window._curLang = '${lang}';
+  // Returns the localized scene title, or '' — NEVER falls back to a slug.
+  window._displayTitle = function(slug) {
+    var idx = window.__scenesIndex && window.__scenesIndex[slug];
+    if (!idx) return '';
+    var t = idx.title || {};
+    var raw = t[window._curLang] || t[window.__defaultLang] || Object.values(t)[0] || '';
+    if (!raw) return '';
+    var tNorm = raw.replace(/[-_]/g, ' ').toLowerCase().trim();
+    var sNorm = slug.replace(/[-_]/g, ' ').toLowerCase().trim();
+    return (tNorm !== sNorm) ? raw : '';
+  };
+  function _setHeaderTitle() {
+    var el = document.getElementById('hdr-title');
+    if (!el) return;
+    var t = _curScene ? _displayTitle(_curScene) : '';
+    el.textContent = t;
+    el.title = t;
+  }
   var _krpano    = null;
   var _curScene  = '';
   var _firstDone = false;
-  var _mx = 0, _my = 0;
-  document.addEventListener('mousemove', function(e){ _mx = e.clientX; _my = e.clientY; _positionPreview(); });
+  // Init to viewport center so preview appears near the hotspot even before first mousemove
+  var _mx = Math.round(window.innerWidth / 2), _my = Math.round(window.innerHeight / 2);
+  function _updateMouse(e){ _mx = e.clientX; _my = e.clientY; _positionPreview(); }
+  // Use both mousemove and pointermove — krpano may intercept one but not the other
+  document.addEventListener('mousemove',   _updateMouse);
+  document.addEventListener('pointermove', _updateMouse);
 
   function _positionPreview() {
     var el = document.getElementById('hs-preview');
@@ -1729,17 +2067,50 @@ ${showMap ? `  <div id="map-panel">
   window.showHotspotPreview = function(slug) {
     var scene = TOUR.scenes[slug];
     if (!scene) return;
-    var el  = document.getElementById('hs-preview');
-    var img = document.getElementById('hs-preview-img');
-    var ttl = document.getElementById('hs-preview-title');
-    img.src = scene.preview || '';
-    img.alt = scene.title   || slug;
-    ttl.textContent = scene.title || slug;
-    _positionPreview();
+    var el = document.getElementById('hs-preview');
+    if (!el) return;
+    var img = el.querySelector('.hsp-img');
+    var ttl = el.querySelector('.hsp-title');
+    var bdg = el.querySelector('.hsp-badges');
+    if (img) {
+      img.style.display = '';
+      img.onerror = function() { this.style.display = 'none'; };
+      img.src = scene.preview || '';
+      img.alt = _displayTitle(slug);
+    }
+    if (ttl) ttl.textContent = _displayTitle(slug);
+    if (bdg) {
+      var cats = (window.__sceneCategoriesIndex && window.__sceneCategoriesIndex[slug]) || [];
+      var bHtml = '';
+      cats.slice(0, 5).forEach(function(catSlug) {
+        var cat = window.__categoriesIndex && window.__categoriesIndex[catSlug];
+        if (!cat) return;
+        var nameMap = cat.name || {};
+        var name = nameMap[window._curLang] || nameMap[window.__defaultLang] || Object.values(nameMap)[0] || catSlug;
+        bHtml += '<div class="hsp-badge" style="background:' + (cat.color || '#6b7280') + '" title="' + name + '">' + name.charAt(0).toUpperCase() + '</div>';
+      });
+      bdg.innerHTML = bHtml;
+    }
     el.classList.add('visible');
+    _positionPreview();
   };
   window.hideHotspotPreview = function() {
-    document.getElementById('hs-preview').classList.remove('visible');
+    var el = document.getElementById('hs-preview');
+    if (el) el.classList.remove('visible');
+  };
+  window._onHotspotHover = function(slug) {
+    window.showHotspotPreview(slug);
+    if (window.__mapTourSync && window._markers) {
+      var m = window._markers[slug];
+      if (m && m._icon) { var mp = m._icon.querySelector('.mp'); if (mp) mp.classList.add('mp-hover'); }
+    }
+  };
+  window._onHotspotHoverOut = function(slug) {
+    window.hideHotspotPreview();
+    if (window.__mapTourSync && window._markers) {
+      var m = window._markers[slug];
+      if (m && m._icon) { var mp = m._icon.querySelector('.mp'); if (mp) mp.classList.remove('mp-hover'); }
+    }
   };
 
   function _navTo(slug) {
@@ -1749,11 +2120,13 @@ ${showMap ? `  <div id="map-panel">
   function _onScene(xmlName) {
     var slug = (xmlName || '').replace(/^scene_/, '');
     if (!slug || !TOUR.scenes[slug] || slug === _curScene) return;
+    var prevSlug = _curScene;
     _curScene = slug;
     var scene = TOUR.scenes[slug];
     var titleEl = document.getElementById('hdr-title');
-    if (titleEl) titleEl.textContent = scene.title || slug;
-    document.title = (scene.title || slug) + ' — ' + TOUR.projectTitle;
+    var dispTitle = _displayTitle(slug);
+    if (titleEl) { titleEl.textContent = dispTitle; titleEl.title = dispTitle; }
+    document.title = dispTitle ? dispTitle + ' — ' + TOUR.projectTitle : TOUR.projectTitle;
     document.querySelectorAll('.sc-wrap').forEach(function(el) {
       el.classList.toggle('cur', el.getAttribute('data-slug') === slug);
     });
@@ -1773,7 +2146,7 @@ ${showMap ? `  <div id="map-panel">
       } else { catEl.style.display = 'none'; }
     }
     var ttlEl = document.getElementById('info-panel-title');
-    if (ttlEl) ttlEl.textContent = scene.title || slug;
+    if (ttlEl) ttlEl.textContent = dispTitle;
     var descEl = document.getElementById('info-panel-desc');
     if (descEl) descEl.textContent = scene.description || '';
     var ruleEl = document.getElementById('info-panel-rule');
@@ -1786,11 +2159,31 @@ ${showMap ? `  <div id="map-panel">
       } catch(e) {}
     }
     _firstDone = true;
+    // Part 3/4: notify map of scene change
+    if (window._onSceneMap) window._onSceneMap(prevSlug, slug);
+    _setHeaderTitle();
   }
 
   window.addEventListener('popstate', function(e) {
     var slug = e.state && e.state.scene;
     if (slug && _krpano) _krpano.call('loadscene(scene_' + slug + ',null,MERGE,BLEND(0.5));');
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    var closed = false;
+    ['text-popup','video-popup','form-popup'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el && el.classList.contains('open')) { el.classList.remove('open'); closed = true; }
+    });
+    if (!closed) {
+      var mp = document.getElementById('map-panel');
+      if (mp && mp.classList.contains('open')) { mp.classList.remove('open'); closed = true; }
+    }
+    if (!closed) {
+      var ip = document.getElementById('info-panel');
+      if (ip && ip.classList.contains('open')) { ip.classList.remove('open'); }
+    }
   });
 
   function _toggleInfo() {
@@ -1806,36 +2199,7 @@ ${showMap ? `  <div id="map-panel">
     if (b) b.style.background = p.classList.contains('open') ? '#f0f0f0' : '';
   }
 
-  // iOS dock — scale + margin push (no overlap)
-  (function() {
-    var outer = document.getElementById('strip-outer');
-    var orig  = null;
-    function cs() { return Array.from(document.querySelectorAll('.sc-wrap')); }
-    function reset() {
-      orig = null;
-      cs().forEach(function(c) { c.style.transform = ''; c.style.marginLeft = ''; c.style.marginRight = ''; });
-    }
-    function update(mx) {
-      var els = cs(); if (!els.length) return;
-      if (!orig) {
-        orig = els.map(function(c) { var r = c.getBoundingClientRect(); return r.left + r.width / 2; });
-      }
-      var W = els[0].offsetWidth || 80;
-      els.forEach(function(c, i) {
-        var dist = Math.abs(mx - orig[i]);
-        var s = 1 + 1.15 * Math.exp(-(dist * dist) / (2 * 85 * 85));
-        var xtra = ((s - 1) * W / 2).toFixed(1);
-        c.style.transform = 'scale(' + s.toFixed(3) + ')';
-        c.style.marginLeft  = xtra + 'px';
-        c.style.marginRight = xtra + 'px';
-      });
-    }
-    if (outer) {
-      outer.addEventListener('mouseenter', function() { orig = null; });
-      outer.addEventListener('mousemove',  function(e) { update(e.clientX); });
-      outer.addEventListener('mouseleave', reset);
-    }
-  })();
+  // Scene strip — click handled via inline onclick; hover animation is CSS-only
 
   // Text hotspot popup
   window.showTextHs = function(id) {
@@ -1848,7 +2212,7 @@ ${showMap ? `  <div id="map-panel">
   window.closeTextPopup = function() {
     document.getElementById('text-popup').classList.remove('open');
   };
-  document.getElementById('text-popup').addEventListener('click', function(e) {
+  (document.getElementById('text-popup') || {addEventListener:function(){}}).addEventListener('click', function(e) {
     if (e.target === this) closeTextPopup();
   });
 
@@ -1878,13 +2242,58 @@ ${showMap ? `  <div id="map-panel">
   };
   window.closeVideoPopup = function() {
     var popup = document.getElementById('video-popup');
-    popup.classList.remove('open');
-    document.getElementById('video-iframe').src = '';
+    if (popup) popup.classList.remove('open');
+    var frame = document.getElementById('video-iframe');
+    if (frame) frame.src = '';
     var vid = document.getElementById('video-tag');
-    if (vid.pause) vid.pause(); vid.src = '';
+    if (vid) { if (vid.pause) vid.pause(); vid.src = ''; }
   };
-  document.getElementById('video-popup').addEventListener('click', function(e) {
+  (document.getElementById('video-popup') || {addEventListener:function(){}}).addEventListener('click', function(e) {
     if (e.target === this) closeVideoPopup();
+  });
+
+  // Form hotspot popup
+  var _formData = null;
+  window.showFormHs = function(id) {
+    var data = TOUR.hotspotForms && TOUR.hotspotForms[id];
+    if (!data) return;
+    _formData = data;
+    document.getElementById('form-popup-title').textContent = data.subject || 'Contact';
+    var fieldsEl = document.getElementById('form-popup-fields');
+    fieldsEl.innerHTML = '';
+    (data.fields || []).forEach(function(f) {
+      var div = document.createElement('div'); div.className = 'form-field';
+      var lbl = document.createElement('label'); lbl.className = 'form-label';
+      lbl.textContent = f.label + (f.required ? ' *' : '');
+      var inp;
+      if (f.type === 'textarea') {
+        inp = document.createElement('textarea'); inp.rows = 4;
+        inp.style.resize = 'vertical';
+      } else {
+        inp = document.createElement('input');
+        inp.type = f.type === 'email' ? 'email' : 'text';
+      }
+      inp.className = 'form-input'; inp.name = f.name; inp.required = !!f.required; inp.placeholder = f.label;
+      div.appendChild(lbl); div.appendChild(inp);
+      fieldsEl.appendChild(div);
+    });
+    document.getElementById('form-popup').classList.add('open');
+  };
+  window.closeFormPopup = function() {
+    document.getElementById('form-popup').classList.remove('open');
+  };
+  window._submitForm = function() {
+    if (!_formData) return;
+    var inputs = document.querySelectorAll('#form-popup-fields .form-input');
+    var lines = [];
+    inputs.forEach(function(inp) { if (inp.value) lines.push((inp.name || inp.placeholder || '') + ': ' + inp.value); });
+    var subject = encodeURIComponent(_formData.subject || 'Contact');
+    var body = encodeURIComponent(lines.join('\\n'));
+    window.open('mailto:' + (_formData.mailto || '') + '?subject=' + subject + '&body=' + body);
+    closeFormPopup();
+  };
+  (document.getElementById('form-popup') || {addEventListener:function(){}}).addEventListener('click', function(e) {
+    if (e.target === this) closeFormPopup();
   });
 
   // Cookie consent
@@ -1910,59 +2319,6 @@ ${showMap ? `  <div id="map-panel">
     var b = document.getElementById('fs-btn');
     if (b) b.innerHTML = document.fullscreenElement ? '&#x26F7;' : '&#x26F6;';
   });
-
-  // Screenshot
-  window._takeScreenshot = function() {
-    var toast = document.getElementById('screenshot-toast');
-    if (!toast) return;
-    // Try krpano makeScreenshot if available
-    if (_krpano && _krpano.get) {
-      try {
-        var data = _krpano.get('screenshotdata');
-        if (!data) {
-          // Use HTML canvas to capture the pano element
-          var pano = document.getElementById('pano');
-          var canvas = pano ? pano.querySelector('canvas') : null;
-          if (canvas) {
-            data = canvas.toDataURL('image/jpeg', 0.92);
-          }
-        }
-        if (data && data.length > 100) {
-          var a = document.createElement('a');
-          a.href = data;
-          var ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-          a.download = (TOUR.projectTitle||'tour').replace(/[^a-z0-9]/gi,'_').toLowerCase() + '-' + (_curScene||'scene') + '-' + ts + '.jpg';
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          toast.textContent = 'Screenshot saved!';
-          toast.classList.add('visible');
-          setTimeout(function(){ toast.classList.remove('visible'); }, 2500);
-          return;
-        }
-      } catch(e) {}
-    }
-    // Fallback: Web Share API or download link
-    var pano = document.getElementById('pano');
-    var canvas = pano ? pano.querySelector('canvas') : null;
-    if (canvas) {
-      canvas.toBlob(function(blob) {
-        if (!blob) return;
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        var ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-        a.download = (TOUR.projectTitle||'tour').replace(/[^a-z0-9]/gi,'_').toLowerCase() + '-' + (_curScene||'scene') + '-' + ts + '.jpg';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast.textContent = 'Screenshot saved!';
-        toast.classList.add('visible');
-        setTimeout(function(){ toast.classList.remove('visible'); }, 2500);
-      }, 'image/jpeg', 0.92);
-    } else {
-      toast.textContent = 'Screenshot unavailable in this browser';
-      toast.classList.add('visible');
-      setTimeout(function(){ toast.classList.remove('visible'); }, 2500);
-    }
-  };
 
   // Mobile description overlay
   window._openDescOverlay = function() {
@@ -1990,22 +2346,69 @@ ${showMap ? `  <div id="map-panel">
       }).catch(function(){});
     } else if (navigator.clipboard) {
       navigator.clipboard.writeText(window.location.href).then(function() {
-        var t = document.getElementById('screenshot-toast');
+        var t = document.getElementById('ui-toast');
         if (t) { t.textContent = 'Link copied!'; t.classList.add('visible'); setTimeout(function(){ t.classList.remove('visible'); }, 2000); }
       });
     }
   };
+
+  // Part 1 + 2: update strip card titles from TOUR localized data and
+  // frame thumbnails based on each scene's default view direction.
+  (function() {
+    document.querySelectorAll('.sc-wrap').forEach(function(el) {
+      var slug = el.getAttribute('data-slug');
+      var sc = TOUR.scenes[slug];
+      if (!sc) return;
+      // Part 1 — localized title (never shows slug)
+      el.setAttribute('data-title', _displayTitle(slug));
+      // Part 2 — object-position based on default view yaw
+      var img = el.querySelector('.sc-img img');
+      if (!img) return;
+      var dv = sc.defaultView;
+      if (dv && typeof dv.hlookat === 'number') {
+        var xPct = ((dv.hlookat + 180) / 360) * 100;
+        img.style.objectPosition = xPct.toFixed(1) + '% 50%';
+      }
+    });
+  })();
   </script>
 ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
   var _lmap = null;
+  var _markers = {};          // slug → L.marker
+  var _markerColors = {};     // slug → color string (for radar reuse)
+  var _transLine = null;      // current transition polyline
+  var _mapToastTimer = null;
   var MAP_TILES = {
-    streets: { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:19 },
-    satellite: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'&copy; Esri &mdash; Esri, i-cubed, USDA, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community', maxZoom:18 },
-    light: { url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom:20 },
-    dark: { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom:20 },
+    streets:   { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:19 },
+    satellite: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'&copy; Esri, i-cubed, USDA, AEX, GeoEye', maxZoom:18 },
+    light:     { url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom:20 },
+    dark:      { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom:20 },
   };
   var _mapTileStyle = '${xmlEsc((modules.mapMode as { tileStyle?: string } | undefined)?.tileStyle || 'streets')}';
+
+  // Dot-based map marker (Part 3 — replaces teardrop pin)
+  // Active: 64×64 container, pulsing dot + radar fan (rotated by _updateRadar)
+  // Inactive: smaller non-pulsing dot, radar hidden
+  function _mkMarkerHtml(color, active, iconSvg) {
+    var c = /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#6b7280';
+    var radarSvg = active
+      ? '<svg class="mp-radar" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="-32 -32 64 64"'
+        + ' style="position:absolute;inset:0;overflow:visible">'
+        + '<path d="M0,0 L-14,-30 A34,34,0,0,1,14,-30 Z"'
+        + ' fill="rgba(255,255,255,0.32)" stroke="rgba(255,255,255,0.72)"'
+        + ' stroke-width="1.5" stroke-linejoin="round"/>'
+        + '</svg>'
+      : '';
+    var iconEl = iconSvg
+      ? '<div class="mp-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + iconSvg + '</svg></div>'
+      : '';
+    var cls = active ? 'mp' : 'mp mp-off';
+    return '<div class="' + cls + '" style="--cc:' + c + '">' + radarSvg + '<div class="mp-dot">' + iconEl + '</div></div>';
+  }
+
   function _openMap() {
     var p = document.getElementById('map-panel');
     p.classList.add('open');
@@ -2015,15 +2418,7 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
       var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
       L.tileLayer(ts.url,{ attribution:ts.attr, maxZoom:ts.maxZoom }).addTo(_lmap);
       var sz = TOUR.hotspotSizePx || 32;
-      function _mapPinSvg(color, letter) {
-        var c = /^#[0-9a-fA-F]{3,6}$/.test(color) ? color : '#555555';
-        var l = String(letter || '?').charAt(0).toUpperCase().replace(/&/g,'&amp;').replace(/</g,'&lt;');
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 48" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">'
-          + '<path d="M20,2 C10.06,2 2,10.06 2,20 C2,31 20,46 20,46 C20,46 38,31 38,20 C38,10.06 29.94,2 20,2Z" fill="' + c + '"/>'
-          + '<path d="M20,2.5 C10.35,2.5 2.5,10.35 2.5,20 C2.5,31 20,45.5 20,45.5 C20,45.5 37.5,31 37.5,20 C37.5,10.35 29.65,2.5 20,2.5Z" fill="none" stroke="#fff" stroke-width="2"/>'
-          + '<text x="20" y="25" text-anchor="middle" dominant-baseline="auto" font-family="system-ui,sans-serif" font-size="15" font-weight="700" fill="white">' + l + '</text>'
-          + '</svg>';
-      }
+      var ph = Math.round(sz * 1.2);
       var bounds = [];
       Object.keys(TOUR.scenes).forEach(function(slug) {
         var sc = TOUR.scenes[slug];
@@ -2031,16 +2426,19 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
         var catId = sc.categoryIds && sc.categoryIds[0];
         var cat   = catId ? TOUR.categories[catId] : null;
         var color = cat ? cat.color : '#6b7280';
-        var letter = (cat ? cat.name : sc.title) || slug;
+        _markerColors[slug] = color;
+        var iconSvg = cat ? (cat.iconSvg || null) : null;
+        var isActive = slug === _curScene;
+        var iconHtml = _mkMarkerHtml(color, isActive, iconSvg);
         var icon = L.divIcon({
-          html: _mapPinSvg(color, letter),
+          html: iconHtml,
           className: '',
-          iconSize:   [sz, Math.round(sz * 1.2)],
-          iconAnchor: [Math.round(sz / 2), Math.round(sz * 1.2)],
-          popupAnchor:[0, -Math.round(sz * 1.2)],
+          iconSize:   [64, 64],
+          iconAnchor: [32, 32],
+          popupAnchor:[0, -20],
         });
-        var safeTitle = (sc.title || slug).replace(/</g,'&lt;').replace(/"/g,'&quot;');
-        var navCall = "if(_krpano)_krpano.call('loadscene(scene_" + slug + ",null,MERGE,BLEND(0.5));');_closeMap();";
+        var safeTitle = _displayTitle(slug).replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        var navCall = "if(_krpano)_krpano.call('loadscene(scene_" + slug + ",null,MERGE,BLEND(0.5));');";
         var popupHtml = '<div class="map-pin-popup">'
           + '<img class="map-pin-thumb" src="' + (sc.preview || '') + '" alt="' + safeTitle + '">'
           + '<div class="map-pin-body">'
@@ -2050,6 +2448,23 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
         var m = L.marker([sc.gps.lat, sc.gps.lng], { icon: icon });
         m.bindPopup(popupHtml, { maxWidth: 220, className: 'map-popup-wrap' });
         m.addTo(_lmap);
+        m.on('mouseover', function() {
+          showHotspotPreview(slug);
+          if (window.__mapTourSync && window._krpano && window.__sceneHotspotMap) {
+            var hsMap = window.__sceneHotspotMap[_curScene];
+            var hsn = hsMap && hsMap[slug];
+            if (hsn) window._krpano.call('if(hotspot[' + hsn + '],tween(hotspot[' + hsn + '].scale,1.18,0.15));');
+          }
+        });
+        m.on('mouseout', function() {
+          hideHotspotPreview();
+          if (window.__mapTourSync && window._krpano && window.__sceneHotspotMap) {
+            var hsMap = window.__sceneHotspotMap[_curScene];
+            var hsn = hsMap && hsMap[slug];
+            if (hsn) window._krpano.call('if(hotspot[' + hsn + '],tween(hotspot[' + hsn + '].scale,1.0,0.15));');
+          }
+        });
+        _markers[slug] = m;
         bounds.push([sc.gps.lat, sc.gps.lng]);
       });
       if (bounds.length === 1) { _lmap.setView(bounds[0], 15); }
@@ -2059,12 +2474,111 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
   function _closeMap() { document.getElementById('map-panel').classList.remove('open'); }
   function _toggleMap() { document.getElementById('map-panel').classList.contains('open') ? _closeMap() : _openMap(); }
   document.getElementById('map-close').addEventListener('click', _closeMap);
+
+  // Part 3 — scene-change transitions on the map
+  window._onSceneMap = function(prevSlug, newSlug) {
+    if (!_lmap) return;
+    var sz = TOUR.hotspotSizePx || 32;
+    var ph = Math.round(sz * 1.2);
+
+    // Update marker icons: deactivate prev, activate new
+    function _refreshIcon(slug, active) {
+      var m = _markers[slug];
+      if (!m) return;
+      var color = _markerColors[slug] || '#6b7280';
+      var sc2 = TOUR.scenes[slug];
+      var catId2 = sc2 && sc2.categoryIds && sc2.categoryIds[0];
+      var cat2 = catId2 ? TOUR.categories[catId2] : null;
+      var iconSvg2 = cat2 ? (cat2.iconSvg || null) : null;
+      var iconHtml = _mkMarkerHtml(color, active, iconSvg2);
+      m.setIcon(L.divIcon({ html: iconHtml, className: '', iconSize:[64,64], iconAnchor:[32,32], popupAnchor:[0,-20] }));
+    }
+    if (prevSlug) _refreshIcon(prevSlug, false);
+    _refreshIcon(newSlug, true);
+
+    // Draw transition polyline then fade out after 1.5s
+    var prevSc = prevSlug ? TOUR.scenes[prevSlug] : null;
+    var newSc  = TOUR.scenes[newSlug];
+    if (_transLine) { _lmap.removeLayer(_transLine); _transLine = null; }
+    if (prevSc && prevSc.gps && newSc && newSc.gps) {
+      _transLine = L.polyline(
+        [[prevSc.gps.lat, prevSc.gps.lng],[newSc.gps.lat, newSc.gps.lng]],
+        { color:'rgba(255,255,255,0.75)', weight:2, dashArray:'6 4' }
+      ).addTo(_lmap);
+      setTimeout(function() {
+        if (_transLine) { _lmap.removeLayer(_transLine); _transLine = null; }
+      }, 1600);
+    }
+
+    // Auto-pan if new marker out of view
+    if (newSc && newSc.gps) {
+      var ll = L.latLng(newSc.gps.lat, newSc.gps.lng);
+      if (!_lmap.getBounds().contains(ll)) {
+        _lmap.flyTo(ll, _lmap.getZoom(), { duration:0.8, easeLinearity:0.5 });
+      }
+    }
+
+    // Toast: "Prev title → New title"
+    var toastEl = document.getElementById('map-toast');
+    if (toastEl) {
+      var prevTitle = prevSlug ? _displayTitle(prevSlug) : '';
+      var newTitle  = _displayTitle(newSlug);
+      toastEl.textContent = prevTitle ? (prevTitle + ' → ' + newTitle) : newTitle;
+      toastEl.classList.add('visible');
+      clearTimeout(_mapToastTimer);
+      _mapToastTimer = setTimeout(function() { toastEl.classList.remove('visible'); }, 2200);
+    }
+  };
+
+  // Radar/compass: rotates the fan SVG to show camera direction on map
+  // trueAz = (scene.heading + krpano.yaw) mod 360
+  // scene.heading = compass bearing the camera lens faced at capture (ath=0 direction)
+  window._updateRadar = function(yaw) {
+    if (!_lmap || !_curScene) return;
+    var m = _markers[_curScene];
+    if (!m || !m._icon) return;
+    var radarEl = m._icon.querySelector('.mp-radar');
+    if (!radarEl) return;
+    var sc = TOUR.scenes[_curScene];
+    var trueAz = (((sc ? sc.heading : 0) || 0) + (parseFloat(yaw) || 0) + 720) % 360;
+    radarEl.style.transform = 'rotate(' + trueAz.toFixed(1) + 'deg)';
+  };
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
-  <script>embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){
-    _krpano = krp;
-    ${loadSceneCall}
-    setInterval(function(){ var s=krp.get('xml.scene'); if(s&&s!==_curScene) _onScene(s); }, 250);
-  }});</script>
+  <script>
+  (function(){
+    var _splashDone=false;
+    function _hideSplash(){
+      if(_splashDone)return;
+      _splashDone=true;
+      var sp=document.getElementById('splash');
+      if(sp){sp.classList.add('hidden');setTimeout(function(){if(sp)sp.style.display='none';},520);}
+    }
+    var _krpanoReady=false, _timerDone=false;
+    function _trySplash(){ if(_krpanoReady&&_timerDone) _hideSplash(); }
+    setTimeout(function(){_timerDone=true;_trySplash();},3000);
+    setTimeout(_hideSplash,10000);
+    embedpano({xml:"/tour.xml",basepath:"/",target:"pano",html5:"only",mobilescale:1.0,passQueryParameters:false,onready:function(krp){
+      _krpano = krp;
+      ${loadSceneCall}
+      // Seed _curScene immediately — krp.get('xml.scene') may return null here
+      // because tour.xml loads async, so we fall back to TOUR.startScene
+      if (TOUR.startScene) _onScene('scene_' + TOUR.startScene);
+      setTimeout(_setHeaderTitle, 50);
+      setTimeout(_setHeaderTitle, 500);
+      setInterval(function(){
+        var s=krp.get('xml.scene');
+        if(s&&s!==_curScene) _onScene(s);
+      }, 250);
+      // Poll view yaw at 50ms for smooth radar rotation
+      setInterval(function(){
+        if (window._updateRadar && window._lmap) {
+          window._updateRadar(krp.get('view.hlookat'));
+        }
+      }, 50);
+      _krpanoReady=true;_trySplash();
+    }});
+  })();
+  </script>
 </body>
 </html>`;
 }
@@ -2132,6 +2646,7 @@ const BUILTIN_ICON_SVG: Record<string, string> = {
   home:       `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>`,
   info:       `<circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path>`,
   eye:        `<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle>`,
+  mail:       `<rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>`,
 };
 
 function generateHotspotSvg(color: string, label: string, iconSvg?: string | null): string {
@@ -2170,6 +2685,10 @@ function generateHotspotSvg(color: string, label: string, iconSvg?: string | nul
 function generateServerJs(project: any): string {
   const defaultLang: string = project.languages?.default || 'en';
   const allLangs: string[]  = project.languages?.available || [defaultLang];
+  const scenes: any[] = project.scenes || [];
+  const startSceneId: string | undefined = project.branding?.startSceneId;
+  const startScene = (startSceneId ? scenes.find((s: any) => s.id === startSceneId) : null) ?? scenes[0];
+  const defaultStartSlug: string = startScene?.slug || '';
   return `'use strict';
 /**
  * Conchitour virtual tour server
@@ -2181,32 +2700,50 @@ var path    = require('path');
 var fs      = require('fs');
 var app     = express();
 var PORT    = parseInt(process.env.PORT || '3000', 10);
-var LANGS   = ${JSON.stringify(allLangs)};
-var DEFAULT = ${JSON.stringify(defaultLang)};
-var ROOT    = __dirname;
+var LANGS         = ${JSON.stringify(allLangs)};
+var DEFAULT       = ${JSON.stringify(defaultLang)};
+var DEFAULT_SCENE = ${JSON.stringify(defaultStartSlug)};
+var ROOT          = __dirname;
 
 // Strict routing: /en and /en/ are distinct routes (prevents redirect loops)
 app.set('strict routing', true);
 
 // Long-lived static assets — redirect:false so only our explicit routes issue redirects
-['panos','krpano','skin','media','plugins'].forEach(function(dir) {
+['panos','krpano','skin','media','plugins','assets','hotspots'].forEach(function(dir) {
   app.use('/' + dir, express.static(path.join(ROOT, dir), { maxAge: '365d', redirect: false }));
 });
 // tour.xml, sitemap.xml, robots.txt — no cache, no auto-redirects
 app.use(express.static(ROOT, { index: false, maxAge: 0, redirect: false }));
 
-// Root → default language
-app.get('/', function(_req, res) { res.redirect(302, '/' + DEFAULT + '/'); });
+// Detect user language from Accept-Language header
+function _detectLang(req) {
+  var accept = req.headers['accept-language'] || '';
+  var parts = accept.split(',');
+  for (var i = 0; i < parts.length; i++) {
+    var lang = parts[i].trim().split(';')[0].split('-')[0].toLowerCase();
+    if (LANGS.indexOf(lang) !== -1) return lang;
+  }
+  return DEFAULT;
+}
 
-// /:lang  (no trailing slash) → add trailing slash
+// Root → detect language, jump straight to opening scene URL
+app.get('/', function(req, res) {
+  var lang = _detectLang(req);
+  if (DEFAULT_SCENE) return res.redirect(302, '/scene/' + DEFAULT_SCENE + '/' + lang + '/');
+  res.redirect(302, '/' + lang + '/');
+});
+
+// /:lang  (no trailing slash) → add trailing slash then redirect to scene
 app.get('/:lang', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
+  if (DEFAULT_SCENE) return res.redirect(302, '/scene/' + DEFAULT_SCENE + '/' + req.params.lang + '/');
   res.redirect(302, '/' + req.params.lang + '/');
 });
 
-// /:lang/
+// /:lang/ → redirect to opening scene URL (or serve default page as fallback)
 app.get('/:lang/', function(req, res, next) {
   if (!LANGS.includes(req.params.lang)) return next();
+  if (DEFAULT_SCENE) return res.redirect(302, '/scene/' + DEFAULT_SCENE + '/' + req.params.lang + '/');
   var file = path.join(ROOT, req.params.lang, 'index.html');
   if (fs.existsSync(file)) return res.sendFile(file);
   next();
@@ -2388,6 +2925,26 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
         progress('Logo copied to assets/', 'ok');
       } catch {
         progress('Logo file not found — header logo will not display', 'info');
+      }
+    }
+    const loaderSrcPath: string | undefined = project.branding?.loaderPath;
+    if (loaderSrcPath) {
+      try {
+        const loaderExt = path.extname(loaderSrcPath);
+        await fs.copyFile(loaderSrcPath, path.join(assetsOutDir, `loader${loaderExt}`));
+        progress('Loader image copied to assets/', 'ok');
+      } catch {
+        progress('Loader image not found — splash will show color only', 'info');
+      }
+    }
+    const faviconSrcPath: string | undefined = project.branding?.faviconPath;
+    if (faviconSrcPath) {
+      try {
+        const favExt = path.extname(faviconSrcPath);
+        await fs.copyFile(faviconSrcPath, path.join(assetsOutDir, `favicon${favExt}`));
+        progress('Favicon copied to assets/', 'ok');
+      } catch {
+        progress('Favicon file not found — browser tab icon will not display', 'info');
       }
     }
 
@@ -2596,7 +3153,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       if (srcPath) {
         try {
           await fs.access(srcPath);
-          const sharp = (await import('sharp')).default;
+          const sharp = (await import(/* @vite-ignore */ 'sharp')).default;
           const meta  = await sharp(srcPath).metadata();
           const w = meta.width  ?? 1200;
           const h = meta.height ?? 630;
@@ -2635,6 +3192,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
     await fs.writeFile(path.join(hotspotsDir, 'hs-video.svg'), generateHotspotSvg('#f59e0b', 'v',
       '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="white" stroke="white" stroke-linejoin="round"/></svg>'), 'utf8');
     await fs.writeFile(path.join(hotspotsDir, 'hs-external.svg'), generateHotspotSvg('#3b82f6', 'e', 'builtin:eye'), 'utf8');
+    await fs.writeFile(path.join(hotspotsDir, 'hs-form.svg'), generateHotspotSvg('#10b981', 'f', 'builtin:mail'), 'utf8');
     for (const cat of (project.categories || []) as Array<{ slug?: string; color?: string; name?: Record<string, string> | string; iconSvg?: string }>) {
       if (!cat.slug) continue;
       const label = typeof cat.name === 'string' ? cat.name : (Object.values(cat.name || {})[0] || cat.slug);
@@ -2645,6 +3203,49 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       );
     }
     progress(`Hotspot icons generated (${(project.categories || []).length} categories)`, 'ok');
+
+    // ── Strip thumbnails (320×200 from equirectangular preview.jpg) ────────────
+    checkCancel();
+    progress('Generate thumbnails', 'running');
+    const thumbsDir = path.join(outputDir, 'thumbs');
+    await fs.mkdir(thumbsDir, { recursive: true });
+    {
+      const sharpThumb = (await import(/* @vite-ignore */ 'sharp')).default;
+      let thumbCount = 0;
+      for (const scene of scenes) {
+        const slug = scene.slug as string;
+        if (!tiledSlugsSet.has(slug)) continue;
+        const destPath = path.join(thumbsDir, `${slug}.jpg`);
+
+        // 1. Custom thumb captured by user takes priority
+        const customSrc = currentProjectDir ? path.join(currentProjectDir, 'thumbs', `${slug}.jpg`) : null;
+        let usedCustom = false;
+        if (customSrc) {
+          try { await fs.access(customSrc); await fs.copyFile(customSrc, destPath); usedCustom = true; } catch { /* fall through */ }
+        }
+
+        if (!usedCustom) {
+          // 2. Auto-extract: front face (face 2) from krpano cubemap preview strip
+          const previewPath = path.join(outputDir, 'panos', `${slug}.tiles`, 'preview.jpg');
+          try {
+            await fs.access(previewPath);
+            const meta = await sharpThumb(previewPath).metadata();
+            const faceSize = meta.width ?? 256;
+            await sharpThumb(previewPath)
+              .extract({ left: 0, top: 2 * faceSize, width: faceSize, height: faceSize })
+              .resize(320, 200, { fit: 'cover', position: 'center' })
+              .jpeg({ quality: 85 })
+              .toFile(destPath);
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            progress(`Thumb skipped for "${slug}" — ${msg}`, 'info');
+            continue;
+          }
+        }
+        thumbCount++;
+      }
+      progress(`Thumbnails generated (${thumbCount} scenes)`, thumbCount > 0 ? 'ok' : 'info');
+    }
 
     for (const lang of langs) {
       const langDir = path.join(outputDir, lang);

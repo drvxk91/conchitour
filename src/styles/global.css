@@ -11,23 +11,24 @@
     color: theme('colors.ink.DEFAULT');
     background: theme('colors.paper.soft');
   }
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: theme('colors.line.strong'); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb { background: theme('colors.line.strong'); border-radius: 99px; }
   ::-webkit-scrollbar-thumb:hover { background: theme('colors.ink.faded'); }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded border border-line-strong
-           bg-paper hover:bg-paper-tinted transition-colors;
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-line-strong
+           bg-paper hover:bg-paper-tinted transition-colors select-none;
   }
   .btn-primary { @apply bg-ink text-paper border-ink hover:opacity-90; }
-  .btn-danger  { @apply text-red-700 border-red-300 hover:bg-red-50; }
+  .btn-accent  { @apply bg-accent text-white border-accent hover:opacity-90; }
+  .btn-danger  { @apply text-red-600 border-red-200 hover:bg-red-50; }
   .input {
-    @apply w-full px-2.5 py-1.5 text-sm border border-line-strong rounded bg-paper
-           focus:outline focus:outline-2 focus:outline-cat-hotel;
+    @apply w-full px-2.5 py-1.5 text-sm border border-line-strong rounded-md bg-paper
+           focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors;
   }
   .label-sm { @apply block text-xs text-ink-soft mb-1 font-medium; }
-  .help-sm  { @apply text-xs text-ink-faded mt-1; }
+  .help-sm  { @apply text-xs text-ink-faded mt-1 leading-relaxed; }
 }

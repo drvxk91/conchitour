@@ -123,6 +123,8 @@ export interface Scene {
   media: SceneMedia;
   ogImagePath?: string;
   ambientAudioPath?: string;
+  /** 'custom' when the user captured a thumbnail from the editor viewport */
+  thumbnailMode?: 'auto' | 'custom';
 }
 
 export interface ProjectSeo {
@@ -131,6 +133,19 @@ export interface ProjectSeo {
   keywords: string[];
   schemaType: 'TouristAttraction' | 'Hotel' | 'Museum' | 'Place';
   imageSitemap: boolean;
+}
+
+export interface TourTheme {
+  fontFamily?: 'system' | 'serif' | 'mono';
+  headerBg?: string;
+  panelBg?: string;
+  textColor?: string;
+  radius?: 'sharp' | 'soft' | 'round';
+  fontSize?: number;
+  /** Entrance animation for the intro text on the loading/splash screen */
+  introAnimation?: 'fade' | 'slide' | 'zoom';
+  /** Font size (px) for the intro text on the splash screen */
+  introFontSize?: number;
 }
 
 export interface ProjectBranding {
@@ -145,6 +160,8 @@ export interface ProjectBranding {
   hotspotPreviewStyle?: 'card' | 'compact' | 'overlay';
   /** Size of hotspot pins in pixels (default 32, range 16–80) */
   hotspotSizePx?: number;
+  /** Tour viewer UI theming (fonts, colors, radius, font size) */
+  tourTheme?: TourTheme;
 }
 
 export interface ProjectShare {
@@ -173,6 +190,8 @@ export interface ProjectModules {
   cookieConsent?: boolean;
   cookieText?: Record<string, string>;
   mapMode?: MapModeConfig;
+  /** When true, hovering a map marker highlights the matching link hotspot in the 360° view and vice-versa */
+  mapTourSync?: boolean;
 }
 
 export interface Project {

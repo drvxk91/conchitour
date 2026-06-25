@@ -108,7 +108,7 @@ export function MetaTab({ scene }: { scene: Scene }) {
           data-testid="title-input"
           className="input"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => { setTitle(e.target.value); updateScene(scene.id, { title: { ...scene.title, [lang]: e.target.value } }); }}
           onBlur={saveTitle}
         />
       </div>
@@ -119,7 +119,7 @@ export function MetaTab({ scene }: { scene: Scene }) {
         <textarea
           className="input resize-none h-20"
           value={desc}
-          onChange={(e) => setDesc(e.target.value)}
+          onChange={(e) => { setDesc(e.target.value); updateScene(scene.id, { description: { ...scene.description, [lang]: e.target.value } }); }}
           onBlur={saveDesc}
         />
       </div>

@@ -36,9 +36,11 @@ interface Props {
   className?: string;
   /** Exposed to allow callers to get 360° coords from a native MouseEvent */
   getMouseCoords?: React.MutableRefObject<((e: MouseEvent) => [number, number]) | null>;
+  /** Returns the Pannellum WebGL canvas element (preserveDrawingBuffer must be true) */
+  getCanvas?: React.MutableRefObject<() => HTMLCanvasElement | null>;
 }
 
-export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch, getFov, setYaw, setPitch, setFov, initialView, className, getMouseCoords }: Props) {
+export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch, getFov, setYaw, setPitch, setFov, initialView, className, getMouseCoords, getCanvas }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewerRef     = useRef<PanViewer | null>(null);
   const lastClickRef  = useRef<{ t: number; pitch: number; yaw: number } | null>(null);
@@ -80,6 +82,7 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch,
         yaw: initialView?.yaw ?? 0,
         pitch: initialView?.pitch ?? 0,
         hfov: initialView?.hfov ?? 75,
+        renderConfig: { preserveDrawingBuffer: true },
       });
     } catch (err) {
       console.warn('[PanoViewer] PANOVIEWER_INIT_GUARD pannellum init threw:', err);
@@ -107,6 +110,9 @@ export function PanoViewer({ imageUrl, heading, onDoubleClick, getYaw, getPitch,
     }
     if (getMouseCoords) {
       getMouseCoords.current = (e: MouseEvent) => { try { return viewer.mouseEventToCoords(e); } catch { return [0, 0]; } };
+    }
+    if (getCanvas) {
+      getCanvas.current = () => el.querySelector('canvas');
     }
 
     // Double-click detection (Pannellum swallows native dblclick)

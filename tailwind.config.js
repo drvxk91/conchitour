@@ -4,9 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: { DEFAULT: '#1a1a1a', soft: '#6b6b68', faded: '#9a9a96' },
-        paper: { DEFAULT: '#ffffff', soft: '#fafaf9', tinted: '#f3f3f1' },
-        line: { DEFAULT: '#e6e5e0', strong: '#d4d3cd' },
+        accent: '#185FA5',
+        ink: { DEFAULT: '#1a1a1a', strong: '#0d0d0d', soft: '#6b6b68', faded: '#9a9a96' },
+        paper: { DEFAULT: '#ffffff', soft: '#fafaf9', tinted: '#f3f3f1', strong: '#ece9e3' },
+        line: { DEFAULT: '#e6e5e0', strong: '#d4d3cd', soft: '#f0efec' },
         cat: {
           hotel: '#185FA5',
           rooftop: '#BA7517',

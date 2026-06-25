@@ -17,18 +17,23 @@ export function Sidebar() {
         { id: 'import',     label: 'Import',     Icon: Upload, badge: () => project.scenes.length || null },
         { id: 'scenes',     label: 'Scenes',     Icon: Image,  badge: () => project.scenes.length || null },
         { id: 'map',        label: 'Map',        Icon: Map },
-        { id: 'categories', label: 'Categories', Icon: Tags,   badge: () => project.categories.length },
+        { id: 'categories', label: 'Categories', Icon: Tags,   badge: () => project.categories.length || null },
       ],
     },
     {
-      title: 'Settings',
+      title: 'Presentation',
       entries: [
-        { id: 'project',   label: 'Project',   Icon: Settings },
-        { id: 'seo',       label: 'SEO',       Icon: Search },
-        { id: 'languages', label: 'Languages', Icon: Languages, badge: () => project.languages.available.length },
         { id: 'branding',  label: 'Branding',  Icon: Palette },
+        { id: 'languages', label: 'Languages', Icon: Languages, badge: () => project.languages.available.length || null },
         { id: 'share',     label: 'Share',     Icon: Share2 },
-        { id: 'modules',   label: 'Modules',   Icon: Puzzle },
+      ],
+    },
+    {
+      title: 'Configuration',
+      entries: [
+        { id: 'project', label: 'Project', Icon: Settings },
+        { id: 'seo',     label: 'SEO',     Icon: Search },
+        { id: 'modules', label: 'Modules', Icon: Puzzle },
       ],
     },
     {
@@ -40,11 +45,11 @@ export function Sidebar() {
   ];
 
   return (
-    <nav className="w-56 bg-paper border-r border-line flex-shrink-0 overflow-y-auto">
-      <div className="p-3 space-y-4">
-        {sections.map((sec) => (
-          <div key={sec.title}>
-            <div className="text-[10px] font-medium text-ink-faded uppercase tracking-wider px-2 mb-1">
+    <nav className="w-48 bg-paper border-r border-line flex-shrink-0 overflow-y-auto flex flex-col">
+      <div className="p-2.5 flex-1">
+        {sections.map((sec, si) => (
+          <div key={sec.title} className={si > 0 ? 'mt-4' : ''}>
+            <div className="text-[9px] font-semibold text-ink-faded uppercase tracking-widest px-2.5 mb-1">
               {sec.title}
             </div>
             {sec.entries.map(({ id, label, Icon, badge }) => {
@@ -56,16 +61,18 @@ export function Sidebar() {
                   onClick={() => setActiveScreen(id)}
                   data-testid={`nav-${id}`}
                   className={clsx(
-                    'w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm mb-px text-left transition-colors',
-                    active ? 'bg-ink text-paper' : 'text-ink hover:bg-paper-tinted'
+                    'w-full flex items-center gap-2.5 pl-2.5 pr-2 py-1.5 rounded-md text-sm mb-px text-left transition-all border-l-2',
+                    active
+                      ? 'border-accent bg-accent/8 text-accent font-medium'
+                      : 'border-transparent text-ink-soft hover:bg-paper-tinted hover:text-ink'
                   )}
                 >
-                  <Icon size={15} className={active ? 'text-paper' : 'text-ink-soft'} />
-                  <span className="flex-1">{label}</span>
+                  <Icon size={14} className={active ? 'text-accent' : 'text-ink-faded'} />
+                  <span className="flex-1 text-xs">{label}</span>
                   {b != null && (
                     <span className={clsx(
-                      'text-[10px] px-1.5 py-0.5 rounded',
-                      active ? 'bg-paper/20' : 'bg-paper-tinted text-ink-soft'
+                      'text-[10px] px-1.5 py-0.5 rounded-full font-semibold min-w-[18px] text-center',
+                      active ? 'bg-accent/15 text-accent' : 'bg-paper-strong text-ink-faded'
                     )}>{b}</span>
                   )}
                 </button>

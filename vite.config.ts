@@ -5,12 +5,24 @@ import renderer from 'vite-plugin-electron-renderer';
 import path from 'path';
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      external: ['sharp'],
+    },
+  },
   plugins: [
     react(),
     electron([
       {
         entry: 'electron/main.ts',
-        vite: { build: { outDir: 'dist-electron' } },
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['sharp'],
+            },
+          },
+        },
       },
       {
         entry: 'electron/preload.ts',

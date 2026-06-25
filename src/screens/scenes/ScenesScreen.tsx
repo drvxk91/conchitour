@@ -8,6 +8,7 @@ import { SceneSidebar } from './SceneSidebar';
 import { SceneViewer } from './SceneViewer';
 import { SceneInspector } from './SceneInspector';
 import { ParcoursGraph } from './ParcoursGraph';
+import { NorthRadarMap } from './NorthRadarMap';
 import type { Hotspot, LinkHotspot } from '@/types';
 
 export type EditorMode = 'navigate' | 'hotspot' | 'north';
@@ -43,12 +44,13 @@ export function ScenesScreen() {
   const [defaultViewToast, setDefaultViewToast] = useState<string | null>(null);
   const activeScene = project.scenes.find((s) => s.id === activeSceneId) ?? null;
 
-  const pannellumGetYaw   = useRef<() => number>(() => 0);
-  const pannellumGetPitch = useRef<() => number>(() => 0);
-  const pannellumGetFov   = useRef<() => number>(() => 75);
-  const pannellumSetYaw   = useRef<(yaw: number) => void>(() => {});
-  const pannellumSetPitch = useRef<(pitch: number) => void>(() => {});
-  const pannellumSetFov   = useRef<(fov: number) => void>(() => {});
+  const pannellumGetYaw    = useRef<() => number>(() => 0);
+  const pannellumGetPitch  = useRef<() => number>(() => 0);
+  const pannellumGetFov    = useRef<() => number>(() => 75);
+  const pannellumSetYaw    = useRef<(yaw: number) => void>(() => {});
+  const pannellumSetPitch  = useRef<(pitch: number) => void>(() => {});
+  const pannellumSetFov    = useRef<(fov: number) => void>(() => {});
+  const pannellumGetCanvas = useRef<() => HTMLCanvasElement | null>(() => null);
 
   // Entry snapshot for north mode: restore yaw on Cancel
   const northEntryYaw = useRef<number>(0);
@@ -97,6 +99,31 @@ export function ScenesScreen() {
     pannellumSetYaw.current(northEntryYaw.current);
     setMode('navigate');
   }, []);
+
+  const handleCaptureThumbnail = useCallback(async () => {
+    const canvas = pannellumGetCanvas.current();
+    if (!canvas || !activeScene) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const img = new Image();
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = dataUrl; });
+      const oc = document.createElement('canvas');
+      oc.width = 320; oc.height = 200;
+      const ctx = oc.getContext('2d');
+      if (!ctx) return;
+      const srcAR = img.width / img.height;
+      const dstAR = 320 / 200;
+      let sx = 0, sy = 0, sw = img.width, sh = img.height;
+      if (srcAR > dstAR) { sw = img.height * dstAR; sx = (img.width - sw) / 2; }
+      else { sh = img.width / dstAR; sy = (img.height - sh) / 2; }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 320, 200);
+      const thumbDataUrl = oc.toDataURL('image/jpeg', 0.85);
+      await window.conchitect.saveThumb(activeScene.slug, thumbDataUrl);
+      updateScene(activeScene.id, { thumbnailMode: 'custom' });
+    } catch (e) {
+      console.warn('[thumb] capture failed:', e);
+    }
+  }, [activeScene, updateScene]);
 
   // Stale refs for keyboard handler
   const sceneRef = useRef(activeScene);
@@ -178,6 +205,7 @@ export function ScenesScreen() {
         onNorthCancel={handleNorthCancel}
         northDraftHeading={northDraft}
         onSetDefaultView={handleSetDefaultView}
+        onCaptureThumbnail={handleCaptureThumbnail}
         onPreview={() => {
           if (activeScene) {
             window.conchitect.openPreview(
@@ -210,8 +238,12 @@ export function ScenesScreen() {
           pannellumSetYaw={pannellumSetYaw}
           pannellumSetPitch={pannellumSetPitch}
           pannellumSetFov={pannellumSetFov}
+          pannellumGetCanvas={pannellumGetCanvas}
         />
-        <SceneInspector onDeleteScene={handleDeleteScene} />
+        {mode === 'north' && activeScene && (activeScene.geo.lat !== 0 || activeScene.geo.lng !== 0)
+          ? <NorthRadarMap scene={activeScene} yaw={northDraft ?? 0} />
+          : <SceneInspector onDeleteScene={handleDeleteScene} />
+        }
       </div>
 
       <ParcoursGraph />

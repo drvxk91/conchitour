@@ -1,4 +1,4 @@
-import { Glasses, Smartphone, Maximize, MessageSquare, ClipboardList, Key, Bot, Sparkles, Construction, Cookie, Map } from 'lucide-react';
+import { Glasses, Smartphone, Maximize, MessageSquare, ClipboardList, Key, Bot, Sparkles, Construction, Cookie, Map, ArrowLeftRight } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import type { MapModeConfig } from '@/types';
@@ -124,9 +124,9 @@ export function ModulesScreen() {
             <textarea
               rows={3}
               className={inputCls + ' resize-none text-xs'}
-              defaultValue={m.cookieText?.en ?? ''}
+              value={m.cookieText?.en ?? ''}
               placeholder="This website uses cookies to enhance your virtual tour experience. By continuing, you accept our cookie policy."
-              onBlur={(e) =>
+              onChange={(e) =>
                 updateModules({ cookieText: { ...(m.cookieText ?? {}), en: e.target.value } })
               }
             />
@@ -177,6 +177,14 @@ export function ModulesScreen() {
             </div>
           </div>
         </ModuleToggle>
+
+        <ModuleToggle
+          Icon={ArrowLeftRight}
+          label="Map ↔ Tour hover sync"
+          description="Hovering a map marker highlights the matching link hotspot in the panorama, and vice-versa."
+          enabled={!!m.mapTourSync}
+          onChange={(v) => updateModules({ mapTourSync: v })}
+        />
 
         {/* DeepL key (also editable from Languages screen) */}
         <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 mt-6">

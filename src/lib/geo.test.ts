@@ -55,6 +55,20 @@ describe('bearingToAth', () => {
     const ath = bearingToAth(10, 200);
     expect(ath).toBeCloseTo(170, 1);
   });
+
+  it('heading=90 east-facing camera: north target (bearing=0) is -90° left', () => {
+    // Camera faces east (heading=90). True north is 90° to the left in the panorama.
+    // ath = (0 - 90 + 360) % 360 = 270 → 270 > 180 → 270 - 360 = -90
+    // Regression: radar uses (heading + yaw) for compass direction; hotspots use bearingToAth.
+    // Both must use scene.heading with the SAME definition: bearing (0–360) of the ath=0 direction.
+    expect(bearingToAth(0, 90)).toBeCloseTo(-90, 1);
+  });
+
+  it('heading=180 south-facing camera: north target is 180° behind', () => {
+    // Camera faces south (heading=180). North is directly behind (ath=180 or -180).
+    const ath = bearingToAth(0, 180);
+    expect(Math.abs(ath)).toBeCloseTo(180, 1);
+  });
 });
 
 describe('elevationToAtv', () => {

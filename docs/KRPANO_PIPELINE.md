@@ -95,6 +95,27 @@ On each compile:
 
 The `northoffset` attribute on `<sphere>` maps directly to `scene.heading` (degrees, 0–360). It tells krpano how many degrees the image's zero-yaw point is offset from true North. Set via the **Set North** toolbar tool or the Heading field in the MetaTab.
 
+## Scene heading — canonical definition
+
+**`scene.heading`** = the compass bearing (0–360, clockwise from north) that the **camera was facing at capture time**, i.e. the real-world direction that corresponds to `ath = 0` (the panorama's centre column).
+
+This single definition drives three systems that must stay consistent:
+
+| System | Formula | Example: heading=90 (camera faces east) |
+|--------|---------|------------------------------------------|
+| `tour.xml` `<sphere northoffset>` | `northoffset = heading` | 90 |
+| Hotspot ath (auto-computed from GPS) | `ath = (bearing − heading + 360) % 360`, clamped to [−180, 180] | target due north (bearing=0) → ath = −90 (left of centre) |
+| Map radar rotation | `rotate((heading + krpano.view.hlookat) % 360)` | yaw=0 (viewer at centre = east) → rotate(90°) fan points east ✓ |
+
+### Diagnosing "north appears as south" on one scene
+
+A 180° heading error means the stored heading differs from the true capture direction by 180°. Common causes:
+
+1. **Camera records "from" direction instead of "to"** — some panorama heads record the direction the back of the camera faces. Fix: add 180° to the value, or use the **Set North** toolbar button.
+2. **User set heading manually with the wrong end of the scene** — Fix: click **N** in the toolbar and drag until the N badge sits over the actual north direction.
+
+After correcting heading, re-run the **Map → Auto-compute** to regenerate hotspot ath/atv values, then recompile.
+
 ## Output folder layout
 
 ```
