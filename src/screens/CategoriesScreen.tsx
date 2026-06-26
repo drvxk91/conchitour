@@ -126,7 +126,7 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
     : null;
 
   const nameError = !defaultName ? `Name in "${defaultLang || 'en'}" is required` : null;
-  const canSave = !slugError && !nameError;
+  const canSave = (!slugError || !!initial?.builtIn) && !nameError;
 
   function handleSave() {
     if (!canSave) return;
@@ -196,12 +196,16 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
           <div>
             <label className="text-[10px] uppercase tracking-wide text-ink-faded font-medium block mb-1">Slug</label>
             <input
-              className="w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink font-mono focus:outline-none focus:border-accent"
+              className="w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink font-mono focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
               value={slug}
               onChange={(e) => { setSlug(e.target.value); setSlugTouched(true); }}
               placeholder="url-safe-slug"
+              disabled={!!initial?.builtIn}
             />
-            {slugError && <p className="text-[10px] text-red-500 mt-0.5">{slugError}</p>}
+            {initial?.builtIn
+              ? <p className="text-[10px] text-ink-faded/60 mt-0.5">Built-in slug is fixed</p>
+              : slugError && <p className="text-[10px] text-red-500 mt-0.5">{slugError}</p>
+            }
           </div>
 
           {/* Color */}
@@ -438,7 +442,14 @@ export function CategoriesScreen() {
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-ink-strong truncate">{displayName}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-ink-strong truncate">{displayName}</p>
+                    {cat.builtIn && (
+                      <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-ink-faded/10 text-ink-faded flex-shrink-0">
+                        Built-in
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-ink-faded mt-0.5">
                     {count} scene{count !== 1 ? 's' : ''}
                     <span className="mx-1.5 opacity-40">·</span>
@@ -457,14 +468,16 @@ export function CategoriesScreen() {
                   >
                     <Pencil size={12} />
                   </button>
-                  <button
-                    onClick={() => handleDelete(cat)}
-                    className="btn btn-danger text-xs p-1.5"
-                    title="Delete category"
-                    data-testid={`delete-category-${cat.id}`}
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  {!cat.builtIn && (
+                    <button
+                      onClick={() => handleDelete(cat)}
+                      className="btn btn-danger text-xs p-1.5"
+                      title="Delete category"
+                      data-testid={`delete-category-${cat.id}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </div>
               </div>
             );
