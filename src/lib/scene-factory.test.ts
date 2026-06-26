@@ -71,6 +71,20 @@ describe('newScene', () => {
     expect(scene.heading).toBe(135);
   });
 
+  it('normalizes EXIF heading 360 to 0 (not left as 360)', () => {
+    // Some cameras output 360.0 instead of 0.0 — must be normalized before storage
+    const meta: PhotoMeta = { ...baseMeta, exif: { direction: 360 } };
+    const scene = newScene('/photos/lobby.jpg', meta, new Set());
+    expect(scene.heading).toBe(0);
+  });
+
+  it('normalizes negative EXIF heading to [0, 360)', () => {
+    // Insta360 Yaw can be negative
+    const meta: PhotoMeta = { ...baseMeta, exif: { direction: -45 } };
+    const scene = newScene('/photos/lobby.jpg', meta, new Set());
+    expect(scene.heading).toBe(315);
+  });
+
   it('defaults captureHeightMeters to 1.6', () => {
     const scene = newScene('/photos/lobby.jpg', baseMeta, new Set());
     expect(scene.captureHeightMeters).toBe(1.6);
