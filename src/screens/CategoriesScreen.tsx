@@ -287,7 +287,7 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function CategoriesScreen() {
-  const { project, addCategory, updateCategory, deleteCategory, updateScene } = useProject();
+  const { project, addCategory, updateCategory, deleteCategory, updateScene, updatePage } = useProject();
   const [modalOpen, setModalOpen] = useState<'new' | string | null>(null); // 'new' | category id | null
   const [toast, setToast] = useState<string | null>(null);
 
@@ -364,6 +364,12 @@ export function CategoriesScreen() {
     if (result.catPatch) {
       for (const [catId, patch] of Object.entries(result.catPatch)) {
         updateCategory(catId, patch as Parameters<typeof updateCategory>[1]);
+      }
+    }
+    // Apply page patches to store
+    if (result.pagePatch) {
+      for (const [pageId, patch] of Object.entries(result.pagePatch)) {
+        updatePage(pageId, patch as Parameters<typeof updatePage>[1]);
       }
     }
 

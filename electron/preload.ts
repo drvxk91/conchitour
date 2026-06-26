@@ -93,6 +93,7 @@ export interface ExcelImportResult {
   errors?: string[];
   scenePatch?: Record<string, Record<string, unknown>>;
   catPatch?: Record<string, Record<string, unknown>>;
+  pagePatch?: Record<string, Record<string, unknown>>;
 }
 
 export interface ExcelExportResult {

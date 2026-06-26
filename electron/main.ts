@@ -394,6 +394,22 @@ ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
   const modSheet = XLSX.utils.aoa_to_sheet([modHeader, modRow]);
   XLSX.utils.book_append_sheet(wb, modSheet, 'Modules');
 
+  // ── Sheet: Pages ──
+  const pagesExportHeader = [
+    'id', 'slug', 'built_in', 'enabled', 'show_in_footer', 'order',
+    ...langs.map((l: string) => `title_${l}`),
+    ...langs.map((l: string) => `content_${l}`),
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pagesExportRows = (proj.pages ?? []).map((p: any) => [
+    p.id, p.slug, p.builtIn ?? '', p.enabled ? 'true' : 'false',
+    p.showInFooter ? 'true' : 'false', p.order ?? 0,
+    ...langs.map((l: string) => p.title?.[l] ?? ''),
+    ...langs.map((l: string) => p.content?.[l] ?? ''),
+  ]);
+  const pagesExportSheet = XLSX.utils.aoa_to_sheet([pagesExportHeader, ...pagesExportRows]);
+  XLSX.utils.book_append_sheet(wb, pagesExportSheet, 'Pages');
+
   try {
     XLSX.writeFile(wb, result.filePath);
     return { canceled: false, path: result.filePath };
@@ -465,6 +481,19 @@ ipcMain.handle('excel:download-template', async (_e, projectData: unknown) => {
   const modH = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled', 'deepl_api_key'];
   const modEx = ['false', 'true', 'true', 'contact@example.com', 'false', ''];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([modH, modEx]), 'Modules');
+
+  // ── Pages ──
+  const pagesTplH = [
+    'id', 'slug', 'built_in', 'enabled', 'show_in_footer', 'order',
+    ...langs.map((l: string) => `title_${l}`),
+    ...langs.map((l: string) => `content_${l}`),
+  ];
+  const pagesTplEx = [
+    'page-privacy', 'privacy', 'privacy', 'false', 'true', '0',
+    ...langs.map(() => 'Privacy Policy'),
+    ...langs.map(() => '# Privacy Policy\n\nYour policy text here.'),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([pagesTplH, pagesTplEx]), 'Pages');
 
   try {
     XLSX.writeFile(wb, result.filePath);
@@ -589,7 +618,49 @@ ipcMain.handle('excel:import', async (_e, projectData: unknown) => {
     }
   }
 
-  return { canceled: false, updated, skipped, errors, scenePatch, catPatch };
+  // ── Parse Pages sheet ──
+  const pagePatch: Record<string, Record<string, unknown>> = {};
+  const pagesWs = wb.Sheets['Pages'];
+  if (pagesWs) {
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(pagesWs, { header: 1 });
+    const [header, ...dataRows] = rows as string[][];
+    const col = (name: string) => header.indexOf(name);
+
+    for (const row of dataRows) {
+      if (!row.length) continue;
+      const idVal   = String(row[col('id')]   ?? '').trim();
+      const slugVal = String(row[col('slug')] ?? '').trim();
+      const page = idVal
+        ? (proj.pages ?? []).find((p: any) => p.id === idVal)
+        : (proj.pages ?? []).find((p: any) => p.slug === slugVal);
+      if (!page) { skipped++; continue; }
+
+      const patch: Record<string, unknown> = {};
+
+      const enabledVal = String(row[col('enabled')] ?? '').trim().toLowerCase();
+      if (enabledVal === 'true' || enabledVal === 'false') patch.enabled = enabledVal === 'true';
+
+      const footerVal = String(row[col('show_in_footer')] ?? '').trim().toLowerCase();
+      if (footerVal === 'true' || footerVal === 'false') patch.showInFooter = footerVal === 'true';
+
+      const orderVal = parseInt(String(row[col('order')] ?? ''), 10);
+      if (!isNaN(orderVal)) patch.order = orderVal;
+
+      for (const l of langs) {
+        const titleVal = String(row[col(`title_${l}`)] ?? '').trim();
+        if (titleVal) patch.title = { ...(page.title ?? {}), [l]: titleVal };
+        const contentVal = String(row[col(`content_${l}`)] ?? '').trim();
+        if (contentVal) patch.content = { ...(page.content ?? {}), [l]: contentVal };
+      }
+
+      if (Object.keys(patch).length) {
+        pagePatch[page.id] = patch;
+        updated++;
+      }
+    }
+  }
+
+  return { canceled: false, updated, skipped, errors, scenePatch, catPatch, pagePatch };
 });
 
 // Temporary store for preview scene data (consumed by preview:getData immediately after window loads)
