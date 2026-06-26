@@ -72,9 +72,13 @@ async function startTourPreviewServer(outputDir: string, defaultLang: string): P
 
     const langMatch    = pathname.match(/^\/([a-z]{2})\/?$/);
     const sceneMatch   = pathname.match(/^\/scene\/([^/]+)\/([a-z]{2})\/?$/);
+    const pageMatch    = pathname.match(/^\/page\/([^/]+)\/([a-z]{2})\/?$/);
+    const pageNoLang   = pathname.match(/^\/page\/([^/]+)\/?$/);
 
-    if (langMatch)  filePath = path.join(outputDir, langMatch[1], 'index.html');
+    if (langMatch)       filePath = path.join(outputDir, langMatch[1], 'index.html');
     else if (sceneMatch) filePath = path.join(outputDir, sceneMatch[2], 'scene', sceneMatch[1], 'index.html');
+    else if (pageMatch)  filePath = path.join(outputDir, 'page', pageMatch[1], pageMatch[2], 'index.html');
+    else if (pageNoLang) filePath = path.join(outputDir, 'page', pageNoLang[1], defaultLang, 'index.html');
     else filePath = path.join(outputDir, pathname.replace(/^\//, ''));
 
     try {
