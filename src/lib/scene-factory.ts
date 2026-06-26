@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import type { Scene } from '@/types';
 import { uniqueSlug } from './slug';
+import { normalizeHeading } from './heading';
 
 export interface PhotoMeta {
   width: number;
@@ -28,7 +29,7 @@ export function newScene(sourcePath: string, meta: PhotoMeta, existingSlugs: Set
     altText: { en: '' },
     categoryIds: [],
     geo: meta.exif?.gps ?? { lat: 0, lng: 0 },
-    heading: meta.exif?.direction ?? 0,
+    heading: normalizeHeading(meta.exif?.direction ?? 0),
     captureHeightMeters: 1.6,
     visibilityRadius: 150,
     hotspots: [],

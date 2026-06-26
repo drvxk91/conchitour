@@ -219,7 +219,8 @@ ipcMain.handle('photos:readMeta', async (_e, filePaths: string[]) => {
       // GPSImgDirection (standard EXIF) or Insta360 XMP heading tags
       const dir = raw?.GPSImgDirection ?? raw?.Heading ?? raw?.['Insta360.Heading'] ?? raw?.Yaw;
       if (dir != null) {
-        exif.direction = Number(dir);
+        const d = Number(dir);
+        exif.direction = ((d % 360) + 360) % 360;
       }
 
       if (raw?.latitude != null && raw?.longitude != null) {
