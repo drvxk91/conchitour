@@ -241,7 +241,13 @@ export function ScenesScreen() {
           pannellumGetCanvas={pannellumGetCanvas}
         />
         {mode === 'north' && activeScene && (activeScene.geo.lat !== 0 || activeScene.geo.lng !== 0)
-          ? <NorthRadarMap scene={activeScene} yaw={northDraft ?? 0} />
+          ? <NorthRadarMap
+              scene={activeScene}
+              viewBearing={northDraft !== undefined
+                ? (northDraft + pannellumGetYaw.current() + 360) % 360
+                : 0}
+              heading={northDraft ?? 0}
+            />
           : <SceneInspector onDeleteScene={handleDeleteScene} />
         }
       </div>

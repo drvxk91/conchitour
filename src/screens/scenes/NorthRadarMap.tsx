@@ -5,8 +5,10 @@ import type { Scene } from '@/types';
 
 interface Props {
   scene: Scene;
-  /** Live Pannellum yaw (same value reported by northDraftHeading in SceneToolbar) */
-  yaw: number;
+  /** Compass bearing (0–360) that the camera center is currently facing */
+  viewBearing: number;
+  /** Final heading that will be stored on Confirm (shown in readout) */
+  heading: number;
 }
 
 function radarHtml(color: string, az: number): string {
@@ -23,20 +25,20 @@ function radarHtml(color: string, az: number): string {
   );
 }
 
-export function NorthRadarMap({ scene, yaw }: Props) {
+export function NorthRadarMap({ scene, viewBearing, heading }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
-  const yawRef = useRef(yaw);
+  const bearingRef = useRef(viewBearing);
 
   useEffect(() => {
-    yawRef.current = yaw;
+    bearingRef.current = viewBearing;
     const m = markerRef.current;
     if (!m || !m._icon) return;
-    const az = ((scene.heading + yaw) % 360 + 360) % 360;
+    const az = (viewBearing + 360) % 360;
     const svgEl = m._icon.querySelector('svg');
     if (svgEl) (svgEl as HTMLElement).style.transform = `rotate(${az}deg)`;
-  }, [yaw, scene.heading]);
+  }, [viewBearing]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -49,7 +51,7 @@ export function NorthRadarMap({ scene, yaw }: Props) {
     map.setView([lat, lng], 17);
     mapRef.current = map;
 
-    const az = ((scene.heading + yawRef.current) % 360 + 360) % 360;
+    const az = (bearingRef.current + 360) % 360;
     const icon = L.divIcon({ html: radarHtml('#3b82f6', az), className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
     const marker = L.marker([lat, lng], { icon, interactive: false }).addTo(map);
     markerRef.current = marker;
@@ -71,7 +73,7 @@ export function NorthRadarMap({ scene, yaw }: Props) {
       </div>
       <div ref={containerRef} className="flex-1 min-h-0" />
       <div className="px-3 py-2 border-t border-line flex-shrink-0 text-xs text-ink-soft">
-        Heading: <span className="font-mono font-semibold text-ink">{((((scene.heading + yaw) % 360) + 360) % 360).toFixed(1)}°</span>
+        Heading: <span className="font-mono font-semibold text-ink">{heading.toFixed(1)}°</span>
       </div>
     </div>
   );
