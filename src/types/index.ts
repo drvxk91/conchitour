@@ -72,7 +72,7 @@ export type Hotspot = LinkHotspot | VideoHotspot | TextHotspot | ExternalHotspot
 
 export interface Category {
   id: UUID;
-  /** url-safe slug (a-z0-9_-) */
+  /** url-safe slug (a-z0-9_-). Built-in categories use a _ prefix (e.g. _link). */
   slug: string;
   /** localized display names */
   name: Record<string, string>;
@@ -81,6 +81,8 @@ export interface Category {
   pinSvg?: string;
   /** whether to show scenes of this category as map pins (default true) */
   useAsPin?: boolean;
+  /** true for the 5 built-in hotspot-type categories — cannot be deleted */
+  builtIn?: boolean;
 }
 
 export interface SceneMedia {

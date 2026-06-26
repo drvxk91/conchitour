@@ -44,8 +44,18 @@ export function newProject(): Project {
   };
 }
 
+/** Built-in categories — always present, cannot be deleted, slugs reserved with _ prefix. */
+export const BUILTIN_CATEGORIES: Category[] = [
+  { id: 'builtin-link',     slug: '_link',     name: { en: 'Link' },     color: '#185FA5', iconSvg: 'builtin:mappin',  builtIn: true },
+  { id: 'builtin-video',    slug: '_video',    name: { en: 'Video' },    color: '#8B5CF6', iconSvg: 'builtin:camera',  builtIn: true },
+  { id: 'builtin-text',     slug: '_text',     name: { en: 'Text' },     color: '#1D9E75', iconSvg: 'builtin:info',    builtIn: true },
+  { id: 'builtin-external', slug: '_external', name: { en: 'External' }, color: '#BA7517', iconSvg: 'builtin:eye',     builtIn: true },
+  { id: 'builtin-form',     slug: '_form',     name: { en: 'Form' },     color: '#E11D48', iconSvg: 'builtin:mail',    builtIn: true },
+];
+
 function defaultCategories(): Category[] {
   return [
+    ...BUILTIN_CATEGORIES,
     { id: uuid(), slug: 'hotel',   name: { en: 'Hotel' },   color: '#185FA5' },
     { id: uuid(), slug: 'rooftop', name: { en: 'Rooftop' }, color: '#BA7517' },
     { id: uuid(), slug: 'aerial',  name: { en: 'Aerial' },  color: '#534AB7' },
