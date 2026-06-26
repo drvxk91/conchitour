@@ -782,16 +782,6 @@ ipcMain.handle('project:copy-source', async (_e, srcPath: string) => {
   return name;
 });
 
-ipcMain.handle('thumb:save', async (_e, slug: string, dataUrl: string) => {
-  if (!currentProjectDir) return false;
-  const thumbsDir = path.join(currentProjectDir, 'thumbs');
-  await fs.mkdir(thumbsDir, { recursive: true });
-  const base64 = dataUrl.split(',')[1];
-  if (!base64) return false;
-  await fs.writeFile(path.join(thumbsDir, `${slug}.jpg`), Buffer.from(base64, 'base64'));
-  return true;
-});
-
 ipcMain.handle('capture-scene-thumbnail', async (_e, slug: string, rect: { x: number; y: number; width: number; height: number }) => {
   if (!currentProjectDir) return false;
   try {

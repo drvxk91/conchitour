@@ -67,7 +67,6 @@ contextBridge.exposeInMainWorld('conchitect', {
   tourServerStop: (): Promise<boolean> => ipcRenderer.invoke('tour-server:stop'),
   tourServerStatus: (): Promise<TourServerStatus | null> => ipcRenderer.invoke('tour-server:status'),
   openUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:openUrl', url),
-  saveThumb: (slug: string, dataUrl: string): Promise<boolean> => ipcRenderer.invoke('thumb:save', slug, dataUrl),
   captureSceneThumbnail: (slug: string, rect: { x: number; y: number; width: number; height: number }): Promise<boolean> =>
     ipcRenderer.invoke('capture-scene-thumbnail', slug, rect),
 });
@@ -220,7 +219,6 @@ declare global {
       tourServerStop: () => Promise<boolean>;
       tourServerStatus: () => Promise<TourServerStatus | null>;
       openUrl: (url: string) => Promise<void>;
-      saveThumb: (slug: string, dataUrl: string) => Promise<boolean>;
       captureSceneThumbnail: (slug: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
     };
   }
