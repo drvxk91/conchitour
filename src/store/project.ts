@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import type { Project, Scene, Category, UUID, Hotspot } from '@/types';
-import { newProject } from '@/lib/factory';
+import { newProject, BUILTIN_CATEGORIES } from '@/lib/factory';
+
+/** Ensure all built-in categories are present (migration for pre-v2 project files). */
+function ensureBuiltins(project: Project): Project {
+  const existingIds = new Set(project.categories.map((c) => c.id));
+  const missing = BUILTIN_CATEGORIES.filter((b) => !existingIds.has(b.id));
+  if (missing.length === 0) return project;
+  return { ...project, categories: [...missing, ...project.categories] };
+}
 
 // ─── history helper ───────────────────────────────────────────────────────────
 
@@ -115,14 +123,15 @@ export const useProject = create<ProjectStore>((set) => ({
   clearDirty: () => set({ isDirty: false }),
   setProjectDir: (dir) => set({ projectDir: dir }),
   loadProjectData: (project, projectDir) => {
+    const migrated = ensureBuiltins(project);
     set({
-      project,
+      project: migrated,
       projectDir,
       isDirty: false,
       activeSceneId: null,
       activeHotspotId: null,
       activeScreen: 'scenes',
-      history: [project],
+      history: [migrated],
       historyIndex: 0,
     });
   },
