@@ -117,6 +117,8 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
 
   const slugError = !slug
     ? 'Slug is required'
+    : slug.startsWith('_')
+    ? 'Slugs starting with _ are reserved for built-in categories'
     : !isValidSlug(slug)
     ? 'Only lowercase letters, numbers, _ and - (min 2 chars)'
     : otherSlugs.has(slug)

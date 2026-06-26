@@ -3,6 +3,7 @@
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]*$/;
 
 export function isValidSlug(s: string): boolean {
+  if (s.startsWith('_')) return false; // _ prefix is reserved for built-in categories
   return s.length >= 2 && s.length <= 50 && SLUG_RE.test(s);
 }
 
