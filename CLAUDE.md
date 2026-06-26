@@ -20,6 +20,7 @@ Tagline: *Architect your virtual tours.*
 - **sharp** for tile generation
 - **exifr** for EXIF parsing
 - **xlsx** (SheetJS) for Excel import/export
+- **marked** for Markdown → HTML at compile time (static pages)
 - **krpano** as the runtime viewer in the **exported** site
 
 ## Folder structure
@@ -30,7 +31,7 @@ Conchitect-app/
 ├── src/
 │   ├── components/     reusable UI components
 │   │   └── shell/      app shell: titlebar, sidebar, router
-│   ├── screens/        one file per app screen (11 screens)
+│   ├── screens/        one file per app screen (12 screens)
 │   ├── store/          Zustand stores
 │   ├── lib/            pure logic (slug, factory, exif, ...)
 │   ├── styles/         global.css
@@ -62,10 +63,11 @@ Read it before touching anything. Every field has a reason. Key invariants:
 | 5 | Project | `ProjectScreen.tsx` | Project metadata + copyright |
 | 6 | SEO | `SeoScreen.tsx` | Meta tags + per-scene alt text + image sitemap |
 | 7 | Languages | `LanguagesScreen.tsx` | Add languages + DeepL auto-translation |
-| 8 | Branding | `BrandingScreen.tsx` | Logo, loader, opening scene, colors |
-| 9 | Share | `ShareScreen.tsx` | Social buttons + live view screenshot |
-| 10 | Modules | `ModulesScreen.tsx` | VR, gyroscope, feedback, DeepL key |
-| 11 | Compile | `CompileScreen.tsx` | Static site generator |
+| 8 | Pages | `PagesScreen.tsx` | Static pages (privacy, legal, etc.) — Markdown editor + live preview |
+| 9 | Branding | `BrandingScreen.tsx` | Logo, loader, opening scene, colors |
+| 10 | Share | `ShareScreen.tsx` | Social buttons + live view screenshot |
+| 11 | Modules | `ModulesScreen.tsx` | VR, gyroscope, feedback, DeepL key |
+| 12 | Compile | `CompileScreen.tsx` | Static site generator |
 
 **Screen 2 (Scenes) is where users spend 80% of their time.** It deserves the most polish. See `conchitect-scene-editor-v2.html` mockup for the target layout.
 
