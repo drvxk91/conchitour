@@ -260,7 +260,7 @@ export function SceneViewer({
         imageUrl={toLocalUrl(scene.media.sourcePath)}
         heading={scene.heading}
         initialView={scene.defaultView
-          ? { yaw: scene.defaultView.hlookat, pitch: scene.defaultView.vlookat, hfov: scene.defaultView.fov }
+          ? { yaw: scene.defaultView.hlookat, pitch: -scene.defaultView.vlookat, hfov: scene.defaultView.fov }
           : undefined}
         getYaw={pannellumGetYaw}
         getPitch={pannellumGetPitch}

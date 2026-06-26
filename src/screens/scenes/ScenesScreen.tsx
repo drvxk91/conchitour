@@ -64,7 +64,7 @@ export function ScenesScreen() {
     const dv = activeScene?.defaultView;
     if (!dv) return;
     pannellumSetYaw.current(dv.hlookat);
-    pannellumSetPitch.current(dv.vlookat);
+    pannellumSetPitch.current(-dv.vlookat); // krpano +down → Pannellum +up → negate
     pannellumSetFov.current(dv.fov);
   }, [activeSceneId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,9 +77,9 @@ export function ScenesScreen() {
 
   const handleSetDefaultView = useCallback(() => {
     if (!activeScene) return;
-    const hlookat = Math.round(pannellumGetYaw.current()   * 10) / 10;
-    const vlookat = Math.round(pannellumGetPitch.current() * 10) / 10;
-    const fov     = Math.round(pannellumGetFov.current()   * 10) / 10;
+    const hlookat = Math.round(pannellumGetYaw.current()    * 10) / 10;
+    const vlookat = Math.round(-pannellumGetPitch.current() * 10) / 10; // Pannellum +up → krpano +down → negate
+    const fov     = Math.round(pannellumGetFov.current()    * 10) / 10;
     updateScene(activeScene.id, { defaultView: { hlookat, vlookat, fov } });
     const msg = `Default view saved: ${hlookat}° / ${vlookat}° / fov ${fov}°`;
     setDefaultViewToast(msg);
