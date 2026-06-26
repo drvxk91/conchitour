@@ -6,6 +6,7 @@ import { CategoriesScreen } from '@/screens/CategoriesScreen';
 import { ProjectScreen } from '@/screens/ProjectScreen';
 import { SeoScreen } from '@/screens/SeoScreen';
 import { LanguagesScreen } from '@/screens/LanguagesScreen';
+import { PagesScreen } from '@/screens/PagesScreen';
 import { BrandingScreen } from '@/screens/BrandingScreen';
 import { ShareScreen } from '@/screens/ShareScreen';
 import { ModulesScreen } from '@/screens/ModulesScreen';
@@ -21,6 +22,7 @@ export function ScreenRouter() {
     case 'project':    return <ProjectScreen />;
     case 'seo':        return <SeoScreen />;
     case 'languages':  return <LanguagesScreen />;
+    case 'pages':      return <PagesScreen />;
     case 'branding':   return <BrandingScreen />;
     case 'share':      return <ShareScreen />;
     case 'modules':    return <ModulesScreen />;

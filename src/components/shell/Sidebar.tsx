@@ -1,7 +1,7 @@
 import { useProject, type ScreenId } from '@/store/project';
 import {
   Upload, Image, Map, Tags, Settings, Search, Languages,
-  Palette, Share2, Puzzle, Package,
+  Palette, Share2, Puzzle, Package, FileText,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -25,6 +25,7 @@ export function Sidebar() {
       entries: [
         { id: 'branding',  label: 'Branding',  Icon: Palette },
         { id: 'languages', label: 'Languages', Icon: Languages, badge: () => project.languages.available.length || null },
+        { id: 'pages',     label: 'Pages',     Icon: FileText,  badge: () => (project.pages ?? []).filter((p) => p.enabled).length || null },
         { id: 'share',     label: 'Share',     Icon: Share2 },
       ],
     },
