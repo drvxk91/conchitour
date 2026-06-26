@@ -792,6 +792,22 @@ ipcMain.handle('thumb:save', async (_e, slug: string, dataUrl: string) => {
   return true;
 });
 
+ipcMain.handle('capture-scene-thumbnail', async (_e, slug: string, rect: { x: number; y: number; width: number; height: number }) => {
+  if (!currentProjectDir) return false;
+  try {
+    const image = await _e.sender.capturePage(rect);
+    const resized = image.resize({ width: 320, height: 200, quality: 'better' });
+    const jpegBuffer = resized.toJPEG(85);
+    const thumbsDir = path.join(currentProjectDir, 'thumbs');
+    await fs.mkdir(thumbsDir, { recursive: true });
+    await fs.writeFile(path.join(thumbsDir, `${slug}.jpg`), jpegBuffer);
+    return true;
+  } catch (e) {
+    console.warn('[thumb] capturePage failed:', e);
+    return false;
+  }
+});
+
 // Build file menu and send actions to renderer
 function setupAppMenu() {
   const sendAction = (action: string) => sendToRenderer(`menu:${action}`);

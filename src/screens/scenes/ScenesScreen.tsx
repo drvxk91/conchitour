@@ -101,25 +101,14 @@ export function ScenesScreen() {
   }, []);
 
   const handleCaptureThumbnail = useCallback(async () => {
-    const canvas = pannellumGetCanvas.current();
-    if (!canvas || !activeScene) return;
+    if (!activeScene) return;
     try {
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      const img = new Image();
-      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = dataUrl; });
-      const oc = document.createElement('canvas');
-      oc.width = 320; oc.height = 200;
-      const ctx = oc.getContext('2d');
-      if (!ctx) return;
-      const srcAR = img.width / img.height;
-      const dstAR = 320 / 200;
-      let sx = 0, sy = 0, sw = img.width, sh = img.height;
-      if (srcAR > dstAR) { sw = img.height * dstAR; sx = (img.width - sw) / 2; }
-      else { sh = img.width / dstAR; sy = (img.height - sh) / 2; }
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 320, 200);
-      const thumbDataUrl = oc.toDataURL('image/jpeg', 0.85);
-      await window.conchitect.saveThumb(activeScene.slug, thumbDataUrl);
-      updateScene(activeScene.id, { thumbnailMode: 'custom' });
+      const el = document.querySelector('[data-testid="pano-viewer"]');
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const rect = { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+      const ok = await window.conchitect.captureSceneThumbnail(activeScene.slug, rect);
+      if (ok) updateScene(activeScene.id, { thumbnailMode: 'custom' });
     } catch (e) {
       console.warn('[thumb] capture failed:', e);
     }
