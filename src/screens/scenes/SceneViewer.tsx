@@ -21,7 +21,6 @@ type Props = {
   pannellumSetYaw?: React.MutableRefObject<(yaw: number) => void>;
   pannellumSetPitch?: React.MutableRefObject<(pitch: number) => void>;
   pannellumSetFov?: React.MutableRefObject<(fov: number) => void>;
-  pannellumGetCanvas?: React.MutableRefObject<() => HTMLCanvasElement | null>;
 };
 
 function HotspotIcon({ hotspot }: { hotspot: Hotspot }) {
@@ -86,7 +85,6 @@ export function SceneViewer({
   mode, onAddHotspot, northDraft: _northDraft, onNorthDraftChange,
   pannellumGetYaw, pannellumGetPitch, pannellumGetFov,
   pannellumSetYaw, pannellumSetPitch, pannellumSetFov,
-  pannellumGetCanvas,
 }: Props) {
   const { project, activeSceneId, activeHotspotId, setActiveHotspot, setActiveScene, updateHotspot } = useProject();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -270,7 +268,6 @@ export function SceneViewer({
         setYaw={pannellumSetYaw}
         setPitch={pannellumSetPitch}
         setFov={pannellumSetFov}
-        getCanvas={pannellumGetCanvas}
         className={clsx('absolute inset-0', isFlat && 'pointer-events-none')}
         onDoubleClick={(ath, atv) => {
           if (isFlat) return;

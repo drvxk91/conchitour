@@ -50,8 +50,6 @@ export function ScenesScreen() {
   const pannellumSetYaw    = useRef<(yaw: number) => void>(() => {});
   const pannellumSetPitch  = useRef<(pitch: number) => void>(() => {});
   const pannellumSetFov    = useRef<(fov: number) => void>(() => {});
-  const pannellumGetCanvas = useRef<() => HTMLCanvasElement | null>(() => null);
-
   // Entry snapshot for north mode: restore yaw on Cancel
   const northEntryYaw = useRef<number>(0);
 
@@ -227,7 +225,6 @@ export function ScenesScreen() {
           pannellumSetYaw={pannellumSetYaw}
           pannellumSetPitch={pannellumSetPitch}
           pannellumSetFov={pannellumSetFov}
-          pannellumGetCanvas={pannellumGetCanvas}
         />
         {mode === 'north' && activeScene && (activeScene.geo.lat !== 0 || activeScene.geo.lng !== 0)
           ? <NorthRadarMap
