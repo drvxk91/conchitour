@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Project, Scene, Category, UUID, Hotspot } from '@/types';
+import type { Project, Scene, Category, UUID, Hotspot, StaticPage } from '@/types';
 import { newProject, BUILTIN_CATEGORIES } from '@/lib/factory';
+import { DEFAULT_BUILTIN_PAGES } from '@/lib/builtin-pages';
 
 /** Ensure all built-in categories are present (migration for pre-v2 project files). */
 function ensureBuiltins(project: Project): Project {
@@ -8,6 +9,14 @@ function ensureBuiltins(project: Project): Project {
   const missing = BUILTIN_CATEGORIES.filter((b) => !existingIds.has(b.id));
   if (missing.length === 0) return project;
   return { ...project, categories: [...missing, ...project.categories] };
+}
+
+/** Ensure all built-in pages are present and pages array exists. */
+function ensureBuiltinPages(project: Project): Project {
+  const existingIds = new Set((project.pages ?? []).map((p) => p.id));
+  const missing = DEFAULT_BUILTIN_PAGES.filter((p) => !existingIds.has(p.id));
+  if (missing.length === 0 && project.pages != null) return project;
+  return { ...project, pages: [...missing, ...(project.pages ?? [])] };
 }
 
 // ─── history helper ───────────────────────────────────────────────────────────
@@ -62,6 +71,11 @@ interface ProjectStore {
   updateCategory: (id: UUID, patch: Partial<Category>) => void;
   deleteCategory: (id: UUID) => void;
 
+  // Pages
+  addPage: (page: StaticPage) => void;
+  updatePage: (id: string, patch: Partial<StaticPage>) => void;
+  deletePage: (id: string) => void;
+
   // Hotspots
   addHotspot: (sceneId: UUID, hotspot: Hotspot) => void;
   updateHotspot: (sceneId: UUID, hotspotId: UUID, patch: Partial<Hotspot>) => void;
@@ -92,6 +106,7 @@ export type ScreenId =
   | 'project'
   | 'seo'
   | 'languages'
+  | 'pages'
   | 'branding'
   | 'share'
   | 'modules'
@@ -123,7 +138,7 @@ export const useProject = create<ProjectStore>((set) => ({
   clearDirty: () => set({ isDirty: false }),
   setProjectDir: (dir) => set({ projectDir: dir }),
   loadProjectData: (project, projectDir) => {
-    const migrated = ensureBuiltins(project);
+    const migrated = ensureBuiltinPages(ensureBuiltins(project));
     set({
       project: migrated,
       projectDir,
@@ -192,6 +207,32 @@ export const useProject = create<ProjectStore>((set) => ({
       withHistory(s, {
         ...s.project,
         categories: s.project.categories.filter((c) => c.id !== id),
+      })
+    ),
+
+  addPage: (page) =>
+    set((s) =>
+      withHistory(s, {
+        ...s.project,
+        pages: [...(s.project.pages ?? []), page],
+      })
+    ),
+
+  updatePage: (id, patch) =>
+    set((s) =>
+      withHistory(s, {
+        ...s.project,
+        pages: (s.project.pages ?? []).map((p) =>
+          p.id === id ? { ...p, ...patch } : p
+        ),
+      })
+    ),
+
+  deletePage: (id) =>
+    set((s) =>
+      withHistory(s, {
+        ...s.project,
+        pages: (s.project.pages ?? []).filter((p) => p.id !== id),
       })
     ),
 

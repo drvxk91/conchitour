@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import type { Project, Category } from '@/types';
+import { DEFAULT_BUILTIN_PAGES } from './builtin-pages';
 
 export function newProject(): Project {
   return {
@@ -41,6 +42,7 @@ export function newProject(): Project {
       fullscreen: true,
       formsEnabled: false,
     },
+    pages: DEFAULT_BUILTIN_PAGES.map((p) => ({ ...p })),
   };
 }
 
