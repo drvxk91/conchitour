@@ -1100,6 +1100,8 @@ function geoBearing(from: { lat: number; lng: number }, to: { lat: number; lng: 
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
+// Mirrors bearingToAth() in src/lib/geo.ts — duplicated here because main.ts is a
+// separate Node process and cannot import from src/ without bundler changes.
 // ath = ((bearing − heading + 540) % 360) − 180  (canonical formula, range [−180, 180])
 function geoAth(bearing: number, heading: number): number {
   let a = ((bearing - heading + 540) % 360) - 180;
