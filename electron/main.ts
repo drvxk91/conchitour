@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
+import { marked } from 'marked';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1253,6 +1254,143 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
   return xml;
 }
 
+// ── Static page HTML generator ────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generatePageHtml(project: any, page: any, lang: string, bodyHtml: string): string {
+  const meta     = project.meta     || {};
+  const branding = project.branding || {};
+  const allLangs: string[] = project.languages?.available || [lang];
+  const defaultLang: string = project.languages?.default || 'en';
+  const pages: any[] = (project.pages || []).filter((p: any) => p.enabled && p.showInFooter);
+  pages.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+  const primaryColor = branding.primaryColor || '#1a1a1a';
+  const accentColor  = branding.accentColor  || '#3b82f6';
+  const tourTheme    = branding.tourTheme || {};
+  const fontFamily: string = tourTheme.fontFamily === 'serif'
+    ? "'Georgia','Times New Roman',serif"
+    : tourTheme.fontFamily === 'mono'
+    ? "'Courier New',monospace"
+    : "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+
+  const publicUrl    = String(meta.publicationUrl || '').replace(/\/$/, '');
+  const projectTitle = xmlEsc(meta.name || 'Virtual Tour');
+  const pageTitle    = xmlEsc(loc(page.title, lang) || page.slug);
+  const canonicalUrl = publicUrl ? `${publicUrl}/page/${page.slug}/${lang}/` : '';
+
+  const logoPath: string = branding.logoPath || '';
+
+  // Lang switcher links
+  const langLinks = allLangs.map((l: string) => {
+    const isActive = l === lang;
+    const href = `/page/${page.slug}/${l}/`;
+    return isActive
+      ? `<span class="sp-lang-active">${l.toUpperCase()}</span>`
+      : `<a href="${href}" class="sp-lang-link">${l.toUpperCase()}</a>`;
+  }).join('');
+
+  // Footer page links
+  const footerLinks = pages.map((p: any) => {
+    const t = xmlEsc(loc(p.title, lang) || p.slug);
+    const isActive = p.id === page.id;
+    return isActive
+      ? `<span class="sp-footer-active">${t}</span>`
+      : `<a href="/page/${p.slug}/${lang}/" class="sp-footer-link">${t}</a>`;
+  }).join(`<span class="sp-footer-sep">·</span>`);
+
+  // "Back to tour" — links to /:lang/ which server.js redirects to the opening scene
+  const backHref = `/${lang}/`;
+
+  return `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${pageTitle} — ${projectTitle}</title>
+  ${canonicalUrl ? `<link rel="canonical" href="${canonicalUrl}" />` : ''}
+  <meta name="robots" content="index, follow" />
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--primary:${primaryColor};--accent:${accentColor};--radius:8px}
+    body{font-family:${fontFamily};font-size:16px;line-height:1.65;color:#1a1a1a;background:#f8f8f6;min-height:100vh;display:flex;flex-direction:column}
+
+    /* ── Header ── */
+    .sp-header{background:var(--primary);color:#fff;padding:0 24px;display:flex;align-items:center;gap:16px;min-height:56px;flex-shrink:0}
+    .sp-logo{height:32px;width:auto;object-fit:contain;flex-shrink:0}
+    .sp-header-title{font-size:15px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
+    .sp-back{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:rgba(255,255,255,.7);text-decoration:none;white-space:nowrap;flex-shrink:0;padding:6px 12px;border:1px solid rgba(255,255,255,.25);border-radius:6px;transition:all .15s}
+    .sp-back:hover{background:rgba(255,255,255,.12);color:#fff}
+    .sp-lang{margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .sp-lang-link{font-size:11px;color:rgba(255,255,255,.6);text-decoration:none;padding:3px 6px;border-radius:4px;transition:.12s}
+    .sp-lang-link:hover{background:rgba(255,255,255,.15);color:#fff}
+    .sp-lang-active{font-size:11px;color:#fff;font-weight:700;padding:3px 6px;background:rgba(255,255,255,.2);border-radius:4px}
+
+    /* ── Main content ── */
+    .sp-main{flex:1;padding:40px 24px 60px;display:flex;justify-content:center}
+    .sp-article{width:100%;max-width:720px}
+
+    /* ── Prose typography ── */
+    .sp-article h1{font-size:2em;font-weight:700;color:var(--primary);margin-bottom:20px;line-height:1.25}
+    .sp-article h2{font-size:1.35em;font-weight:600;color:var(--primary);margin-top:36px;margin-bottom:12px;padding-bottom:6px;border-bottom:1.5px solid #e5e5e3}
+    .sp-article h3{font-size:1.1em;font-weight:600;margin-top:24px;margin-bottom:8px;color:#2a2a2a}
+    .sp-article p{margin-bottom:14px;color:#333}
+    .sp-article ul,
+    .sp-article ol{margin:0 0 14px 24px;color:#333}
+    .sp-article li{margin-bottom:4px}
+    .sp-article a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+    .sp-article a:hover{opacity:.8}
+    .sp-article strong{font-weight:600;color:#111}
+    .sp-article em{font-style:italic}
+    .sp-article table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:14px}
+    .sp-article th{background:#f0f0ee;padding:8px 12px;text-align:left;font-weight:600;border:1px solid #ddd;font-size:13px}
+    .sp-article td{padding:8px 12px;border:1px solid #ddd;vertical-align:top}
+    .sp-article code{background:#f0f0ee;padding:2px 5px;border-radius:3px;font-size:.88em;font-family:monospace}
+    .sp-article pre{background:#f0f0ee;border-radius:6px;padding:14px 16px;overflow-x:auto;margin-bottom:16px}
+    .sp-article pre code{background:none;padding:0}
+    .sp-article blockquote{border-left:3px solid var(--accent);padding:8px 16px;color:#555;margin-bottom:14px;background:#f8f8f6}
+    .sp-article hr{border:none;border-top:1.5px solid #e5e5e3;margin:28px 0}
+
+    /* ── Footer ── */
+    .sp-footer{background:#fff;border-top:1px solid #e5e5e3;padding:16px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex-shrink:0}
+    .sp-footer-link{font-size:12px;color:#666;text-decoration:none;transition:.12s}
+    .sp-footer-link:hover{color:var(--accent)}
+    .sp-footer-active{font-size:12px;color:var(--accent);font-weight:600}
+    .sp-footer-sep{font-size:12px;color:#ccc;margin:0 2px}
+    .sp-footer-copy{font-size:11px;color:#aaa;margin-left:auto}
+
+    @media(max-width:640px){
+      .sp-header{padding:0 16px;gap:10px}
+      .sp-header-title{font-size:13px}
+      .sp-main{padding:24px 16px 40px}
+      .sp-article h1{font-size:1.5em}
+      .sp-article h2{font-size:1.15em}
+    }
+  </style>
+</head>
+<body>
+  <header class="sp-header">
+    ${logoPath ? `<img src="/media/logo${path.extname(logoPath) || '.png'}" alt="${projectTitle}" class="sp-logo" />` : ''}
+    <span class="sp-header-title">${projectTitle}</span>
+    ${allLangs.length > 1 ? `<div class="sp-lang">${langLinks}</div>` : ''}
+    <a href="${backHref}" class="sp-back">← Back to tour</a>
+  </header>
+
+  <main class="sp-main">
+    <article class="sp-article">
+      ${bodyHtml}
+    </article>
+  </main>
+
+  ${footerLinks || meta.copyright ? `
+  <footer class="sp-footer">
+    ${footerLinks}
+    ${meta.copyright ? `<span class="sp-footer-copy">${xmlEsc(meta.copyright)}</span>` : ''}
+  </footer>` : ''}
+</body>
+</html>`;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function generateTourHtml(project: any, lang: string, startSceneSlug: string | null, tiledSlugs: Set<string>, hasSharePreview = false): string {
@@ -1285,6 +1423,18 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const accentColor: string  = branding.accentColor  || '#3b82f6';
   const copyright = xmlEsc(meta.copyright || '');
   const tourTheme = (branding.tourTheme as { fontFamily?: string; headerBg?: string; panelBg?: string; textColor?: string; radius?: string; fontSize?: number } | undefined) || {};
+
+  // Footer page links
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const footerPages: any[] = ((project.pages || []) as any[])
+    .filter((p: any) => p.enabled && p.showInFooter)
+    .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+  const tourFooterHtml = footerPages.length > 0
+    ? `<div id="tour-footer">${footerPages.map((p: any, i: number) =>
+        (i > 0 ? '<span class="tf-sep">·</span>' : '') +
+        `<a href="/page/${p.slug}/${lang}/">${xmlEsc(loc(p.title, lang) || p.slug)}</a>`
+      ).join('')}</div>`
+    : '';
 
   // Build per-lang scene data for the TOUR JS object (all scenes, current lang strings)
   const scenesData: Record<string, unknown> = {};
@@ -1802,6 +1952,10 @@ ${hsPreviewCss}
     }
     #cookie-accept:hover{filter:brightness(1.1)}
     ${copyright ? `#tour-copyright{position:fixed;bottom:0;right:12px;z-index:45;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;padding-bottom:2px}` : ''}
+    #tour-footer{position:fixed;bottom:0;left:12px;z-index:44;display:flex;align-items:center;gap:6px;padding-bottom:2px;font-size:10px}
+    #tour-footer a{color:rgba(255,255,255,.28);text-decoration:none;transition:.12s}
+    #tour-footer a:hover{color:rgba(255,255,255,.65)}
+    #tour-footer .tf-sep{color:rgba(255,255,255,.15)}
 
     /* ── UI toast ───────────────────────────── */
     #ui-toast{
@@ -2023,6 +2177,7 @@ ${showMap ? `  <div id="map-panel">
   </div>
   ${cookieHtml}
   ${copyright ? `<div id="tour-copyright">${xmlEsc(copyright)}</div>` : ''}
+  ${tourFooterHtml}
   <div id="ui-toast"></div>
 
   <!-- Mobile fullscreen description overlay -->
@@ -2789,6 +2944,29 @@ app.get('/scene/:slug/:lang/', function(req, res, next) {
   next();
 });
 
+// /page/:slug/:lang  (no trailing slash) → add it
+app.get('/page/:slug/:lang', function(req, res, next) {
+  if (!LANGS.includes(req.params.lang)) return next();
+  res.redirect(302, '/page/' + req.params.slug + '/' + req.params.lang + '/');
+});
+
+// /page/:slug/:lang/
+app.get('/page/:slug/:lang/', function(req, res, next) {
+  if (!LANGS.includes(req.params.lang)) return next();
+  var file = path.join(ROOT, 'page', req.params.slug, req.params.lang, 'index.html');
+  if (fs.existsSync(file)) return res.sendFile(file);
+  // Page not available in this lang → try default lang
+  var fb = path.join(ROOT, 'page', req.params.slug, DEFAULT, 'index.html');
+  if (fs.existsSync(fb)) return res.redirect(302, '/page/' + req.params.slug + '/' + DEFAULT + '/');
+  next();
+});
+
+// /page/:slug/ (no lang) → detect language
+app.get('/page/:slug/', function(req, res) {
+  var lang = _detectLang(req);
+  res.redirect(302, '/page/' + req.params.slug + '/' + lang + '/');
+});
+
 // 404 → serve tour root for the default language
 app.use(function(_req, res) {
   var fb = path.join(ROOT, DEFAULT, 'index.html');
@@ -3289,6 +3467,24 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       }
     }
     progress(`HTML pages: ${langs.length} lang(s) × ${scenes.length + 1} pages`, 'ok');
+
+    // ── Static pages (/page/<slug>/<lang>/index.html) ─────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enabledPages: any[] = ((project.pages || []) as any[]).filter((p: any) => p.enabled);
+    const pagesDefaultLang: string = project.languages?.default || 'en';
+    if (enabledPages.length > 0) {
+      for (const page of enabledPages) {
+        for (const lang of langs) {
+          const dir = path.join(outputDir, 'page', page.slug, lang);
+          await fs.mkdir(dir, { recursive: true });
+          const md: string = (page.content?.[lang] || page.content?.[pagesDefaultLang] || '') as string;
+          const bodyHtml = marked.parse(md) as string;
+          const html = generatePageHtml(project, page, lang, bodyHtml);
+          await fs.writeFile(path.join(dir, 'index.html'), html, 'utf8');
+        }
+      }
+      progress(`Static pages: ${enabledPages.length} page(s) × ${langs.length} language(s)`, 'ok');
+    }
 
     // ── Express server ─────────────────────────────────────────────────────
     await fs.writeFile(path.join(outputDir, 'server.js'),    generateServerJs(project), 'utf8');
