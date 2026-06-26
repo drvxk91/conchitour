@@ -196,6 +196,24 @@ export interface ProjectModules {
   mapTourSync?: boolean;
 }
 
+export type BuiltInPageKind = 'privacy' | 'legal' | 'terms' | 'about' | 'contact';
+
+export interface StaticPage {
+  id: string;
+  /** url-safe slug, e.g. 'privacy', 'legal'. Built-in slugs are reserved. */
+  slug: string;
+  /** When false the page is hidden from footer and not compiled. */
+  enabled: boolean;
+  /** Set for the 5 built-in pages — cannot be deleted, only toggled. */
+  builtIn?: BuiltInPageKind;
+  title: Record<string, string>;
+  /** Markdown source, one entry per language code. */
+  content: Record<string, string>;
+  showInFooter: boolean;
+  /** Sort order in the footer link list. */
+  order: number;
+}
+
 export interface Project {
   /** schema version, useful for future migrations */
   schemaVersion: 1;
@@ -217,4 +235,5 @@ export interface Project {
   branding: ProjectBranding;
   share: ProjectShare;
   modules: ProjectModules;
+  pages: StaticPage[];
 }
