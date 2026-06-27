@@ -1,5 +1,5 @@
 /**
- * Audits a Conchitect compile output folder and reports missing or zero-byte files.
+ * Audits a Conchitour compile output folder and reports missing or zero-byte files.
  *
  * Usage:
  *   npx tsx scripts/audit-compile-output.ts "C:\path\to\output"

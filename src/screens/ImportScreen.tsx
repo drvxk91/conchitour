@@ -24,7 +24,7 @@ export function ImportScreen() {
 
     setProcessing(true, 'Reading EXIF...');
     try {
-      const meta = await window.conchitect.readPhotosMeta(filePaths);
+      const meta = await window.conchitour.readPhotosMeta(filePaths);
 
       const existingSlugs = new Set(project.scenes.map((s) => s.slug));
       const scenes = meta.map((m) => {
@@ -41,7 +41,7 @@ export function ImportScreen() {
       setProcessing(true, 'Generating tiles...');
       for (const scene of scenes) {
         addScene(scene);
-        await window.conchitect.generateTiles(scene.media.sourcePath);
+        await window.conchitour.generateTiles(scene.media.sourcePath);
         updateScene(scene.id, { media: { ...scene.media, tilesGenerated: true } });
       }
 
@@ -62,13 +62,13 @@ export function ImportScreen() {
     // Use webUtils.getPathForFile — the correct Electron 32+ API when
     // contextIsolation is enabled (file.path is not available in that context).
     const paths = files
-      .map((f) => window.conchitect.getPathForFile(f))
+      .map((f) => window.conchitour.getPathForFile(f))
       .filter((p) => p !== '');
     if (paths.length) handleFiles(paths);
   }
 
   async function handleChooseFiles() {
-    const paths = await window.conchitect.openFiles();
+    const paths = await window.conchitour.openFiles();
     if (paths.length) handleFiles(paths);
   }
 

@@ -8,7 +8,7 @@ import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { runStaticAudit } from '@/lib/audit/static-checks';
-import type { CompileResult, ConchitectSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
+import type { CompileResult, ConchitourSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
 
 function parseLicenseCode(code: string): LicenseInfo | null {
   const result: LicenseInfo = {};
@@ -81,7 +81,7 @@ function LicenseInfoCard({ info, preview = false }: { info: LicenseInfo; preview
 export function CompileScreen() {
   const { project, setIsCompiling, clearDirty, setActiveScreen } = useProject();
 
-  const [settings, setSettings]             = useState<ConchitectSettings | null>(null);
+  const [settings, setSettings]             = useState<ConchitourSettings | null>(null);
   const [krpanoPathDraft, setKrpanoPathDraft] = useState('');
   const [validation, setValidation]         = useState<KrpanoValidationResult | null>(null);
   const [validating, setValidating]         = useState(false);
@@ -106,15 +106,15 @@ export function CompileScreen() {
   const parsedLicense = useMemo(() => parseLicenseCode(licenseCode), [licenseCode]);
 
   useEffect(() => {
-    window.conchitect.settingsGet().then((s) => {
+    window.conchitour.settingsGet().then((s) => {
       setSettings(s);
       setKrpanoPathDraft(s.krpanoPath);
-      window.conchitect.getDefaultOutputDir().then((d) => { if (d) setOutputDir(d); });
-      window.conchitect.krpanoValidate(s.krpanoPath).then(setValidation);
-      if (s.krpanoPath) window.conchitect.krpanoLicenseStatus(s.krpanoPath).then(setLicenseStatus);
+      window.conchitour.getDefaultOutputDir().then((d) => { if (d) setOutputDir(d); });
+      window.conchitour.krpanoValidate(s.krpanoPath).then(setValidation);
+      if (s.krpanoPath) window.conchitour.krpanoLicenseStatus(s.krpanoPath).then(setLicenseStatus);
     });
 
-    window.conchitect.compileGetState().then((state) => {
+    window.conchitour.compileGetState().then((state) => {
       if (!state) return;
       setLog(state.log.map((e) => ({ msg: e.msg, status: e.status as LogEntry['status'] })));
       setRunning(state.running);
@@ -132,7 +132,7 @@ export function CompileScreen() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const unsub = window.conchitect.onCompileDone((res) => {
+    const unsub = window.conchitour.onCompileDone((res) => {
       setRunning(false);
       setIsCompiling(false);
       setResult(res);
@@ -152,7 +152,7 @@ export function CompileScreen() {
   }, [result]);
 
   useEffect(() => {
-    const unsub = window.conchitect.onCompileProgress((msg, status) => {
+    const unsub = window.conchitour.onCompileProgress((msg, status) => {
       setLog((prev) => [...prev, { msg, status: status as LogEntry['status'] }]);
       const step = msgToStep(msg);
       if (step) {
@@ -167,13 +167,13 @@ export function CompileScreen() {
   }, []);
 
   useEffect(() => {
-    const unsub = window.conchitect.onTileProgress((data) => { setTileProgress(data); });
+    const unsub = window.conchitour.onTileProgress((data) => { setTileProgress(data); });
     return unsub;
   }, []);
 
-  const patchSettings = useCallback((patch: Partial<ConchitectSettings>) => {
+  const patchSettings = useCallback((patch: Partial<ConchitourSettings>) => {
     setSettings((prev) => prev ? { ...prev, ...patch } : prev);
-    window.conchitect.settingsSet(patch);
+    window.conchitour.settingsSet(patch);
   }, []);
 
   const handleValidate = useCallback(async () => {
@@ -181,9 +181,9 @@ export function CompileScreen() {
     setValidating(true);
     setValidation(null);
     patchSettings({ krpanoPath: krpanoPathDraft });
-    const r = await window.conchitect.krpanoValidate(krpanoPathDraft);
+    const r = await window.conchitour.krpanoValidate(krpanoPathDraft);
     setValidation(r);
-    const ls = await window.conchitect.krpanoLicenseStatus(krpanoPathDraft);
+    const ls = await window.conchitour.krpanoLicenseStatus(krpanoPathDraft);
     setLicenseStatus(ls);
     setValidating(false);
   }, [krpanoPathDraft, patchSettings]);
@@ -200,10 +200,10 @@ export function CompileScreen() {
     setActivating(true);
     setLicenseResult(null);
     try {
-      const res = await window.conchitect.krpanoRegister(settings.krpanoPath, licenseCode);
+      const res = await window.conchitour.krpanoRegister(settings.krpanoPath, licenseCode);
       // Always refresh license file status regardless of exit code —
       // krpanotools may return non-zero even on success ("Code registered.")
-      const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
+      const ls = await window.conchitour.krpanoLicenseStatus(settings.krpanoPath);
       setLicenseStatus(ls);
       const effective = { ...res, ok: res.ok || ls.present };
       setLicenseResult(effective);
@@ -220,7 +220,7 @@ export function CompileScreen() {
   }, [settings?.krpanoPath, licenseCode, patchSettings]);
 
   const handlePickFolder = useCallback(async () => {
-    const dir = await window.conchitect.showFolderDialog();
+    const dir = await window.conchitour.showFolderDialog();
     if (dir) { setOutputDir(dir); patchSettings({ lastOutputDir: dir }); }
   }, [patchSettings]);
 
@@ -233,10 +233,10 @@ export function CompileScreen() {
     setRunning(true);
     setIsCompiling(true);
     try {
-      const saved = await window.conchitect.saveProject(project);
+      const saved = await window.conchitour.saveProject(project);
       if (saved) clearDirty();
       const projectData = forceRegenTiles ? { ...project, __forceRegenTiles: true } : project;
-      const res = await window.conchitect.compileRun(projectData, outputDir);
+      const res = await window.conchitour.compileRun(projectData, outputDir);
       setResult(res);
     } finally {
       setRunning(false);
@@ -244,7 +244,7 @@ export function CompileScreen() {
     }
   }, [outputDir, running, project, setIsCompiling, forceRegenTiles]);
 
-  const handleCancel = useCallback(() => { window.conchitect.compileCancel(); }, []);
+  const handleCancel = useCallback(() => { window.conchitour.compileCancel(); }, []);
 
   const handleCopyPath = useCallback(() => {
     if (!result?.outputDir) return;
@@ -566,14 +566,14 @@ export function CompileScreen() {
                   {result.previewUrl && (
                     <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded-md px-3 py-2">
                       <span className="text-xs text-emerald-700 font-mono flex-1 truncate">{result.previewUrl}</span>
-                      <button onClick={() => window.conchitect.openUrl(result.previewUrl!)} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 shrink-0">
+                      <button onClick={() => window.conchitour.openUrl(result.previewUrl!)} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 shrink-0">
                         <ExternalLink size={11} />
                         Open
                       </button>
                     </div>
                   )}
                   <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => window.conchitect.openFolder(result.outputDir!)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700">
+                    <button onClick={() => window.conchitour.openFolder(result.outputDir!)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700">
                       <ExternalLink size={12} />
                       Open folder
                     </button>

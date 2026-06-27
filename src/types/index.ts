@@ -88,7 +88,7 @@ export interface Category {
 export interface SceneMedia {
   /** Absolute path to the source image (resolved at runtime). */
   sourcePath: string;
-  /** Relative path inside the .conchitect/sources/ folder. Set when project is saved. */
+  /** Relative path inside the .conchitour/sources/ folder. Set when project is saved. */
   sourceFile?: string;
   width: number;
   height: number;

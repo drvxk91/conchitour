@@ -105,7 +105,7 @@ export function ScenesScreen() {
       if (!el) return;
       const r = el.getBoundingClientRect();
       const rect = { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
-      const ok = await window.conchitect.captureSceneThumbnail(activeScene.slug, rect);
+      const ok = await window.conchitour.captureSceneThumbnail(activeScene.slug, rect);
       if (ok) updateScene(activeScene.id, { thumbnailMode: 'custom' });
     } catch (e) {
       console.warn('[thumb] capture failed:', e);
@@ -195,7 +195,7 @@ export function ScenesScreen() {
         onCaptureThumbnail={handleCaptureThumbnail}
         onPreview={() => {
           if (activeScene) {
-            window.conchitect.openPreview(
+            window.conchitour.openPreview(
               activeScene.media.sourcePath,
               activeScene.heading,
               { scenes: project.scenes, activeSceneId: activeScene.id }

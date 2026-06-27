@@ -2,7 +2,7 @@ let _port: number | null = null;
 
 function getPort(): number {
   if (_port === null) {
-    _port = window.conchitect.getFileServerPort();
+    _port = window.conchitour.getFileServerPort();
   }
   return _port;
 }

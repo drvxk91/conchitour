@@ -120,16 +120,16 @@ export function AIScreen() {
   async function autoSaveModules(patch: Parameters<typeof updateModules>[0]) {
     updateModules(patch);
     try {
-      const dir = await window.conchitect.getProjectDir();
-      if (dir) await window.conchitect.saveProject(useProject.getState().project);
+      const dir = await window.conchitour.getProjectDir();
+      if (dir) await window.conchitour.saveProject(useProject.getState().project);
     } catch { /* non-fatal */ }
   }
 
   async function autoSaveAiContext(patch: Partial<AiContext>) {
     updateAiContext(patch);
     try {
-      const dir = await window.conchitect.getProjectDir();
-      if (dir) await window.conchitect.saveProject(useProject.getState().project);
+      const dir = await window.conchitour.getProjectDir();
+      if (dir) await window.conchitour.saveProject(useProject.getState().project);
     } catch { /* non-fatal */ }
   }
 
@@ -207,7 +207,7 @@ export function AIScreen() {
                     </div>
                     <a
                       href="#"
-                      onClick={(e) => { e.preventDefault(); window.conchitect.openUrl('https://console.anthropic.com'); }}
+                      onClick={(e) => { e.preventDefault(); window.conchitour.openUrl('https://console.anthropic.com'); }}
                       className="text-[11px] text-accent underline"
                     >
                       Get key ↗
@@ -256,7 +256,7 @@ export function AIScreen() {
                     </div>
                     <a
                       href="#"
-                      onClick={(e) => { e.preventDefault(); window.conchitect.openUrl('https://platform.openai.com/api-keys'); }}
+                      onClick={(e) => { e.preventDefault(); window.conchitour.openUrl('https://platform.openai.com/api-keys'); }}
                       className="text-[11px] text-accent underline"
                     >
                       Get key ↗

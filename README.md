@@ -1,4 +1,4 @@
-# Conchitect
+# Conchitour
 
 Desktop editor for professional 360° virtual tours.
 **Architect your virtual tours.**

@@ -362,7 +362,7 @@ export async function generateContent(
     if (scene.media?.sourcePath) {
       onEvent({ type: 'status', message: `Compressing image for ${scene.slug}…` });
       try {
-        const res = await window.conchitect.compressForAi({
+        const res = await window.conchitour.compressForAi({
           sourcePath: scene.media.sourcePath,
           targetWidth: IMAGE_WIDTHS[options.imageQuality],
           quality: 60,

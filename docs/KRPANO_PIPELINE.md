@@ -1,4 +1,4 @@
-# Conchitect — krpano Compile Pipeline
+# Conchitour — krpano Compile Pipeline
 
 ## Overview
 
@@ -6,7 +6,7 @@ The compile pipeline runs entirely in the Electron **main process** (`electron/m
 
 ## Prerequisites
 
-The user provides their own licensed copy of krpano 1.23+. Conchitect needs:
+The user provides their own licensed copy of krpano 1.23+. Conchitour needs:
 
 | File | Role |
 |------|------|
@@ -15,7 +15,7 @@ The user provides their own licensed copy of krpano 1.23+. Conchitect needs:
 | `skin/vtourskin.xml` + `skin/` | Default vtour skin assets |
 | `krpanolicense.xml` *(optional)* | Removes the "Not licensed" watermark |
 
-The krpano installation path is stored in `conchitect-settings.json` (Electron `userData`). The `krpano:validate` IPC checks for the four required files.
+The krpano installation path is stored in `Conchitour-settings.json` (Electron `userData`). The `krpano:validate` IPC checks for the four required files.
 
 ## Pipeline steps
 
@@ -35,7 +35,7 @@ The `compile:run` IPC streams progress events (`compile:progress`) to the render
 
 ## Tile generation (`makepano`)
 
-When `settings.useKrpanoTiles = true`, Conchitect calls:
+When `settings.useKrpanoTiles = true`, Conchitour calls:
 
 ```
 krpanotools.exe makepano <scene.jpg>
@@ -45,10 +45,10 @@ run from the output directory so krpano writes `panos/<name>.tiles/` there.
 
 ### Cache
 
-Tiles are expensive (~1–3 min per scene). Conchitect caches them under the project folder:
+Tiles are expensive (~1–3 min per scene). Conchitour caches them under the project folder:
 
 ```
-<name>.conchitect/
+<name>.conchitour/
   cache/
     tiles/
       <scene-slug>/
@@ -83,7 +83,7 @@ On each compile:
 
 ### Hotspot types in XML
 
-| Conchitect type | krpano representation |
+| Conchitour type | krpano representation |
 |---|---|
 | `link` | `<hotspot>` with `onclick="loadscene(scene_<targetSlug>,...)"` |
 | `text` | `<hotspot>` with tooltip skin and `title`/`body` attributes |

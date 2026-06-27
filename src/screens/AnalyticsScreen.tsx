@@ -83,7 +83,7 @@ export function AnalyticsScreen() {
   }
 
   function openUrl(url: string) {
-    window.conchitect.openUrl(url);
+    window.conchitour.openUrl(url);
   }
 
   async function handleTest() {
@@ -109,7 +109,7 @@ export function AnalyticsScreen() {
   }
 
   function copySnippet() {
-    const snippet = `gtag('event', 'test_ping', { source: 'conchitect_verify' });\nconsole.log('GA4 ID:', '${cfg.measurementId}');`;
+    const snippet = `gtag('event', 'test_ping', { source: 'conchitour_verify' });\nconsole.log('GA4 ID:', '${cfg.measurementId}');`;
     navigator.clipboard.writeText(snippet).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -318,7 +318,7 @@ export function AnalyticsScreen() {
               </button>
             </div>
             <div className="bg-paper-strong rounded-lg px-3 py-2 font-mono text-xs text-ink-soft whitespace-pre-wrap">
-              {`gtag('event', 'test_ping', { source: 'conchitect_verify' });\nconsole.log('GA4 ID:', '${cfg.measurementId}');`}
+              {`gtag('event', 'test_ping', { source: 'conchitour_verify' });\nconsole.log('GA4 ID:', '${cfg.measurementId}');`}
             </div>
             <p className="text-[11px] text-ink-faded">
               Run in the browser console after compiling. Check{' '}

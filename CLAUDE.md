@@ -1,10 +1,10 @@
-# CLAUDE.md — Conchitect-app
+# CLAUDE.md — Conchitour-app
 
 Read this file before any modification. It is the project's source of truth.
 
 ## What this project is
 
-Conchitect is a **desktop application** (Electron + React + TypeScript) for **professional 360° virtual tour authoring**, sold as a one-shot license (no SaaS, no subscription). The user drags photos in, edits scenes, places hotspots, then clicks **Compile** — and gets a **static folder** to upload anywhere (OVH, Netlify, GitHub Pages, S3).
+Conchitour is a **desktop application** (Electron + React + TypeScript) for **professional 360° virtual tour authoring**, sold as a one-shot license (no SaaS, no subscription). The user drags photos in, edits scenes, places hotspots, then clicks **Compile** — and gets a **static folder** to upload anywhere (OVH, Netlify, GitHub Pages, S3).
 
 Output viewer: **krpano 1.23+** (the user provides their own license). Quality target: **dubai360.com**.
 
@@ -27,7 +27,7 @@ Tagline: *Architect your virtual tours.*
 ## Folder structure
 
 ```
-Conchitect-app/
+Conchitour-app/
 ├── electron/           main + preload (Node)
 ├── src/
 │   ├── components/     reusable UI components
@@ -73,7 +73,7 @@ Read it before touching anything. Every field has a reason. Key invariants:
 | 14 | Content | `ContentScreen.tsx` | Inline title/description grid + AI batch generation |
 | 15 | Compile | `CompileScreen.tsx` | Static site generator |
 
-**Screen 2 (Scenes) is where users spend 80% of their time.** It deserves the most polish. See `conchitect-scene-editor-v2.html` mockup for the target layout.
+**Screen 2 (Scenes) is where users spend 80% of their time.** It deserves the most polish. See `Conchitour-scene-editor-v2.html` mockup for the target layout.
 
 ## Implementation roadmap (suggested sprint order)
 

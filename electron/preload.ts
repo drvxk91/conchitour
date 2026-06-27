@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
-contextBridge.exposeInMainWorld('conchitect', {
+contextBridge.exposeInMainWorld('conchitour', {
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
   // Project lifecycle
   newProject: (parentFolder: string, name: string): Promise<{ projectDir: string }> =>
@@ -37,8 +37,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   // Synchronous: returns the port of the localhost file server started in main.
   getFileServerPort: () => ipcRenderer.sendSync('file-server:port') as number,
   // Settings
-  settingsGet: (): Promise<ConchitectSettings> => ipcRenderer.invoke('settings:get'),
-  settingsSet: (patch: Partial<ConchitectSettings>): Promise<boolean> => ipcRenderer.invoke('settings:set', patch),
+  settingsGet: (): Promise<ConchitourSettings> => ipcRenderer.invoke('settings:get'),
+  settingsSet: (patch: Partial<ConchitourSettings>): Promise<boolean> => ipcRenderer.invoke('settings:set', patch),
   krpanoValidate: (krpanoPath: string): Promise<KrpanoValidationResult> => ipcRenderer.invoke('krpano:validate', krpanoPath),
   krpanoLicenseStatus: (krpanoPath: string): Promise<KrpanoLicenseStatus> => ipcRenderer.invoke('krpano:license-status', krpanoPath),
   krpanoRegister: (krpanoPath: string, code: string): Promise<KrpanoRegisterResult> => ipcRenderer.invoke('krpano:register', krpanoPath, code),
@@ -140,7 +140,7 @@ export interface LicenseInfo {
   validUntil?: string;
 }
 
-export interface ConchitectSettings {
+export interface ConchitourSettings {
   krpanoPath: string;
   includeLicense: boolean;
   includeTestServer: boolean;
@@ -226,7 +226,7 @@ export interface ProjectOpenError {
 
 declare global {
   interface Window {
-    conchitect: {
+    conchitour: {
       openFiles: () => Promise<string[]>;
       // Project lifecycle
       newProject: (parentFolder: string, name: string) => Promise<{ projectDir: string }>;
@@ -248,8 +248,8 @@ declare global {
       gitCommit: (projectDir: string, message: string) => Promise<GitCommitResult>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
-      settingsGet: () => Promise<ConchitectSettings>;
-      settingsSet: (patch: Partial<ConchitectSettings>) => Promise<boolean>;
+      settingsGet: () => Promise<ConchitourSettings>;
+      settingsSet: (patch: Partial<ConchitourSettings>) => Promise<boolean>;
       krpanoValidate: (krpanoPath: string) => Promise<KrpanoValidationResult>;
       krpanoLicenseStatus: (krpanoPath: string) => Promise<KrpanoLicenseStatus>;
       krpanoRegister: (krpanoPath: string, code: string) => Promise<KrpanoRegisterResult>;

@@ -25,7 +25,7 @@ function FileField({ label, hint, value, accept, onPick, onClear }: {
   async function handleDrop(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    onPick(window.conchitect.getPathForFile(file));
+    onPick(window.conchitour.getPathForFile(file));
   }
   return (
     <div className="space-y-1">

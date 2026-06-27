@@ -101,10 +101,10 @@ export function GenerateModal({
     // Auto-backup
     if (autoBackup) {
       try {
-        const projectDir = await window.conchitect.getProjectDir();
+        const projectDir = await window.conchitour.getProjectDir();
         if (projectDir) {
           setStatus('Creating backup…');
-          const backup = await window.conchitect.excelBackup(project, projectDir);
+          const backup = await window.conchitour.excelBackup(project, projectDir);
           if (backup.ok) {
             const kb = Math.round((backup.bytes ?? 0) / 1024);
             onToast(`Backup saved (${kb} KB)${backup.cleaned ? ` · ${backup.cleaned} old backup(s) removed` : ''}`);

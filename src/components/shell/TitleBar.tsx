@@ -4,11 +4,11 @@ import { Save } from 'lucide-react';
 export function TitleBar() {
   const { project, isDirty, projectDir, clearDirty } = useProject();
   const projectName = project.meta.name || 'Untitled';
-  const folderName = projectDir ? projectDir.split(/[\\/]/).pop()?.replace('.conchitect', '') : null;
+  const folderName = projectDir ? projectDir.split(/[\\/]/).pop()?.replace('.conchitour', '') : null;
 
   async function handleSave() {
     try {
-      await window.conchitect.saveProject(project);
+      await window.conchitour.saveProject(project);
       clearDirty();
     } catch { /* handled in App.tsx menu listener */ }
   }

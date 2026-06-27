@@ -1,3 +1,5 @@
+> **Note:** This project was renamed from "Conchitect" to "Conchitour" on 2026-06-27. Sprint names below predate the rename and use the old name for historical accuracy. All current code uses "Conchitour".
+
 # Session Report — Sprints D, E, F, G
 
 ## Summary

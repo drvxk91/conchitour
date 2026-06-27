@@ -168,11 +168,11 @@ test.describe('Import screen — drag & drop', () => {
     await expect(page.getByTestId('import-dropzone')).toHaveClass(/border-cat-hotel/, { timeout: 1000 });
   });
 
-  test('getPathForFile is exposed on window.conchitect (Electron 32+ drag path API)', async () => {
+  test('getPathForFile is exposed on window.conchitour (Electron 32+ drag path API)', async () => {
     // webUtils.getPathForFile() is the Electron 32+ replacement for file.path.
     // We verify it's exposed via the preload rather than running an OS-level drop
     // (synthesized File objects return '' from getPathForFile by design).
-    const type = await page.evaluate(() => typeof (window as Window & { conchitect: { getPathForFile: unknown } }).conchitect.getPathForFile);
+    const type = await page.evaluate(() => typeof (window as Window & { conchitour: { getPathForFile: unknown } }).Conchitour.getPathForFile);
     expect(type).toBe('function');
   });
 

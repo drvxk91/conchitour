@@ -24,11 +24,11 @@ export function SceneSidebar() {
   }, [project.scenes]);
 
   async function handleAddScene() {
-    const paths = await window.conchitect.openFiles();
+    const paths = await window.conchitour.openFiles();
     if (!paths.length) return;
     setProcessing(true, 'Reading EXIF...');
     try {
-      const meta = await window.conchitect.readPhotosMeta(paths);
+      const meta = await window.conchitour.readPhotosMeta(paths);
       const existingSlugs = new Set(project.scenes.map((s) => s.slug));
       setProcessing(true, 'Generating tiles...');
       for (const m of meta) {
@@ -37,7 +37,7 @@ export function SceneSidebar() {
         }, existingSlugs);
         existingSlugs.add(scene.slug);
         addScene(scene);
-        await window.conchitect.generateTiles(scene.media.sourcePath);
+        await window.conchitour.generateTiles(scene.media.sourcePath);
         updateScene(scene.id, { media: { ...scene.media, tilesGenerated: true } });
       }
       setProcessing(false, 'Done');

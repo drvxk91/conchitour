@@ -330,7 +330,7 @@ export function CategoriesScreen() {
 
   async function handleExportExcel() {
     try {
-      const result = await window.conchitect.exportExcel(project);
+      const result = await window.conchitour.exportExcel(project);
       if (result.canceled) return;
       if (result.error) showToast('Export failed: ' + result.error);
       else showToast('Exported ✓ ' + result.path);
@@ -341,7 +341,7 @@ export function CategoriesScreen() {
 
   async function handleDownloadTemplate() {
     try {
-      const result = await window.conchitect.downloadExcelTemplate(project);
+      const result = await window.conchitour.downloadExcelTemplate(project);
       if (result.canceled) return;
       if (result.error) showToast('Template error: ' + result.error);
       else showToast('Template saved ✓ ' + result.path);
@@ -351,7 +351,7 @@ export function CategoriesScreen() {
   }
 
   async function handleImportExcel() {
-    const result: ExcelImportResult = await window.conchitect.importExcel(project);
+    const result: ExcelImportResult = await window.conchitour.importExcel(project);
     if (result.canceled) return;
 
     // Apply scene patches to store

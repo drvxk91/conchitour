@@ -309,14 +309,14 @@ export function ContentScreen() {
   }, [filteredScenes, selected]);
 
   async function handleExport() {
-    const result = await window.conchitect.exportExcelStyled(project);
+    const result = await window.conchitour.exportExcelStyled(project);
     if (!result.canceled && result.path) showToast(`Exported to ${result.path.split('\\').pop()}`);
     else if (result.error) showToast(`Export failed: ${result.error}`);
   }
 
   async function handleImport() {
     let result;
-    try { result = await window.conchitect.importExcel(project); }
+    try { result = await window.conchitour.importExcel(project); }
     catch (err) { showToast(`Import error: ${err instanceof Error ? err.message : String(err)}`); return; }
     if (result.canceled) return;
     if (result.error) { showToast(result.error); return; }
@@ -334,7 +334,7 @@ export function ContentScreen() {
     const summary = `${accepted.length} change${accepted.length !== 1 ? 's' : ''} imported`;
     showToast(summary);
     showUndoBanner(summary);
-    if (projectDir) window.conchitect.gitCommit(projectDir, `Excel import: ${summary}`).catch(() => {});
+    if (projectDir) window.conchitour.gitCommit(projectDir, `Excel import: ${summary}`).catch(() => {});
   }
 
   function handleUndoImport() {

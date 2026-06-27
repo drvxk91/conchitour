@@ -31,7 +31,7 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
 
   // Fetch preview data from main process once
   useEffect(() => {
-    window.conchitect.getPreviewData().then((raw) => {
+    window.conchitour.getPreviewData().then((raw) => {
       if (raw && typeof raw === 'object' && 'scenes' in raw) {
         const data = raw as PreviewData;
         setPreviewData(data);
@@ -189,7 +189,7 @@ export default function App() {
 
   const handleSave = useCallback(async () => {
     try {
-      await window.conchitect.saveProject(project);
+      await window.conchitour.saveProject(project);
       clearDirty();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -202,7 +202,7 @@ export default function App() {
   }, [project, clearDirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveAs = useCallback(async () => {
-    const dir = await window.conchitect.saveProjectAs(project);
+    const dir = await window.conchitour.saveProjectAs(project);
     if (dir) {
       setProjectDir(dir);
       clearDirty();
@@ -212,28 +212,28 @@ export default function App() {
   const handleNewProject = useCallback(async () => {
     const name = window.prompt('Project name:', project.meta.name || 'My Tour');
     if (!name) return;
-    const folder = await window.conchitect.showFolderDialog();
+    const folder = await window.conchitour.showFolderDialog();
     if (!folder) return;
-    const result = await window.conchitect.newProject(folder, name);
+    const result = await window.conchitour.newProject(folder, name);
     setProjectDir(result.projectDir);
     clearDirty();
   }, [project.meta.name, clearDirty, setProjectDir]);
 
   const handleOpenProject = useCallback(async () => {
-    const result = await window.conchitect.openProject();
+    const result = await window.conchitour.openProject();
     if (!result) return;
     if ('error' in result) { alert(result.error); return; }
     loadProjectData(result.project as Project, result.projectDir);
   }, [loadProjectData]);
 
-  // Ctrl+S / menu actions (guard: conchitect may be undefined if preload failed)
+  // Ctrl+S / menu actions (guard: Conchitour may be undefined if preload failed)
   useEffect(() => {
-    if (!window.conchitect?.onMenuAction) return;
+    if (!window.conchitour?.onMenuAction) return;
     const unsubs = [
-      window.conchitect.onMenuAction('save',         handleSave),
-      window.conchitect.onMenuAction('save-as',      handleSaveAs),
-      window.conchitect.onMenuAction('new-project',  handleNewProject),
-      window.conchitect.onMenuAction('open-project', handleOpenProject),
+      window.conchitour.onMenuAction('save',         handleSave),
+      window.conchitour.onMenuAction('save-as',      handleSaveAs),
+      window.conchitour.onMenuAction('new-project',  handleNewProject),
+      window.conchitour.onMenuAction('open-project', handleOpenProject),
     ];
     return () => unsubs.forEach((u) => u());
   }, [handleSave, handleSaveAs, handleNewProject, handleOpenProject]);

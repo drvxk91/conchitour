@@ -17,17 +17,17 @@ export function WelcomeScreen() {
   const confirmNew = useCallback(async () => {
     const name = nameValue.trim();
     if (!name) return;
-    const folder = await window.conchitect.showProjectFolderDialog();
+    const folder = await window.conchitour.showProjectFolderDialog();
     if (!folder) return;
     setNaming(false);
-    const result = await window.conchitect.newProject(folder, name);
+    const result = await window.conchitour.newProject(folder, name);
     setProjectDir(result.projectDir);
     clearDirty();
     setActiveScreen('import');
   }, [nameValue, setProjectDir, clearDirty, setActiveScreen]);
 
   const handleOpen = useCallback(async () => {
-    const result = await window.conchitect.openProject();
+    const result = await window.conchitour.openProject();
     if (!result) return;
     if ('error' in result) { alert(result.error); return; }
     loadProjectData(result.project as Project, result.projectDir);
@@ -88,7 +88,7 @@ export function WelcomeScreen() {
             <FolderOpen size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
             <div className="text-center">
               <div className="text-sm font-medium text-ink-base">Open project</div>
-              <div className="text-xs text-ink-faded mt-0.5">Load a .conchitect file</div>
+              <div className="text-xs text-ink-faded mt-0.5">Load a .conchitour file</div>
             </div>
           </button>
         </div>

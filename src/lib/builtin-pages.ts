@@ -428,7 +428,7 @@ Des questions ? Contactez-nous à **{{EDITOR_EMAIL}}**.
 ## Credits
 
 - **Photography & production**: {{EDITOR_NAME}}
-- **Virtual tour platform**: [Conchitect](https://conchitect.com)
+- **Virtual tour platform**: [Conchitour](https://Conchitour.com)
 - **Viewer technology**: krpano
 
 ## Contact
@@ -444,7 +444,7 @@ For any enquiry about this tour, contact us at **{{EDITOR_EMAIL}}**.
 ## Crédits
 
 - **Photographie & production** : {{EDITOR_NAME}}
-- **Plateforme de visite virtuelle** : [Conchitect](https://conchitect.com)
+- **Plateforme de visite virtuelle** : [Conchitour](https://Conchitour.com)
 - **Technologie de visualisation** : krpano
 
 ## Contact
