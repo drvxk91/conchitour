@@ -12,6 +12,8 @@ import {
   generateContent, estimateCost,
   type GenerateOptions, type SceneContentResult, type ContentStreamEvent,
 } from '@/lib/ai-content';
+import { resolveAiProvider } from '@/lib/ai-resolve';
+import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
 import { DiffPreviewModal } from './DiffPreviewModal';
 
 interface GenerateModalProps {
@@ -21,15 +23,19 @@ interface GenerateModalProps {
   onClose: () => void;
   onApply: (patches: Record<string, Partial<Scene>>) => void;
   onToast: (msg: string) => void;
+  onRecordUsage?: (tokensIn: number, tokensOut: number, modelId: string, provider: 'anthropic' | 'openai') => void;
 }
 
 export function GenerateModal({
-  project, selectedSceneIds, defaultLang, onClose, onApply, onToast,
+  project, selectedSceneIds, defaultLang, onClose, onApply, onToast, onRecordUsage,
 }: GenerateModalProps) {
-  const provider = project.modules?.aiProvider ?? 'claude';
-  const apiKey = provider === 'gpt'
-    ? (project.modules?.openaiApiKey ?? '')
-    : (project.modules?.anthropicApiKey ?? '');
+  const resolved = resolveAiProvider(project.modules ?? {});
+  const provider = resolved?.provider ?? 'claude';
+  const apiKey = resolved?.apiKey ?? '';
+  const modelId = resolvedModelId(
+    provider,
+    provider === 'gpt' ? project.modules?.openaiModel : project.modules?.claudeModel,
+  );
   const langs = project.languages.available ?? ['en'];
   const aiCtx = project.aiContext;
 
@@ -137,11 +143,14 @@ export function GenerateModal({
     };
 
     try {
-      const { results: res } = await generateContent(
+      const { results: res, tokensIn, tokensOut } = await generateContent(
         project,
-        { provider, anthropic: project.modules?.anthropicApiKey, openai: project.modules?.openaiApiKey },
+        { provider, anthropic: project.modules?.anthropicApiKey, openai: project.modules?.openaiApiKey, modelId },
         options, handleEvent, ctrl.signal,
       );
+      if (onRecordUsage) {
+        onRecordUsage(tokensIn, tokensOut, modelId, provider === 'gpt' ? 'openai' : 'anthropic');
+      }
       setResults(res);
       setShowDiff(true);
     } catch (err) {
@@ -216,7 +225,7 @@ export function GenerateModal({
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-line shrink-0">
           <Sparkles size={16} className="text-purple-500" />
-          <span className="text-sm font-semibold text-ink flex-1">Generate Content with Claude</span>
+          <span className="text-sm font-semibold text-ink flex-1">Generate Content with AI</span>
           <button onClick={onClose} className="text-ink-faded hover:text-ink transition-colors">
             <X size={16} />
           </button>
@@ -225,10 +234,10 @@ export function GenerateModal({
         {/* ── Body ───────────────────────────────────────────────────────── */}
         <div className="overflow-y-auto flex-1 p-5 space-y-5">
 
-          {!anthropicKey && (
+          {!apiKey && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700 flex items-center gap-2">
               <AlertCircle size={13} className="shrink-0" />
-              Add your Anthropic API key in <strong>Modules → AI Audit</strong> to enable generation.
+              No API key configured — add your Claude or GPT key in the <strong>AI</strong> screen to enable generation.
             </div>
           )}
 

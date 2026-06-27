@@ -8,6 +8,8 @@ import { useProject, type ScreenId } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { runStaticAudit } from '@/lib/audit/static-checks';
 import { runAiAuditStreaming, type AuditStreamEvent } from '@/lib/audit/ai-checks';
+import { resolveAiProvider } from '@/lib/ai-resolve';
+import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
 import type { AuditIssue, AuditReport, AuditSeverity, AuditCategory } from '@/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,10 +72,12 @@ interface StreamingPaneProps {
   streamText: string;
   tokensIn: number;
   tokensOut: number;
+  modelId: string;
+  providerName: string;
   onCancel: () => void;
 }
 
-function StreamingPane({ status, streamText, tokensIn, tokensOut, onCancel }: StreamingPaneProps) {
+function StreamingPane({ status, streamText, tokensIn, tokensOut, modelId, providerName, onCancel }: StreamingPaneProps) {
   const [expanded, setExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -83,15 +87,13 @@ function StreamingPane({ status, streamText, tokensIn, tokensOut, onCancel }: St
     }
   }, [streamText, expanded]);
 
-  const costEst = tokensIn > 0
-    ? ((tokensIn / 1e6) * 3 + (tokensOut / 1e6) * 15).toFixed(4)
-    : null;
+  const costEst = tokensIn > 0 ? computeAiCost(modelId, tokensIn, tokensOut).toFixed(4) : null;
 
   return (
     <div className="rounded-xl border border-purple-200 bg-purple-50 overflow-hidden">
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-purple-100">
         <Bot size={16} className="text-purple-600 shrink-0" />
-        <span className="text-sm font-medium text-purple-900 flex-1">Claude is reviewing your tour…</span>
+        <span className="text-sm font-medium text-purple-900 flex-1">{providerName} is reviewing your tour…</span>
         <button
           onClick={onCancel}
           className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
@@ -140,7 +142,7 @@ function StreamingPane({ status, streamText, tokensIn, tokensOut, onCancel }: St
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export function AuditScreen() {
-  const { project, setActiveScreen, setActiveScene, updateScene } = useProject();
+  const { project, setActiveScreen, setActiveScene, updateScene, recordAiUsage } = useProject();
 
   const [report, setReport] = useState<AuditReport | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -157,8 +159,13 @@ export function AuditScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const anthropicKey = project.modules?.anthropicApiKey ?? '';
+  const ai = resolveAiProvider(project.modules ?? {});
   const defaultLang = project.languages.default || 'en';
+  const auditModelId = resolvedModelId(
+    ai?.provider ?? 'claude',
+    ai?.provider === 'gpt' ? project.modules?.openaiModel : project.modules?.claudeModel,
+  );
+  const auditProviderName = ai?.provider === 'gpt' ? 'ChatGPT' : 'Claude';
 
   function showToast(msg: string) {
     setToast(msg);
@@ -183,7 +190,7 @@ export function AuditScreen() {
   }
 
   async function handleRunAi() {
-    if (!anthropicKey || aiRunning) return;
+    if (!ai || aiRunning) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setAiRunning(true);
@@ -202,11 +209,20 @@ export function AuditScreen() {
       };
 
       const { issues: aiIssues, tokensIn, tokensOut } = await runAiAuditStreaming(
-        project, anthropicKey, handleEvent, ctrl.signal,
+        project, { ...ai!, modelId: auditModelId }, handleEvent, ctrl.signal,
       );
 
       setAiTokensIn(tokensIn);
       setAiTokensOut(tokensOut);
+      const costUsd = computeAiCost(auditModelId, tokensIn, tokensOut);
+      recordAiUsage({
+        provider: ai!.provider === 'gpt' ? 'openai' : 'anthropic',
+        modelId: auditModelId,
+        inputTokens: tokensIn,
+        outputTokens: tokensOut,
+        costUsd,
+        operation: 'audit',
+      });
       setReport(buildReport([...staticIssues, ...aiIssues], true, tokensIn, tokensOut));
       showToast(`AI audit complete — ${aiIssues.length} suggestion${aiIssues.length !== 1 ? 's' : ''}`);
     } catch (err) {
@@ -272,7 +288,7 @@ export function AuditScreen() {
   }, [report]);
 
   const estimatedCost = report?.aiTokensIn != null
-    ? (((report.aiTokensIn / 1e6) * 3) + ((report.aiTokensOut ?? 0) / 1e6) * 15).toFixed(4)
+    ? computeAiCost(auditModelId, report.aiTokensIn, report.aiTokensOut ?? 0).toFixed(4)
     : null;
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -289,20 +305,20 @@ export function AuditScreen() {
           </button>
           <button
             onClick={handleRunAi}
-            disabled={!anthropicKey || aiRunning}
-            title={!anthropicKey ? 'Add your Anthropic API key in Modules to enable AI checks' : undefined}
+            disabled={!ai || aiRunning}
+            title={!ai ? 'Add an Anthropic or OpenAI key in Modules to enable AI checks' : `Using ${ai.provider === 'gpt' ? 'ChatGPT' : 'Claude'}`}
             className={clsx(
               'btn gap-2 transition-colors',
-              anthropicKey && !aiRunning ? 'btn-accent' : 'opacity-50 cursor-not-allowed'
+              ai && !aiRunning ? 'btn-accent' : 'opacity-50 cursor-not-allowed'
             )}
           >
             {aiRunning
               ? <><Loader2 size={13} className="animate-spin" />Reviewing…</>
               : <><Sparkles size={13} />Run AI checks</>}
           </button>
-          {!anthropicKey && (
+          {!ai && (
             <p className="text-xs text-ink-faded">
-              Add your Anthropic key in{' '}
+              Add an Anthropic or OpenAI key in{' '}
               <button className="underline text-accent" onClick={() => setActiveScreen('modules')}>Modules</button>
               {' '}to enable AI checks (~$0.01–0.05 per audit).
             </p>
@@ -321,6 +337,8 @@ export function AuditScreen() {
             streamText={aiStreamText}
             tokensIn={aiTokensIn}
             tokensOut={aiTokensOut}
+            modelId={auditModelId}
+            providerName={auditProviderName}
             onCancel={handleCancel}
           />
         )}

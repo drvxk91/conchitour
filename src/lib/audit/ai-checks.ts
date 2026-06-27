@@ -1,4 +1,5 @@
 import type { Project, AuditIssue } from '../../types';
+import { callAiStreaming } from '../ai-content';
 
 export type AuditStreamEvent =
   | { type: 'status'; message: string }
@@ -122,7 +123,7 @@ function parseAiResponse(text: string, project: Project): AuditIssue[] {
 
 export async function runAiAuditStreaming(
   project: Project,
-  anthropicKey: string,
+  ai: { provider: 'claude' | 'gpt'; apiKey: string; modelId?: string },
   onEvent: (event: AuditStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<{ issues: AuditIssue[]; tokensIn: number; tokensOut: number }> {
@@ -130,72 +131,25 @@ export async function runAiAuditStreaming(
   const summary = summarizeProjectForAi(project);
   const prompt = buildAuditPrompt(summary);
 
-  onEvent({ type: 'status', message: 'Connecting to Claude…' });
-  let response: Response;
-  try {
-    response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal,
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 4000,
-        stream: true,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') throw err;
-    throw new Error(`Network error contacting Anthropic: ${String(err)}`);
-  }
+  const providerName = ai.provider === 'gpt' ? 'ChatGPT' : 'Claude';
+  onEvent({ type: 'status', message: `Connecting to ${providerName}…` });
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    if (response.status === 401) throw new Error('Invalid Anthropic API key (401). Check your key in Modules.');
-    if (response.status === 429) throw new Error('Anthropic rate limit reached (429). Try again in a moment.');
-    throw new Error(`AI audit failed: ${response.status} — ${errText.slice(0, 200)}`);
-  }
-
-  onEvent({ type: 'status', message: 'Reading response…' });
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
   let fullText = '';
   let tokensIn = 0;
   let tokensOut = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6).trim();
-      if (!payload || payload === '[DONE]') continue;
-      try {
-        const obj = JSON.parse(payload);
-        if (obj.type === 'content_block_delta' && obj.delta?.text) {
-          fullText += obj.delta.text;
-          onEvent({ type: 'token', text: obj.delta.text });
-        }
-        if (obj.type === 'message_delta' && obj.usage) {
-          tokensOut = obj.usage.output_tokens ?? tokensOut;
-        }
-        if (obj.type === 'message_start' && obj.message?.usage) {
-          tokensIn = obj.message.usage.input_tokens ?? 0;
-        }
-      } catch { /* skip malformed */ }
-    }
+  try {
+    const result = await callAiStreaming(
+      ai.provider, ai.apiKey, prompt, null,
+      signal ?? new AbortController().signal,
+      (token) => { fullText += token; onEvent({ type: 'token', text: token }); },
+      ai.modelId,
+    );
+    tokensIn = result.tokensIn;
+    tokensOut = result.tokensOut;
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    throw err;
   }
 
   onEvent({ type: 'status', message: 'Parsing results…' });

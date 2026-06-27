@@ -200,6 +200,10 @@ export interface ProjectModules {
   openaiApiKey?: string;
   /** Which AI provider is active for content generation */
   aiProvider?: 'claude' | 'gpt';
+  /** Selected Claude model ID (from ai-models catalog) */
+  claudeModel?: string;
+  /** Selected OpenAI model ID (from ai-models catalog) */
+  openaiModel?: string;
 }
 
 export type BuiltInPageKind = 'privacy' | 'legal' | 'terms' | 'about' | 'contact';
@@ -297,6 +301,30 @@ export interface AiTokenCount {
   out: number;
 }
 
+export interface AiUsageRecord {
+  provider: 'anthropic' | 'openai';
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  timestamp: number;
+  operation: 'audit' | 'content-gen' | 'translation' | 'interview' | 'other';
+}
+
+export interface AiUsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export interface AiUsage {
+  records: AiUsageRecord[];
+  totals: {
+    anthropic: AiUsageTotals;
+    openai: AiUsageTotals;
+  };
+}
+
 export interface AiContext {
   tone: 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational';
   audience: 'general' | 'professional' | 'luxury' | 'youth' | 'family' | 'senior';
@@ -334,4 +362,6 @@ export interface Project {
   pages: StaticPage[];
   analytics?: AnalyticsConfig;
   aiContext?: AiContext;
+  aiUsage?: AiUsage;
+  uiPreferences?: { currency: 'USD' | 'EUR' | 'GBP' | 'CHF' };
 }

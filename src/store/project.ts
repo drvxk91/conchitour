@@ -1,7 +1,12 @@
 import { create } from 'zustand';
-import type { Project, Scene, Category, UUID, Hotspot, StaticPage, AnalyticsConfig, AiContext } from '@/types';
+import type { Project, Scene, Category, UUID, Hotspot, StaticPage, AnalyticsConfig, AiContext, AiUsage, AiUsageRecord } from '@/types';
 import { newProject, BUILTIN_CATEGORIES, DEFAULT_ANALYTICS } from '@/lib/factory';
 import { DEFAULT_BUILTIN_PAGES } from '@/lib/builtin-pages';
+
+const EMPTY_AI_USAGE: AiUsage = {
+  records: [],
+  totals: { anthropic: { inputTokens: 0, outputTokens: 0, costUsd: 0 }, openai: { inputTokens: 0, outputTokens: 0, costUsd: 0 } },
+};
 
 /** Ensure all built-in categories are present (migration for pre-v2 project files). */
 function ensureBuiltins(project: Project): Project {
@@ -82,6 +87,9 @@ interface ProjectStore {
   // AI context
   updateAiContext: (patch: Partial<AiContext>) => void;
   addAiTokens: (provider: 'claude' | 'gpt', input: number, output: number) => void;
+  recordAiUsage: (record: Omit<AiUsageRecord, 'timestamp'>) => void;
+  resetAiUsage: () => void;
+  updateUiPreferences: (patch: Partial<NonNullable<Project['uiPreferences']>>) => void;
 
   // Hotspots
   addHotspot: (sceneId: UUID, hotspot: Hotspot) => void;
@@ -95,6 +103,18 @@ interface ProjectStore {
   updateBranding: (patch: Partial<Project['branding']>) => void;
   updateShare: (patch: Partial<Project['share']>) => void;
   updateModules: (patch: Partial<Project['modules']>) => void;
+
+  // Bulk import (single history step so one Ctrl-Z undoes the whole import)
+  applyImport: (
+    scenePatch: Record<string, Record<string, unknown>>,
+    catPatch: Record<string, Record<string, unknown>>,
+    pagePatch: Record<string, Record<string, unknown>>,
+    analyticsPatch?: Record<string, unknown>,
+    hotspotPatch?: Record<string, { sceneId: string; patch: Record<string, unknown> }>,
+    metaPatch?: Record<string, unknown>,
+    modulesPatch?: Record<string, unknown>,
+    aiContextPatch?: Record<string, unknown>,
+  ) => void;
 
   // History
   undo: () => void;
@@ -342,6 +362,40 @@ export const useProject = create<ProjectStore>((set) => ({
       })
     ),
 
+  applyImport: (scenePatch, catPatch, pagePatch, analyticsPatch, hotspotPatch, metaPatch, modulesPatch, aiContextPatch) =>
+    set((s) => {
+      const p = s.project;
+      const scenes = p.scenes.map((sc) => {
+        let updated = scenePatch[sc.id] ? { ...sc, ...scenePatch[sc.id] } : sc;
+        if (hotspotPatch) {
+          const hasHotspotChanges = sc.hotspots.some((h) => hotspotPatch[h.id]);
+          if (hasHotspotChanges) {
+            updated = {
+              ...updated,
+              hotspots: (updated.hotspots ?? []).map((h) => {
+                const hp = hotspotPatch[h.id];
+                return hp ? ({ ...h, ...hp.patch } as Hotspot) : h;
+              }),
+            };
+          }
+        }
+        return updated;
+      });
+      const categories = p.categories.map((cat) =>
+        catPatch[cat.id] ? { ...cat, ...catPatch[cat.id] } : cat
+      );
+      const pages = (p.pages ?? []).map((pg) =>
+        pagePatch[pg.id] ? { ...pg, ...pagePatch[pg.id] } : pg
+      );
+      const analytics = analyticsPatch
+        ? { ...(p.analytics ?? DEFAULT_ANALYTICS), ...analyticsPatch }
+        : p.analytics;
+      const meta = metaPatch ? { ...p.meta, ...metaPatch } : p.meta;
+      const modules = modulesPatch ? { ...p.modules, ...modulesPatch } : p.modules;
+      const aiContext = aiContextPatch ? { ...(p.aiContext ?? {}), ...aiContextPatch } : p.aiContext;
+      return withHistory(s, { ...p, scenes, categories, pages, analytics, meta, modules, aiContext });
+    }),
+
   updateAiContext: (patch) =>
     set((s) =>
       withHistory(s, {
@@ -360,6 +414,39 @@ export const useProject = create<ProjectStore>((set) => ({
       };
       return withHistory(s, { ...s.project, aiContext: { ...prev, tokensUsed: updated } });
     }),
+
+  recordAiUsage: (record) =>
+    set((s) => {
+      const full: AiUsageRecord = { ...record, timestamp: Date.now() };
+      const prev = s.project.aiUsage ?? EMPTY_AI_USAGE;
+      const prevTotals = prev.totals[record.provider] ?? { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      const totals = {
+        ...prev.totals,
+        [record.provider]: {
+          inputTokens: prevTotals.inputTokens + record.inputTokens,
+          outputTokens: prevTotals.outputTokens + record.outputTokens,
+          costUsd: prevTotals.costUsd + record.costUsd,
+        },
+      };
+      let records = [...prev.records, full];
+      if (records.length > 500) records = records.slice(-500);
+      return { project: { ...s.project, aiUsage: { records, totals } }, isDirty: true };
+    }),
+
+  resetAiUsage: () =>
+    set((s) => ({
+      project: { ...s.project, aiUsage: structuredClone(EMPTY_AI_USAGE) },
+      isDirty: true,
+    })),
+
+  updateUiPreferences: (patch) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        uiPreferences: { ...(s.project.uiPreferences ?? {}), ...patch },
+      },
+      isDirty: true,
+    })),
 
   undo: () =>
     set((s) => {

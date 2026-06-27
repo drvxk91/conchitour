@@ -8,6 +8,7 @@ async function callOpenAIStreaming(
   imageDataUrl: string | null,
   signal: AbortSignal,
   onToken: (text: string) => void,
+  modelId = 'gpt-4o',
 ): Promise<{ text: string; tokensIn: number; tokensOut: number }> {
   const userContent: unknown[] = [];
   if (imageDataUrl) {
@@ -23,7 +24,7 @@ async function callOpenAIStreaming(
       'Authorization': `Bearer ${openaiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: modelId,
       max_tokens: 1500,
       stream: true,
       stream_options: { include_usage: true },
@@ -79,11 +80,12 @@ export async function callAiStreaming(
   imageDataUrl: string | null,
   signal: AbortSignal,
   onToken: (text: string) => void,
+  modelId?: string,
 ): Promise<{ text: string; tokensIn: number; tokensOut: number }> {
   if (provider === 'gpt') {
-    return callOpenAIStreaming(apiKey, prompt, imageDataUrl, signal, onToken);
+    return callOpenAIStreaming(apiKey, prompt, imageDataUrl, signal, onToken, modelId);
   }
-  return callAnthropicStreaming(apiKey, prompt, imageDataUrl, signal, onToken);
+  return callAnthropicStreaming(apiKey, prompt, imageDataUrl, signal, onToken, modelId);
 }
 
 export type ContentStreamEvent =
@@ -135,7 +137,6 @@ function buildContentPrompt(
     .map((id) => project.categories.find((c) => c.id === id)?.name?.[defaultLang])
     .filter(Boolean)
     .join(', ');
-  const existingTitle = scene.title?.[defaultLang] ?? '';
   const gps = scene.geo?.lat ? `GPS: ${scene.geo.lat.toFixed(5)}, ${scene.geo.lng.toFixed(5)}` : '';
 
   const lengthMap: Record<string, string> = {
@@ -156,21 +157,40 @@ function buildContentPrompt(
     systemContext += ` Additional instructions: ${options.customInstructions.trim()}`;
   }
 
+  const projectContext = project.aiContext?.projectContext?.trim() ?? '';
+
+  // Build existing content section for context
+  const existingTitles = langs
+    .filter((l) => scene.title?.[l]?.trim())
+    .map((l) => `  "${l}": "${scene.title[l]}"`)
+    .join(',\n');
+  const existingDescs = langs
+    .filter((l) => scene.description?.[l]?.trim())
+    .map((l) => `  "${l}": "${scene.description[l]}"`)
+    .join(',\n');
+
+  const hasExistingContent = existingTitles || existingDescs;
+
   return `You are writing professional content for a 360° virtual tour scene.
 
 ${systemContext}
+${projectContext ? `\nProject editorial context: "${projectContext}"` : ''}
 
 Scene info:
 - Slug: ${scene.slug}
-${existingTitle ? `- Existing title (hint): ${existingTitle}` : ''}
 ${categoryNames ? `- Category: ${categoryNames}` : ''}
 ${gps}
 
+${hasExistingContent ? `EXISTING CONTENT (improve and expand on this — don't start from scratch):
+${existingTitles ? `Existing titles:\n{\n${existingTitles}\n}` : ''}
+${existingDescs ? `Existing descriptions:\n{\n${existingDescs}\n}` : ''}
+` : ''}
 Generate the following fields: ${fieldsNeeded}
 Languages required: ${langs.join(', ')}
 
 ${options.fillMode === 'empty-only' ? 'Only fill fields that are empty — do not overwrite existing content.' : ''}
 ${options.fillMode === 'translate-default' ? `Write content in ${defaultLang} first, then translate to other languages.` : ''}
+${options.fillMode === 'overwrite' && hasExistingContent ? 'Improve and rewrite all content, using the existing content as a starting point.' : ''}
 
 Return ONLY valid JSON with this exact shape (no markdown, no explanation):
 {
@@ -244,6 +264,7 @@ async function callAnthropicStreaming(
   imageDataUrl: string | null,
   signal: AbortSignal,
   onToken: (text: string) => void,
+  modelId = 'claude-sonnet-4-6',
 ): Promise<{ text: string; tokensIn: number; tokensOut: number }> {
   const content: unknown[] = [];
 
@@ -263,7 +284,7 @@ async function callAnthropicStreaming(
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
+      model: modelId,
       max_tokens: 1500,
       stream: true,
       messages: [{ role: 'user', content }],
@@ -311,7 +332,7 @@ async function callAnthropicStreaming(
 
 export async function generateContent(
   project: Project,
-  apiKeys: { provider: 'claude' | 'gpt'; anthropic?: string; openai?: string },
+  apiKeys: { provider: 'claude' | 'gpt'; anthropic?: string; openai?: string; modelId?: string },
   options: GenerateOptions,
   onEvent: (ev: ContentStreamEvent) => void,
   signal: AbortSignal,
@@ -357,6 +378,7 @@ export async function generateContent(
     const { text, tokensIn, tokensOut } = await callAiStreaming(
       apiKeys.provider, apiKey, prompt, imageDataUrl, signal,
       (t) => { sceneText += t; onEvent({ type: 'token', text: t }); },
+      apiKeys.modelId,
     );
 
     totalIn += tokensIn;
