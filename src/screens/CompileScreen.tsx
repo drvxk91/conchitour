@@ -321,24 +321,27 @@ export function CompileScreen() {
                 {licenseStatus.present && settings.licenseInfo && <LicenseInfoCard info={settings.licenseInfo} />}
                 {!licenseStatus.present && (
                   <>
-                    <input
-                      type="text"
+                    <textarea
+                      rows={5}
                       value={licenseCode}
                       onChange={(e) => setLicenseCode(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleActivateLicense()}
-                      placeholder="Paste registration code from purchase email…"
-                      className="w-full px-3 py-1.5 rounded-md border border-line-strong bg-paper text-xs font-mono focus:outline-none focus:border-accent"
+                      placeholder={'Paste registration code from purchase email…\n(multiline code is accepted)'}
+                      className="w-full px-3 py-1.5 rounded-md border border-line-strong bg-paper text-xs font-mono focus:outline-none focus:border-accent resize-none"
                     />
                     {parsedLicense && <LicenseInfoCard info={parsedLicense} preview />}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <button onClick={handleActivateLicense} disabled={activating || !licenseCode.trim()} className="btn btn-accent text-xs disabled:opacity-50">
                         {activating ? <Loader2 size={12} className="animate-spin" /> : <Key size={12} />}
-                        Activate
+                        {activating ? 'Activating…' : 'Activate'}
                       </button>
-                      {licenseResult && !licenseResult.ok && (
-                        <span className="text-xs text-red-500">{licenseResult.message}</span>
-                      )}
                     </div>
+                    {licenseResult && (
+                      <div className={clsx('rounded-md px-3 py-2 text-xs font-mono whitespace-pre-wrap break-all',
+                        licenseResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
+                      )}>
+                        {licenseResult.message}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

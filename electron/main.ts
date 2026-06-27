@@ -2075,9 +2075,14 @@ ipcMain.handle('krpano:license-status', async (_e, krpanoPath: string) => {
 
 ipcMain.handle('krpano:register', async (_e, krpanoPath: string, code: string) => {
   const toolPath = path.join(krpanoPath, 'krpanotools.exe');
-  // Concatenate the multiline code into one string (krpanotools expects no linebreaks)
+  // Strip all whitespace/newlines — krpanotools expects the base64 code as one continuous string
   const cleanCode = code.replace(/\s+/g, '');
   if (!cleanCode) return { ok: false, message: 'Registration code is empty.' };
+
+  // Verify the tool exists before spawning
+  try { await fs.access(toolPath); } catch {
+    return { ok: false, message: `krpanotools.exe not found at:\n${toolPath}` };
+  }
 
   return new Promise<{ ok: boolean; message: string }>((resolve) => {
     const proc = spawn(toolPath, ['register', cleanCode], {
@@ -2090,13 +2095,23 @@ ipcMain.handle('krpano:register', async (_e, krpanoPath: string, code: string) =
     proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
     proc.stderr.on('data', (d: Buffer) => { output += d.toString(); });
 
+    // 30-second safety timeout
+    const timer = setTimeout(() => {
+      proc.kill();
+      resolve({ ok: false, message: 'krpanotools timed out after 30 seconds.' });
+    }, 30_000);
+
     proc.on('close', (exitCode) => {
-      const msg = output.trim() || (exitCode === 0 ? 'License activated.' : 'Registration failed — check your code.');
-      resolve({ ok: exitCode === 0, message: msg });
+      clearTimeout(timer);
+      const raw = output.trim();
+      const ok = exitCode === 0;
+      const msg = raw || (ok ? 'License activated successfully.' : `Registration failed (exit code ${exitCode}).`);
+      resolve({ ok, message: msg });
     });
 
     proc.on('error', (err) => {
-      resolve({ ok: false, message: `Could not launch krpanotools: ${err.message}` });
+      clearTimeout(timer);
+      resolve({ ok: false, message: `Could not launch krpanotools.exe:\n${err.message}` });
     });
   });
 });
