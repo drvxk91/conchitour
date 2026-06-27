@@ -188,7 +188,6 @@ export interface ProjectModules {
   fullscreen: boolean;
   feedbackMailto?: string;
   formsEnabled: boolean;
-  deeplApiKey?: string;
   cookieConsent?: boolean;
   cookieText?: Record<string, string>;
   mapMode?: MapModeConfig;

@@ -39,17 +39,6 @@ export function LanguagesScreen() {
 
   const [addInput, setAddInput] = useState('');
   const [addError, setAddError] = useState('');
-  const [deeplKeyDraft, setDeeplKeyDraft] = useState(modules.deeplApiKey ?? '');
-
-  async function autoSaveDeeplKey() {
-    const val = deeplKeyDraft.trim() || undefined;
-    updateModules({ deeplApiKey: val });
-    try {
-      const dir = await window.conchitect.getProjectDir();
-      if (dir) await window.conchitect.saveProject(useProject.getState().project);
-    } catch { /* non-fatal */ }
-  }
-
   function handleAdd() {
     const code = addInput.trim().toLowerCase().replace(/[^a-z]/g, '');
     if (!code) { setAddError('Enter a language code (e.g. fr)'); return; }
@@ -76,7 +65,7 @@ export function LanguagesScreen() {
   const available = languages.available.length ? languages.available : ['en'];
 
   return (
-    <ScreenShell title="Languages" subtitle="Add interface languages and configure DeepL auto-translation.">
+    <ScreenShell title="Languages" subtitle="Add interface languages for the compiled tour.">
       <div className="max-w-xl space-y-6">
 
         {/* ── Active languages ─── */}
@@ -155,30 +144,6 @@ export function LanguagesScreen() {
           {addError && <p className="text-[11px] text-red-500 mt-1">{addError}</p>}
         </div>
 
-        {/* ── DeepL ─── */}
-        <div className="border-t border-line pt-6">
-          <h2 className="text-sm font-semibold text-ink-strong mb-1">DeepL auto-translation</h2>
-          <p className="text-xs text-ink-faded mb-3">
-            Enter your DeepL API key to enable one-click translation of scene titles, descriptions, and hotspot labels.
-            Your key is stored locally and never sent to our servers.
-          </p>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-ink-faded uppercase tracking-wide">API key</label>
-            <input
-              type="password"
-              className="w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink font-mono placeholder-ink-faded focus:outline-none focus:border-accent"
-              value={deeplKeyDraft}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
-              onChange={(e) => setDeeplKeyDraft(e.target.value)}
-              onBlur={autoSaveDeeplKey}
-            />
-          </div>
-          {deeplKeyDraft.trim() && (
-            <p className="text-[11px] text-green-600 mt-1.5">
-              API key saved. Translation will be available in the Scenes editor per-hotspot and per-scene.
-            </p>
-          )}
-        </div>
       </div>
     </ScreenShell>
   );

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
@@ -371,7 +371,7 @@ ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
     const catSlugs = (s.categoryIds ?? [])
       .map((id: string) => (proj.categories ?? []).find((c: any) => c.id === id)?.slug ?? '')
       .filter(Boolean)
-      .join(',');
+      .join(';');
     return [
       s.id, s.slug,
       s.geo?.lat ?? '', s.geo?.lng ?? '', s.geo?.altitude ?? '',
@@ -465,14 +465,13 @@ ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
 
   // ── Sheet: Modules ──
   const modules = proj.modules ?? {};
-  const modHeader = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled', 'deepl_api_key'];
+  const modHeader = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled'];
   const modRow = [
     modules.vr ? 'true' : 'false',
     modules.gyroscope ? 'true' : 'false',
     modules.fullscreen ? 'true' : 'false',
     modules.feedbackMailto ?? '',
     modules.formsEnabled ? 'true' : 'false',
-    modules.deeplApiKey ?? '',
   ];
   const modSheet = XLSX.utils.aoa_to_sheet([modHeader, modRow]);
   XLSX.utils.book_append_sheet(wb, modSheet, 'Modules');
@@ -600,8 +599,8 @@ ipcMain.handle('excel:download-template', async (_e, projectData: unknown) => {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([brandH, brandEx]), 'Branding');
 
   // ── Modules ──
-  const modH = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled', 'deepl_api_key'];
-  const modEx = ['false', 'true', 'true', 'contact@example.com', 'false', ''];
+  const modH = ['vr', 'gyroscope', 'fullscreen', 'feedback_mailto', 'forms_enabled'];
+  const modEx = ['false', 'true', 'true', 'contact@example.com', 'false'];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([modH, modEx]), 'Modules');
 
   // ── Pages ──
@@ -647,170 +646,345 @@ ipcMain.handle('excel:download-template', async (_e, projectData: unknown) => {
 
 // ── Excel import ──────────────────────────────────────────────────────────────
 
+interface ImportChange {
+  id: string;
+  entityType: 'scene' | 'category' | 'page' | 'analytics' | 'hotspot' | 'project' | 'modules' | 'ai_context';
+  entityId: string;
+  parentId?: string;
+  entityLabel: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  patchValue: unknown;
+}
+
+interface ImportValidationError {
+  entityLabel: string;
+  field: string;
+  value: string;
+  message: string;
+}
+
+function getCellString(cell: ExcelJS.Cell): string {
+  const v = cell.value;
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'object' && 'richText' in v) {
+    return (v as ExcelJS.CellRichTextValue).richText.map((rt) => rt.text).join('');
+  }
+  if (typeof v === 'object' && 'formula' in v) {
+    const res = (v as ExcelJS.CellFormulaValue).result;
+    if (res === null || res === undefined || res instanceof Error) return '';
+    return String(res);
+  }
+  if (typeof v === 'object' && 'sharedFormula' in v) {
+    const res = (v as ExcelJS.CellSharedFormulaValue).result;
+    if (res === null || res === undefined || res instanceof Error) return '';
+    return String(res);
+  }
+  return String(v);
+}
+
+function wsToRows(ws: ExcelJS.Worksheet): string[][] {
+  const out: string[][] = [];
+  ws.eachRow({ includeEmpty: true }, (row) => {
+    const arr: string[] = [];
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      while (arr.length < colNumber - 1) arr.push('');
+      arr.push(getCellString(cell));
+    });
+    out.push(arr);
+  });
+  return out;
+}
+
 ipcMain.handle('excel:import', async (_e, projectData: unknown) => {
   const result = await dialog.showOpenDialog({
     title: 'Import from Excel',
     filters: [{ name: 'Excel workbook', extensions: ['xlsx', 'xls'] }],
     properties: ['openFile'],
   });
-  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  if (result.canceled || !result.filePaths[0]) return { canceled: true, changes: [], validationErrors: [] };
+
+  const filePath = result.filePaths[0];
+
+  // Step 1: Read raw bytes with specific error detection
+  let fileBuffer: Buffer;
+  try {
+    const stat = await fs.stat(filePath);
+    if (stat.size === 0) {
+      return { canceled: false, changes: [], validationErrors: [], error: 'The selected file is empty.' };
+    }
+    fileBuffer = await fs.readFile(filePath);
+  } catch (fsErr: unknown) {
+    const err = fsErr as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') return { canceled: false, changes: [], validationErrors: [], error: 'File not found. It may have been moved or deleted.' };
+    if (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') return { canceled: false, changes: [], validationErrors: [], error: 'File is locked by another application. Close it in Excel and try again.' };
+    return { canceled: false, changes: [], validationErrors: [], error: `Cannot read file: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  // Step 2: Parse with ExcelJS (same library used for export — avoids SheetJS/extLst mismatch)
+  const wb = new ExcelJS.Workbook();
+  try {
+    await wb.xlsx.load(fileBuffer);
+  } catch (parseErr: unknown) {
+    const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+    console.error('[excel:import] parse failed:', parseErr);
+    return { canceled: false, changes: [], validationErrors: [], error: `Cannot parse Excel file: ${msg}` };
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proj = projectData as any;
-  const wb = XLSX.readFile(result.filePaths[0]);
   const langs: string[] = (proj.languages?.available ?? ['en']);
+  const defaultLang: string = proj.languages?.default ?? 'en';
+  try {
 
-  let updated = 0;
-  let skipped = 0;
-  const errors: string[] = [];
-  const scenePatch: Record<string, Record<string, unknown>> = {};
-  const catPatch: Record<string, Record<string, unknown>> = {};
+  const changes: ImportChange[] = [];
+  const validationErrors: ImportValidationError[] = [];
+
+  function pushChange(
+    entityType: ImportChange['entityType'],
+    entityId: string,
+    entityLabel: string,
+    field: string,
+    oldDisplay: string,
+    newDisplay: string,
+    patchValue: unknown,
+    parentId?: string,
+  ) {
+    if (oldDisplay === newDisplay) return;
+    changes.push({ id: `${entityType}:${entityId}:${field}`, entityType, entityId, parentId, entityLabel, field, oldValue: oldDisplay, newValue: newDisplay, patchValue });
+  }
 
   // ── Parse Scenes sheet ──
-  const scenesWs = wb.Sheets['Scenes'];
+  const scenesWs = wb.getWorksheet('Scenes');
   if (scenesWs) {
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(scenesWs, { header: 1 });
-    const [header, ...dataRows] = rows as string[][];
+    const rows = wsToRows(scenesWs);
+    const [header, ...dataRows] = rows;
     const col = (name: string) => header.indexOf(name);
 
     for (const row of dataRows) {
       if (!row.length) continue;
       const sceneId = String(row[col('scene_id')] ?? '').trim();
       const slugVal = String(row[col('slug')] ?? '').trim();
-      const scene = sceneId
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const scene: any = sceneId
         ? (proj.scenes ?? []).find((s: any) => s.id === sceneId)
         : (proj.scenes ?? []).find((s: any) => s.slug === slugVal);
+      if (!scene) continue;
 
-      if (!scene) {
-        skipped++;
-        const label = sceneId || slugVal;
-        console.log(`[excel:import] Scene '${label}' not in project (skipped)`);
-        continue;
+      const label: string = scene.title?.[defaultLang] ?? scene.title?.en ?? scene.slug;
+
+      // GPS — try both column name conventions
+      const latStr = String(row[col('gps_lat')] ?? row[col('lat')] ?? '').trim();
+      const lngStr = String(row[col('gps_lng')] ?? row[col('lng')] ?? '').trim();
+      if (latStr || lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (isNaN(lat) || lat < -90 || lat > 90) {
+          validationErrors.push({ entityLabel: label, field: 'gps_lat', value: latStr, message: 'Latitude must be a number between -90 and 90.' });
+        } else if (isNaN(lng) || lng < -180 || lng > 180) {
+          validationErrors.push({ entityLabel: label, field: 'gps_lng', value: lngStr, message: 'Longitude must be a number between -180 and 180.' });
+        } else {
+          const altStr = String(row[col('altitude')] ?? '').trim();
+          const alt = parseFloat(altStr);
+          const newGeo = { lat, lng, ...(isNaN(alt) ? {} : { altitude: alt }) };
+          const oldGeo = scene.geo;
+          const oldDisplay = oldGeo?.lat != null ? `${Number(oldGeo.lat).toFixed(5)}, ${Number(oldGeo.lng).toFixed(5)}` : '—';
+          const newDisplay = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          pushChange('scene', scene.id, label, 'geo', oldDisplay, newDisplay, newGeo);
+        }
       }
 
-      const patch: Record<string, unknown> = {};
-
-      const lat = parseFloat(String(row[col('lat')] ?? ''));
-      const lng = parseFloat(String(row[col('lng')] ?? ''));
-      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        const altitude = parseFloat(String(row[col('altitude')] ?? ''));
-        patch.geo = { lat, lng, ...(isNaN(altitude) ? {} : { altitude }) };
+      // Heading
+      const headingStr = String(row[col('heading')] ?? '').trim();
+      if (headingStr) {
+        const headingNum = parseFloat(headingStr);
+        if (isNaN(headingNum)) {
+          validationErrors.push({ entityLabel: label, field: 'heading', value: headingStr, message: 'Heading must be a number (0–360).' });
+        } else {
+          const normalized = ((headingNum % 360) + 360) % 360;
+          pushChange('scene', scene.id, label, 'heading',
+            scene.heading != null ? `${Number(scene.heading).toFixed(1)}°` : '—',
+            `${normalized.toFixed(1)}°`, normalized,
+          );
+        }
       }
 
-      const heading = parseFloat(String(row[col('heading')] ?? ''));
-      if (!isNaN(heading)) patch.heading = ((heading % 360) + 360) % 360;
+      // Capture height (legacy column — skip gracefully if absent)
+      const capHStr = String(row[col('capture_height')] ?? '').trim();
+      if (capHStr) {
+        const capH = parseFloat(capHStr);
+        if (isNaN(capH) || capH <= 0) {
+          validationErrors.push({ entityLabel: label, field: 'capture_height', value: capHStr, message: 'Capture height must be a positive number (meters).' });
+        } else {
+          pushChange('scene', scene.id, label, 'captureHeightMeters',
+            scene.captureHeightMeters != null ? `${scene.captureHeightMeters}m` : '—',
+            `${capH}m`, capH,
+          );
+        }
+      }
 
-      const captureH = parseFloat(String(row[col('capture_height')] ?? ''));
-      if (!isNaN(captureH) && captureH > 0) patch.captureHeightMeters = captureH;
+      // Visibility radius
+      const vrStr = String(row[col('visibility_radius')] ?? '').trim();
+      if (vrStr) {
+        const vr = parseFloat(vrStr);
+        if (isNaN(vr) || vr < 0) {
+          validationErrors.push({ entityLabel: label, field: 'visibility_radius', value: vrStr, message: 'Visibility radius must be a positive number.' });
+        } else if (vr !== (scene.visibilityRadius ?? 0) || scene.visibilityRadius == null) {
+          pushChange('scene', scene.id, label, 'visibilityRadius',
+            scene.visibilityRadius != null ? String(scene.visibilityRadius) : '—',
+            String(vr), vr,
+          );
+        }
+      }
 
+      // Category slugs (separator: ; or ,)
       const catSlugsStr = String(row[col('category_slugs')] ?? '').trim();
       if (catSlugsStr) {
-        const ids = catSlugsStr.split(',')
-          .map((s: string) => s.trim())
-          .map((sl: string) => (proj.categories ?? []).find((c: any) => c.slug === sl)?.id)
-          .filter(Boolean) as string[];
-        patch.categoryIds = ids;
+        const slugArr = catSlugsStr.split(/[;,]/).map((s: string) => s.trim()).filter(Boolean);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ids = slugArr.map((sl: string) => (proj.categories ?? []).find((c: any) => c.slug === sl)?.id).filter(Boolean) as string[];
+        const badSlugs = slugArr.filter((sl: string) => !(proj.categories ?? []).find((c: any) => c.slug === sl));
+        if (badSlugs.length > 0) {
+          validationErrors.push({ entityLabel: label, field: 'category_slugs', value: catSlugsStr, message: `Unknown category slugs: ${badSlugs.join(', ')}` });
+        }
+        if (ids.length > 0) {
+          const oldIds: string[] = scene.categoryIds ?? [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const oldDisplay = oldIds.map((id: string) => (proj.categories ?? []).find((c: any) => c.id === id)?.slug ?? id).join(';') || '—';
+          const newDisplay = ids.map((id: string) => (proj.categories ?? []).find((c: any) => c.id === id)?.slug ?? id).join(';');
+          pushChange('scene', scene.id, label, 'categoryIds', oldDisplay, newDisplay, ids);
+        }
       }
 
+      // Localized fields
       for (const l of langs) {
         const titleVal = String(row[col(`title_${l}`)] ?? '').trim();
-        const descVal  = String(row[col(`description_${l}`)] ?? '').trim();
-        const altVal   = String(row[col(`alt_text_${l}`)] ?? '').trim();
-        if (titleVal) patch.title = { ...(scene.title ?? {}), [l]: titleVal };
-        if (descVal)  patch.description = { ...(scene.description ?? {}), [l]: descVal };
-        if (altVal)   patch.altText = { ...(scene.altText ?? {}), [l]: altVal };
-      }
-
-      if (Object.keys(patch).length) {
-        scenePatch[scene.id] = patch;
-        updated++;
+        if (titleVal && titleVal !== (scene.title?.[l] ?? '')) {
+          pushChange('scene', scene.id, label, `title.${l}`, scene.title?.[l] || '—', titleVal, titleVal);
+        }
+        const descVal = String(row[col(`description_${l}`)] ?? '').trim();
+        if (descVal && descVal !== (scene.description?.[l] ?? '')) {
+          pushChange('scene', scene.id, label, `description.${l}`, scene.description?.[l] || '—', descVal, descVal);
+        }
+        // Support both column name conventions for alt text
+        const altVal = String(row[col(`altText_${l}`)] ?? row[col(`alt_text_${l}`)] ?? '').trim();
+        if (altVal && altVal !== (scene.altText?.[l] ?? '')) {
+          pushChange('scene', scene.id, label, `altText.${l}`, scene.altText?.[l] || '—', altVal, altVal);
+        }
       }
     }
   }
 
   // ── Parse Categories sheet ──
-  const catsWs = wb.Sheets['Categories'];
+  const catsWs = wb.getWorksheet('Categories');
   if (catsWs) {
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(catsWs, { header: 1 });
-    const [header, ...dataRows] = rows as string[][];
+    const rows = wsToRows(catsWs);
+    const [header, ...dataRows] = rows;
     const col = (name: string) => header.indexOf(name);
 
     for (const row of dataRows) {
       if (!row.length) continue;
       const slugVal = String(row[col('slug')] ?? '').trim();
-      const cat = (proj.categories ?? []).find((c: any) => c.slug === slugVal);
-      if (!cat) { skipped++; continue; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cat: any = (proj.categories ?? []).find((c: any) => c.slug === slugVal);
+      if (!cat) continue;
 
-      const patch: Record<string, unknown> = {};
+      const label: string = cat.name?.[defaultLang] ?? cat.name?.en ?? cat.slug;
+
       const colorVal = String(row[col('color')] ?? '').trim();
-      if (colorVal && /^#[0-9a-fA-F]{6}$/.test(colorVal)) patch.color = colorVal;
-
-      const nameUpdates: Record<string, string> = { ...cat.name };
-      for (const l of langs) {
-        const val = String(row[col(`name_${l}`)] ?? '').trim();
-        if (val) nameUpdates[l] = val;
+      if (colorVal) {
+        if (!/^#[0-9a-fA-F]{6}$/.test(colorVal)) {
+          validationErrors.push({ entityLabel: label, field: 'color', value: colorVal, message: 'Color must be in #RRGGBB format (e.g. #FF5500).' });
+        } else {
+          pushChange('category', cat.id, label, 'color', cat.color || '—', colorVal, colorVal);
+        }
       }
-      if (JSON.stringify(nameUpdates) !== JSON.stringify(cat.name)) patch.name = nameUpdates;
 
-      if (Object.keys(patch).length) {
-        catPatch[cat.id] = patch;
-        updated++;
+      for (const l of langs) {
+        const nameVal = String(row[col(`name_${l}`)] ?? '').trim();
+        if (nameVal && nameVal !== (cat.name?.[l] ?? '')) {
+          pushChange('category', cat.id, label, `name.${l}`, cat.name?.[l] || '—', nameVal, nameVal);
+        }
       }
     }
   }
 
   // ── Parse Pages sheet ──
-  const pagePatch: Record<string, Record<string, unknown>> = {};
-  const pagesWs = wb.Sheets['Pages'];
+  const pagesWs = wb.getWorksheet('Pages');
   if (pagesWs) {
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(pagesWs, { header: 1 });
-    const [header, ...dataRows] = rows as string[][];
+    const rows = wsToRows(pagesWs);
+    const [header, ...dataRows] = rows;
     const col = (name: string) => header.indexOf(name);
 
     for (const row of dataRows) {
       if (!row.length) continue;
       const idVal   = String(row[col('id')]   ?? '').trim();
       const slugVal = String(row[col('slug')] ?? '').trim();
-      const page = idVal
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const page: any = idVal
         ? (proj.pages ?? []).find((p: any) => p.id === idVal)
         : (proj.pages ?? []).find((p: any) => p.slug === slugVal);
-      if (!page) { skipped++; continue; }
+      if (!page) continue;
 
-      const patch: Record<string, unknown> = {};
+      const label: string = page.title?.[defaultLang] ?? page.title?.en ?? page.slug;
 
-      const enabledVal = String(row[col('enabled')] ?? '').trim().toLowerCase();
-      if (enabledVal === 'true' || enabledVal === 'false') patch.enabled = enabledVal === 'true';
+      const enabledStr = String(row[col('enabled')] ?? '').trim().toLowerCase();
+      if (enabledStr) {
+        if (enabledStr !== 'true' && enabledStr !== 'false') {
+          validationErrors.push({ entityLabel: label, field: 'enabled', value: enabledStr, message: 'Must be "true" or "false".' });
+        } else {
+          const newV = enabledStr === 'true';
+          if (newV !== page.enabled) pushChange('page', page.id, label, 'enabled', String(page.enabled ?? false), enabledStr, newV);
+        }
+      }
 
-      const footerVal = String(row[col('show_in_footer')] ?? '').trim().toLowerCase();
-      if (footerVal === 'true' || footerVal === 'false') patch.showInFooter = footerVal === 'true';
+      const footerStr = String(row[col('show_in_footer')] ?? '').trim().toLowerCase();
+      if (footerStr) {
+        if (footerStr !== 'true' && footerStr !== 'false') {
+          validationErrors.push({ entityLabel: label, field: 'show_in_footer', value: footerStr, message: 'Must be "true" or "false".' });
+        } else {
+          const newV = footerStr === 'true';
+          if (newV !== page.showInFooter) pushChange('page', page.id, label, 'showInFooter', String(page.showInFooter ?? false), footerStr, newV);
+        }
+      }
 
-      const orderVal = parseInt(String(row[col('order')] ?? ''), 10);
-      if (!isNaN(orderVal)) patch.order = orderVal;
+      const orderStr = String(row[col('order')] ?? '').trim();
+      if (orderStr) {
+        const orderNum = parseInt(orderStr, 10);
+        if (isNaN(orderNum)) {
+          validationErrors.push({ entityLabel: label, field: 'order', value: orderStr, message: 'Order must be a whole number.' });
+        } else if (orderNum !== page.order) {
+          pushChange('page', page.id, label, 'order', String(page.order ?? '—'), String(orderNum), orderNum);
+        }
+      }
 
       for (const l of langs) {
         const titleVal = String(row[col(`title_${l}`)] ?? '').trim();
-        if (titleVal) patch.title = { ...(page.title ?? {}), [l]: titleVal };
+        if (titleVal && titleVal !== (page.title?.[l] ?? '')) {
+          pushChange('page', page.id, label, `title.${l}`, page.title?.[l] || '—', titleVal, titleVal);
+        }
         const contentVal = String(row[col(`content_${l}`)] ?? '').trim();
-        if (contentVal) patch.content = { ...(page.content ?? {}), [l]: contentVal };
-      }
-
-      if (Object.keys(patch).length) {
-        pagePatch[page.id] = patch;
-        updated++;
+        if (contentVal && contentVal !== (page.content?.[l] ?? '')) {
+          const oldSnip = page.content?.[l] ? `${String(page.content[l]).slice(0, 60)}…` : '—';
+          const newSnip = `${contentVal.slice(0, 60)}…`;
+          pushChange('page', page.id, label, `content.${l}`, oldSnip, newSnip, contentVal);
+        }
       }
     }
   }
 
   // ── Parse Analytics sheet ──
-  let analyticsPatch: Record<string, unknown> | undefined;
-  const analyticsWs = wb.Sheets['Analytics'];
+  const analyticsWs = wb.getWorksheet('Analytics');
   if (analyticsWs) {
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(analyticsWs, { header: 1 });
-    const [aHeader, aRow] = rows as string[][];
-    if (aHeader && aRow) {
-      const col = (name: string) => aHeader.indexOf(name);
-      const tb = (v: unknown) => String(v ?? '').trim().toLowerCase() === 'true';
-      const mid = String(aRow[col('measurement_id')] ?? '').trim();
+    const rows = wsToRows(analyticsWs);
+    const headerRow = rows[0];
+    if (headerRow) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cur: any = proj.analytics ?? {};
       const evKeys = [
         'scene_view', 'scene_change', 'tour_started', 'tour_completed',
         'hotspot_click', 'link_hotspot_click', 'external_link_click',
@@ -818,23 +992,284 @@ ipcMain.handle('excel:import', async (_e, projectData: unknown) => {
         'map_open', 'map_marker_click', 'share_click', 'language_change',
         'cookie_accepted', 'info_panel_open', 'fullscreen_enter',
       ] as const;
-      const events: Record<string, boolean> = {};
-      for (const k of evKeys) {
-        const idx = col(`ev_${k}`);
-        if (idx >= 0) events[k] = tb(aRow[idx]);
+
+      function parseAnalyticsBool(key: string, projKey: string, val: string) {
+        const v = val.toLowerCase();
+        if (v !== 'true' && v !== 'false') return;
+        const newV = v === 'true';
+        if (newV !== cur[projKey]) pushChange('analytics', 'analytics', 'Analytics', projKey, String(cur[projKey] ?? false), v, newV);
       }
-      analyticsPatch = {
-        enabled: tb(aRow[col('enabled')]),
-        measurementId: mid,
-        anonymizeIp: tb(aRow[col('anonymize_ip')]),
-        respectCookieConsent: tb(aRow[col('respect_cookie_consent')]),
-        events,
-      };
-      updated++;
+
+      if (headerRow[0] === 'setting') {
+        // Key/value format (export-styled): rows of [setting, value]
+        const kvMap: Record<string, string> = {};
+        for (let i = 1; i < rows.length; i++) {
+          const k = String(rows[i][0] ?? '').trim();
+          const v = String(rows[i][1] ?? '').trim();
+          if (k) kvMap[k] = v;
+        }
+        parseAnalyticsBool('enabled', 'enabled', kvMap['enabled'] ?? '');
+        const midStr = kvMap['measurement_id'] ?? '';
+        if (midStr && midStr !== (cur.measurementId ?? '')) {
+          if (!/^G-[A-Z0-9]+$/.test(midStr)) validationErrors.push({ entityLabel: 'Analytics', field: 'measurement_id', value: midStr, message: 'Measurement ID should start with "G-" followed by uppercase letters/numbers.' });
+          pushChange('analytics', 'analytics', 'Analytics', 'measurementId', cur.measurementId || '—', midStr, midStr);
+        }
+        parseAnalyticsBool('anonymizeIp', 'anonymizeIp', kvMap['anonymize_ip'] ?? '');
+        parseAnalyticsBool('respectCookieConsent', 'respectCookieConsent', kvMap['respect_cookie_consent'] ?? '');
+        for (const k of evKeys) {
+          const evStr = (kvMap[`event_${k}`] ?? '').toLowerCase();
+          if (evStr !== 'true' && evStr !== 'false') continue;
+          const newV = evStr === 'true';
+          const oldV: boolean = cur.events?.[k] ?? false;
+          if (newV !== oldV) pushChange('analytics', 'analytics', 'Analytics', `events.${k}`, String(oldV), evStr, newV);
+        }
+      } else {
+        // Columnar format (backward compat with old export)
+        const aRow = rows[1];
+        if (aRow) {
+          const col = (name: string) => headerRow.indexOf(name);
+          parseAnalyticsBool('enabled', 'enabled', String(aRow[col('enabled')] ?? ''));
+          const midStr = String(aRow[col('measurement_id')] ?? '').trim();
+          if (midStr && midStr !== (cur.measurementId ?? '')) {
+            if (!/^G-[A-Z0-9]+$/.test(midStr)) validationErrors.push({ entityLabel: 'Analytics', field: 'measurement_id', value: midStr, message: 'Measurement ID should start with "G-" followed by uppercase letters/numbers.' });
+            pushChange('analytics', 'analytics', 'Analytics', 'measurementId', cur.measurementId || '—', midStr, midStr);
+          }
+          parseAnalyticsBool('anonymizeIp', 'anonymizeIp', String(aRow[col('anonymize_ip')] ?? ''));
+          parseAnalyticsBool('respectCookieConsent', 'respectCookieConsent', String(aRow[col('respect_cookie_consent')] ?? ''));
+          for (const k of evKeys) {
+            const idx = col(`ev_${k}`);
+            if (idx < 0) continue;
+            const evStr = String(aRow[idx] ?? '').toLowerCase();
+            if (evStr !== 'true' && evStr !== 'false') continue;
+            const newV = evStr === 'true';
+            const oldV: boolean = cur.events?.[k] ?? false;
+            if (newV !== oldV) pushChange('analytics', 'analytics', 'Analytics', `events.${k}`, String(oldV), evStr, newV);
+          }
+        }
+      }
     }
   }
 
-  return { canceled: false, updated, skipped, errors, scenePatch, catPatch, pagePatch, analyticsPatch };
+  // ── Parse Project sheet ──
+  const projMetaWs = wb.getWorksheet('Project');
+  if (projMetaWs) {
+    const rows = wsToRows(projMetaWs);
+    const [header, dataRow] = rows;
+    if (header && dataRow) {
+      const col = (name: string) => header.indexOf(name);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cur: any = proj.meta ?? {};
+
+      function pushMeta(excelKey: string, projKey: string, isUrl = false) {
+        const val = String(dataRow[col(excelKey)] ?? '').trim();
+        const old = String(cur[projKey] ?? '');
+        if (val === old) return;
+        if (isUrl && val && !val.includes('://')) {
+          validationErrors.push({ entityLabel: 'Project', field: excelKey, value: val, message: 'URL must contain "://".' });
+          return;
+        }
+        pushChange('project', 'meta', 'Project', projKey, old || '—', val || '(cleared)', val);
+      }
+
+      pushMeta('name', 'name');
+      pushMeta('creator', 'creator');
+      pushMeta('contact_email', 'contactEmail');
+      pushMeta('copyright', 'copyright');
+      pushMeta('publication_url', 'publicationUrl', true);
+      pushMeta('short_description', 'shortDescription');
+    }
+  }
+
+  // ── Parse Modules sheet ──
+  const modsWs = wb.getWorksheet('Modules');
+  if (modsWs) {
+    const rows = wsToRows(modsWs);
+    const [headerRow, ...kvRows] = rows;
+    if (headerRow?.[0] === 'key') {
+      const kvMap: Record<string, string> = {};
+      for (const row of kvRows) {
+        const k = String(row[0] ?? '').trim();
+        const v = String(row[1] ?? '').trim();
+        if (k) kvMap[k] = v;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cur: any = proj.modules ?? {};
+
+      const boolModules: [string, string][] = [
+        ['vr', 'vr'], ['gyroscope', 'gyroscope'], ['fullscreen', 'fullscreen'],
+        ['forms_enabled', 'formsEnabled'], ['cookie_consent', 'cookieConsent'],
+      ];
+      for (const [excelKey, projKey] of boolModules) {
+        const v = (kvMap[excelKey] ?? '').toLowerCase();
+        if (v !== 'true' && v !== 'false') continue;
+        const newV = v === 'true';
+        if (newV !== !!cur[projKey]) pushChange('modules', 'modules', 'Modules', projKey, String(!!cur[projKey]), v, newV);
+      }
+
+      const textModules: [string, string][] = [
+        ['feedback_mailto', 'feedbackMailto'],
+      ];
+      for (const [excelKey, projKey] of textModules) {
+        const val = kvMap[excelKey] ?? '';
+        const old = cur[projKey] ?? '';
+        if (val !== old) pushChange('modules', 'modules', 'Modules', projKey, old || '—', val || '(cleared)', val);
+      }
+    }
+  }
+
+  // ── Parse AI Context sheet ──
+  const aiWs = wb.getWorksheet('AI Context');
+  if (aiWs) {
+    const rows = wsToRows(aiWs);
+    const [headerRow, ...kvRows] = rows;
+    if (headerRow?.[0] === 'setting') {
+      const kvMap: Record<string, string> = {};
+      for (const row of kvRows) {
+        const k = String(row[0] ?? '').trim();
+        const v = String(row[1] ?? '').trim();
+        if (k) kvMap[k] = v;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cur: any = proj.aiContext ?? {};
+
+      const listFields: [string, string, string[]][] = [
+        ['tone', 'tone', ['marketing', 'factual', 'storytelling', 'poetic', 'educational']],
+        ['audience', 'audience', ['general', 'professional', 'luxury', 'youth', 'family', 'senior']],
+        ['length', 'length', ['short', 'medium', 'long']],
+      ];
+      for (const [excelKey, projKey, allowed] of listFields) {
+        const val = kvMap[excelKey] ?? '';
+        if (!val || val === (cur[projKey] ?? '')) continue;
+        if (!allowed.includes(val)) {
+          validationErrors.push({ entityLabel: 'AI Context', field: excelKey, value: val, message: `Must be one of: ${allowed.join(', ')}` });
+        } else {
+          pushChange('ai_context', 'ai_context', 'AI Context', projKey, cur[projKey] || '—', val, val);
+        }
+      }
+
+      const textFields: [string, string][] = [
+        ['theme', 'theme'], ['custom_instructions', 'customInstructions'], ['project_context', 'projectContext'],
+      ];
+      for (const [excelKey, projKey] of textFields) {
+        const val = kvMap[excelKey] ?? '';
+        const old = String(cur[projKey] ?? '');
+        if (val === old) continue;
+        const oldSnip = old ? `${old.slice(0, 60)}…` : '—';
+        const newSnip = val ? `${val.slice(0, 60)}…` : '(cleared)';
+        pushChange('ai_context', 'ai_context', 'AI Context', projKey, oldSnip, newSnip, val);
+      }
+    }
+  }
+
+  // ── Parse Hotspots sheet ──
+  const hotspotsWs = wb.getWorksheet('Hotspots');
+  if (hotspotsWs) {
+    const rows = wsToRows(hotspotsWs);
+    const [header, ...dataRows] = rows;
+    const col = (name: string) => header.indexOf(name);
+
+    for (const row of dataRows) {
+      if (!row.length) continue;
+      const hotspotId = String(row[col('id')] ?? '').trim();
+      const sceneSlugVal = String(row[col('scene_slug')] ?? '').trim();
+      if (!hotspotId || !sceneSlugVal) continue;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const scene: any = (proj.scenes ?? []).find((s: any) => s.slug === sceneSlugVal);
+      if (!scene) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hotspot: any = (scene.hotspots ?? []).find((h: any) => h.id === hotspotId);
+      if (!hotspot) continue;
+
+      const hTitle = hotspot.title?.[defaultLang] ?? hotspot.title?.en ?? '';
+      const label = hTitle ? `${sceneSlugVal} / ${hTitle}` : `${sceneSlugVal} / ${hotspotId.slice(0, 8)}`;
+
+      // ath
+      const athStr = String(row[col('ath')] ?? '').trim();
+      if (athStr) {
+        const ath = parseFloat(athStr);
+        if (isNaN(ath) || ath < -180 || ath > 180) {
+          validationErrors.push({ entityLabel: label, field: 'ath', value: athStr, message: 'Horizontal angle (ath) must be between -180 and 180.' });
+        } else if (Math.abs(ath - (hotspot.ath ?? 0)) > 0.001) {
+          pushChange('hotspot', hotspotId, label, 'ath', `${hotspot.ath}°`, `${ath}°`, ath, scene.id);
+        }
+      }
+
+      // atv
+      const atvStr = String(row[col('atv')] ?? '').trim();
+      if (atvStr) {
+        const atv = parseFloat(atvStr);
+        if (isNaN(atv) || atv < -90 || atv > 90) {
+          validationErrors.push({ entityLabel: label, field: 'atv', value: atvStr, message: 'Vertical angle (atv) must be between -90 and 90.' });
+        } else if (Math.abs(atv - (hotspot.atv ?? 0)) > 0.001) {
+          pushChange('hotspot', hotspotId, label, 'atv', `${hotspot.atv}°`, `${atv}°`, atv, scene.id);
+        }
+      }
+
+      // target_scene_slug → targetSceneId
+      if (col('target_scene_slug') >= 0) {
+        const targetSlugStr = String(row[col('target_scene_slug')] ?? '').trim();
+        if (targetSlugStr) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const targetScene: any = (proj.scenes ?? []).find((s: any) => s.slug === targetSlugStr);
+          if (!targetScene) {
+            validationErrors.push({ entityLabel: label, field: 'target_scene_slug', value: targetSlugStr, message: `Scene "${targetSlugStr}" not found in this project.` });
+          } else if (targetScene.id !== (hotspot.targetSceneId ?? '')) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const oldSlug = (proj.scenes ?? []).find((s: any) => s.id === hotspot.targetSceneId)?.slug ?? hotspot.targetSceneId ?? '—';
+            pushChange('hotspot', hotspotId, label, 'targetSceneId', oldSlug, targetSlugStr, targetScene.id, scene.id);
+          }
+        } else if (!targetSlugStr && hotspot.targetSceneId) {
+          // Explicitly cleared
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const oldSlug = (proj.scenes ?? []).find((s: any) => s.id === hotspot.targetSceneId)?.slug ?? '—';
+          pushChange('hotspot', hotspotId, label, 'targetSceneId', oldSlug, '(cleared)', null, scene.id);
+        }
+      }
+
+      // url
+      const urlStr = String(row[col('url')] ?? '').trim();
+      if (col('url') >= 0 && urlStr !== (hotspot.url ?? '')) {
+        if (urlStr && (!urlStr.includes('://') || urlStr.length <= 8)) {
+          validationErrors.push({ entityLabel: label, field: 'url', value: urlStr, message: 'URL must contain "://" and be at least 9 characters (e.g. https://example.com).' });
+        } else {
+          pushChange('hotspot', hotspotId, label, 'url', hotspot.url || '—', urlStr || '(cleared)', urlStr, scene.id);
+        }
+      }
+
+      // Localized title, body
+      for (const l of langs) {
+        const titleVal = String(row[col(`title_${l}`)] ?? '').trim();
+        if (titleVal && titleVal !== (hotspot.title?.[l] ?? '')) {
+          pushChange('hotspot', hotspotId, label, `title.${l}`, hotspot.title?.[l] || '—', titleVal, titleVal, scene.id);
+        }
+        const bodyVal = String(row[col(`body_${l}`)] ?? '').trim();
+        if (bodyVal && bodyVal !== (hotspot.body?.[l] ?? '')) {
+          const oldSnip = hotspot.body?.[l] ? `${String(hotspot.body[l]).slice(0, 60)}…` : '—';
+          pushChange('hotspot', hotspotId, label, `body.${l}`, oldSnip, `${bodyVal.slice(0, 60)}…`, bodyVal, scene.id);
+        }
+      }
+    }
+  }
+
+  return { canceled: false, changes, validationErrors };
+  } catch (parseErr: unknown) {
+    const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+    return { canceled: false, changes: [], validationErrors: [], error: `Import failed: ${msg}` };
+  }
+});
+
+// ── Git commit ────────────────────────────────────────────────────────────────
+
+ipcMain.handle('project:git-commit', async (_e, projectDir: string, message: string) => {
+  try {
+    execFileSync('git', ['-C', projectDir, 'add', '-A'], { timeout: 10_000 });
+    const out = execFileSync('git', ['-C', projectDir, 'commit', '-m', message], { timeout: 10_000 });
+    const sha = out.toString().match(/\[[\w /]+\s+([a-f0-9]+)\]/)?.[1];
+    return { ok: true, sha };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 // ── Excel full export (exceljs styled) ───────────────────────────────────────
@@ -844,6 +1279,173 @@ function applyHeaderRow(ws: ExcelJS.Worksheet, headerRow: ExcelJS.Row) {
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
   headerRow.alignment = { vertical: 'middle' };
   headerRow.height = 20;
+  // Lock header cells — they stay protected even when sheet is protected
+  headerRow.eachCell({ includeEmpty: true }, (cell) => {
+    cell.protection = { locked: true, hidden: false };
+  });
+}
+
+// ── Validation helpers ────────────────────────────────────────────────────────
+
+const BOOL_VALIDATION: ExcelJS.DataValidation = {
+  type: 'list',
+  allowBlank: false,
+  formulae: ['"true,false"'],
+  showErrorMessage: true,
+  errorStyle: 'stop',
+  errorTitle: 'Invalid value',
+  error: 'Only "true" or "false" are accepted.',
+};
+
+function decimalValidation(min: number, max: number, title: string, msg: string): ExcelJS.DataValidation {
+  return {
+    type: 'decimal',
+    operator: 'between',
+    allowBlank: true,
+    formulae: [min, max],
+    showErrorMessage: true,
+    errorStyle: 'stop',
+    errorTitle: title,
+    error: msg,
+  };
+}
+
+function listValidation(values: string[]): ExcelJS.DataValidation {
+  return {
+    type: 'list',
+    allowBlank: false,
+    formulae: [`"${values.join(',')}"`],
+    showErrorMessage: true,
+    errorStyle: 'stop',
+    errorTitle: 'Invalid value',
+    error: `Allowed: ${values.join(', ')}`,
+  };
+}
+
+function slugValidationFor(addr: string): ExcelJS.DataValidation {
+  return {
+    type: 'custom',
+    allowBlank: true,
+    formulae: [`AND(EXACT(${addr},LOWER(${addr})),ISERROR(FIND(" ",${addr})),ISERROR(FIND(".",${addr})),LEN(${addr})>=2,LEN(${addr})<=50)`],
+    showErrorMessage: true,
+    errorStyle: 'warning',
+    errorTitle: 'Invalid slug',
+    error: 'Lowercase only, no spaces or dots, 2–50 chars (a-z 0-9 - _)',
+  };
+}
+
+function colorValidationFor(addr: string): ExcelJS.DataValidation {
+  return {
+    type: 'custom',
+    allowBlank: true,
+    formulae: [`AND(LEN(${addr})=7,LEFT(${addr},1)="#")`],
+    showErrorMessage: true,
+    errorStyle: 'warning',
+    errorTitle: 'Invalid color',
+    error: 'Must be a hex color in #RRGGBB format (e.g. #3B82F6)',
+  };
+}
+
+function urlValidationFor(addr: string): ExcelJS.DataValidation {
+  return {
+    type: 'custom',
+    allowBlank: true,
+    formulae: [`OR(${addr}="",AND(LEN(${addr})>8,ISNUMBER(SEARCH("://",${addr}))))`],
+    showErrorMessage: true,
+    errorStyle: 'stop',
+    errorTitle: 'Invalid URL',
+    error: 'URL must contain "://" and be at least 9 characters (e.g. https://example.com).',
+  };
+}
+
+function noSpacesValidationFor(addr: string): ExcelJS.DataValidation {
+  return {
+    type: 'custom',
+    allowBlank: true,
+    formulae: [`ISERROR(FIND(" ",${addr}))`],
+    showErrorMessage: true,
+    errorStyle: 'stop',
+    errorTitle: 'No spaces allowed',
+    error: 'No spaces allowed. Separate multiple values with semicolons (;).',
+  };
+}
+
+/** Column config for finalizeSheet. Keys match ws.columns[*].key */
+type ColCfg = {
+  locked?: boolean;         // keep this column read-only
+  bool?: boolean;           // true/false list
+  decimal?: [number, number, string, string]; // [min, max, title, msg]
+  list?: string[];          // list of allowed values
+  slug?: boolean;           // slug custom formula (per cell)
+  color?: boolean;          // hex color custom formula (per cell)
+  url?: boolean;            // URL format validation
+  noSpaces?: boolean;       // no spaces allowed (for semicolon-separated fields)
+};
+
+/** Protect a key-value sheet where cells were already set locked/unlocked per-row. */
+async function ws_protectKv(ws: ExcelJS.Worksheet) {
+  await ws.protect('', {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertColumns: false,
+    insertRows: false,
+    deleteColumns: false,
+    deleteRows: false,
+    sort: true,
+    autoFilter: true,
+  });
+}
+
+async function finalizeSheet(ws: ExcelJS.Worksheet, cfg: Record<string, ColCfg>) {
+  const colCount = ws.columnCount;
+  const rowCount = ws.rowCount;
+
+  for (let r = 2; r <= rowCount; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= colCount; c++) {
+      const colKey = ws.getColumn(c).key as string | undefined;
+      const cell = row.getCell(c);
+      const colCfg = colKey ? (cfg[colKey] ?? {}) : {};
+
+      // Protection: locked columns stay locked, all others unlocked for editing
+      cell.protection = { locked: colCfg.locked === true, hidden: false };
+
+      // Apply validation
+      if (colCfg.bool) {
+        cell.dataValidation = BOOL_VALIDATION;
+      } else if (colCfg.decimal) {
+        const [min, max, title, msg] = colCfg.decimal;
+        cell.dataValidation = decimalValidation(min, max, title, msg);
+      } else if (colCfg.list) {
+        cell.dataValidation = listValidation(colCfg.list);
+      } else if (colCfg.slug) {
+        cell.dataValidation = slugValidationFor(cell.address);
+      } else if (colCfg.color) {
+        cell.dataValidation = colorValidationFor(cell.address);
+      } else if (colCfg.url) {
+        cell.dataValidation = urlValidationFor(cell.address);
+      } else if (colCfg.noSpaces) {
+        cell.dataValidation = noSpacesValidationFor(cell.address);
+      }
+    }
+  }
+
+  await ws.protect('', {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertColumns: false,
+    insertRows: false,
+    deleteColumns: false,
+    deleteRows: false,
+    sort: true,
+    autoFilter: true,
+  });
 }
 
 ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
@@ -919,7 +1521,7 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
     const geo = s.geo as Record<string, number> | undefined;
     const catSlugs = ((s.categoryIds ?? []) as string[])
       .map((id) => categories.find((c) => c.id === id)?.slug ?? id)
-      .join(', ');
+      .join(';');
     const row: Record<string, unknown> = {
       slug: s.slug ?? '',
       heading: s.heading ?? 0,
@@ -942,6 +1544,31 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
     }
   }
   wsScn.views = [{ state: 'frozen', ySplit: 1 }];
+  await finalizeSheet(wsScn, {
+    slug:              { slug: true },
+    heading:           { decimal: [0, 360, 'Invalid heading', 'Heading must be 0–360 degrees.'] },
+    gps_lat:           { decimal: [-90, 90, 'Invalid GPS latitude', 'Latitude must be between -90 and 90.'] },
+    gps_lng:           { decimal: [-180, 180, 'Invalid GPS longitude', 'Longitude must be between -180 and 180.'] },
+    category_slugs:    { noSpaces: true },
+    visibility_radius: { decimal: [0, 999999, 'Invalid radius', 'Visibility radius must be a positive number.'] },
+    ...Object.fromEntries(langs.flatMap((l) => [
+      [`title_${l}`,       {}],
+      [`description_${l}`, {}],
+      [`altText_${l}`,     {}],
+    ])),
+  });
+
+  // Inline list validation for target_scene_slug dropdown.
+  // Cross-sheet references (e.g. _Lookups!$A$2:$A$N) cause SheetJS to fail on re-import
+  // because ExcelJS writes them in extLst XML which SheetJS cannot parse.
+  // Instead: build a comma-separated string; fall back to slug-format if too long.
+  const sceneSlugList = scenes.map((s) => String(s.slug ?? '')).filter(Boolean);
+  const sceneSlugFormula = sceneSlugList.length > 0 ? `"${sceneSlugList.join(',')}"` : null;
+  const targetSceneCfg: ColCfg = sceneSlugFormula && sceneSlugFormula.length <= 253
+    ? { list: sceneSlugList }
+    : sceneSlugList.length > 0
+      ? { slug: true }  // too many scenes for inline list; validate slug format at least
+      : {};
 
   // ── Sheet: Hotspots ──────────────────────────────────────────────────────
   const wsHs = wb.addWorksheet('Hotspots', { tabColor: { argb: 'FF8B5CF6' } });
@@ -966,7 +1593,7 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
       type: h.type ?? '',
       ath: h.ath ?? 0,
       atv: h.atv ?? 0,
-      target_scene_slug: (h.type === 'link')
+      target_scene_slug: (h as Record<string, unknown>).targetSceneId
         ? (scenes.find((s) => s.id === (h as Record<string, unknown>).targetSceneId)?.slug ?? '')
         : '',
       url: (h as Record<string, unknown>).url ?? '',
@@ -978,6 +1605,19 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
     wsHs.addRow(row);
   }
   wsHs.views = [{ state: 'frozen', ySplit: 1 }];
+  await finalizeSheet(wsHs, {
+    scene_slug:        { locked: true },   // read-only: identifies which scene the hotspot belongs to
+    id:                { locked: true },
+    type:              { list: ['link', 'text', 'video', 'form'] },
+    ath:               { decimal: [-180, 180, 'Invalid ath', 'Horizontal angle (ath) must be between -180 and 180.'] },
+    atv:               { decimal: [-90, 90, 'Invalid atv', 'Vertical angle (atv) must be between -90 and 90.'] },
+    target_scene_slug: targetSceneCfg,
+    url:               { url: true },
+    ...Object.fromEntries(langs.flatMap((l) => [
+      [`title_${l}`, {}],
+      [`body_${l}`,  {}],
+    ])),
+  });
 
   // ── Sheet: Categories ────────────────────────────────────────────────────
   const wsCat = wb.addWorksheet('Categories', { tabColor: { argb: 'FFBA7517' } });
@@ -998,6 +1638,12 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
     wsCat.addRow(row);
   }
   wsCat.views = [{ state: 'frozen', ySplit: 1 }];
+  await finalizeSheet(wsCat, {
+    slug:     { slug: true },
+    color:    { color: true },
+    built_in: { locked: true },
+    ...Object.fromEntries(langs.map((l) => [`name_${l}`, {}])),
+  });
 
   // ── Sheet: Pages ─────────────────────────────────────────────────────────
   const wsPages = wb.addWorksheet('Pages', { tabColor: { argb: 'FF3B82F6' } });
@@ -1028,6 +1674,17 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
     wsPages.addRow(row);
   }
   wsPages.views = [{ state: 'frozen', ySplit: 1 }];
+  await finalizeSheet(wsPages, {
+    slug:           { slug: true },
+    enabled:        { bool: true },
+    show_in_footer: { bool: true },
+    order:          { decimal: [0, 999, 'Invalid order', 'Order must be a positive integer.'] },
+    built_in:       { locked: true },
+    ...Object.fromEntries(langs.flatMap((l) => [
+      [`title_${l}`,   {}],
+      [`content_${l}`, {}],
+    ])),
+  });
 
   // ── Sheet: Modules ───────────────────────────────────────────────────────
   const wsMod = wb.addWorksheet('Modules');
@@ -1037,17 +1694,25 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
   ];
   applyHeaderRow(wsMod, wsMod.getRow(1));
   const mods = (proj.modules ?? {}) as Record<string, unknown>;
+  // Bool keys lock down to true/false list; others are free text
+  const MOD_BOOL_KEYS = new Set(['vr', 'gyroscope', 'fullscreen', 'forms_enabled', 'cookie_consent']);
   const modEntries: [string, unknown][] = [
     ['vr', mods.vr],
     ['gyroscope', mods.gyroscope],
     ['fullscreen', mods.fullscreen],
     ['feedback_mailto', mods.feedbackMailto ?? ''],
     ['forms_enabled', mods.formsEnabled],
-    ['deepl_api_key', mods.deeplApiKey ?? ''],
     ['cookie_consent', mods.cookieConsent ?? false],
   ];
-  for (const [k, v] of modEntries) wsMod.addRow({ key: k, value: String(v ?? '') });
+  for (const [k, v] of modEntries) {
+    const addedRow = wsMod.addRow({ key: k, value: String(v ?? '') });
+    addedRow.getCell('key').protection = { locked: true, hidden: false };
+    const valCell = addedRow.getCell('value');
+    valCell.protection = { locked: false, hidden: false };
+    if (MOD_BOOL_KEYS.has(k)) valCell.dataValidation = BOOL_VALIDATION;
+  }
   wsMod.views = [{ state: 'frozen', ySplit: 1 }];
+  await ws_protectKv(wsMod);
 
   // ── Sheet: Analytics ────────────────────────────────────────────────────
   const wsAna = wb.addWorksheet('Analytics');
@@ -1058,12 +1723,23 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
   applyHeaderRow(wsAna, wsAna.getRow(1));
   const ga = (proj.analytics ?? {}) as Record<string, unknown>;
   const gaEvents = (ga.events ?? {}) as Record<string, boolean>;
-  wsAna.addRow({ setting: 'enabled', value: String(ga.enabled ?? 'false') });
-  wsAna.addRow({ setting: 'measurement_id', value: ga.measurementId ?? '' });
-  wsAna.addRow({ setting: 'anonymize_ip', value: String(ga.anonymizeIp ?? 'true') });
-  wsAna.addRow({ setting: 'respect_cookie_consent', value: String(ga.respectCookieConsent ?? 'true') });
-  for (const [k, v] of Object.entries(gaEvents)) wsAna.addRow({ setting: `event_${k}`, value: String(v) });
+  const ANA_BOOL_SETTINGS = new Set(['enabled', 'anonymize_ip', 'respect_cookie_consent']);
+  const anaRows: [string, string, boolean][] = [
+    ['enabled', String(ga.enabled ?? 'false'), true],
+    ['measurement_id', String(ga.measurementId ?? ''), false],
+    ['anonymize_ip', String(ga.anonymizeIp ?? 'true'), true],
+    ['respect_cookie_consent', String(ga.respectCookieConsent ?? 'true'), true],
+    ...Object.entries(gaEvents).map(([k, v]) => [`event_${k}`, String(v), true] as [string, string, boolean]),
+  ];
+  for (const [setting, value, isBool] of anaRows) {
+    const addedRow = wsAna.addRow({ setting, value });
+    addedRow.getCell('setting').protection = { locked: true, hidden: false };
+    const valCell = addedRow.getCell('value');
+    valCell.protection = { locked: false, hidden: false };
+    if (isBool) valCell.dataValidation = BOOL_VALIDATION;
+  }
   wsAna.views = [{ state: 'frozen', ySplit: 1 }];
+  await ws_protectKv(wsAna);
 
   // ── Sheet: AI Context ────────────────────────────────────────────────────
   const wsAi = wb.addWorksheet('AI Context');
@@ -1073,12 +1749,28 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
   ];
   applyHeaderRow(wsAi, wsAi.getRow(1));
   const aiCtx = (proj.aiContext ?? {}) as Record<string, unknown>;
-  wsAi.addRow({ setting: 'tone', value: aiCtx.tone ?? 'marketing' });
-  wsAi.addRow({ setting: 'audience', value: aiCtx.audience ?? 'general' });
-  wsAi.addRow({ setting: 'theme', value: aiCtx.theme ?? 'Tourism' });
-  wsAi.addRow({ setting: 'length', value: aiCtx.length ?? 'medium' });
-  wsAi.addRow({ setting: 'custom_instructions', value: aiCtx.customInstructions ?? '' });
+  const AI_CTX_VALIDATIONS: Record<string, ExcelJS.DataValidation> = {
+    tone:     listValidation(['marketing', 'factual', 'storytelling', 'poetic', 'educational']),
+    audience: listValidation(['general', 'professional', 'luxury', 'youth', 'family', 'senior']),
+    length:   listValidation(['short', 'medium', 'long']),
+  };
+  const aiCtxRows: [string, unknown][] = [
+    ['tone', aiCtx.tone ?? 'marketing'],
+    ['audience', aiCtx.audience ?? 'general'],
+    ['theme', aiCtx.theme ?? 'Tourism'],
+    ['length', aiCtx.length ?? 'medium'],
+    ['custom_instructions', aiCtx.customInstructions ?? ''],
+    ['project_context', aiCtx.projectContext ?? ''],
+  ];
+  for (const [setting, value] of aiCtxRows) {
+    const addedRow = wsAi.addRow({ setting, value: String(value ?? '') });
+    addedRow.getCell('setting').protection = { locked: true, hidden: false };
+    const valCell = addedRow.getCell('value');
+    valCell.protection = { locked: false, hidden: false };
+    if (AI_CTX_VALIDATIONS[setting]) valCell.dataValidation = AI_CTX_VALIDATIONS[setting];
+  }
   wsAi.views = [{ state: 'frozen', ySplit: 1 }];
+  await ws_protectKv(wsAi);
 
   // ── Sheet: Notes ─────────────────────────────────────────────────────────
   const wsNotes = wb.addWorksheet('Notes');
@@ -1089,6 +1781,22 @@ ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
   applyHeaderRow(wsNotes, wsNotes.getRow(1));
   for (const s of scenes) wsNotes.addRow({ scene_slug: s.slug ?? '', note: '' });
   wsNotes.views = [{ state: 'frozen', ySplit: 1 }];
+  await finalizeSheet(wsNotes, {
+    scene_slug: { locked: true },
+    note:       {},
+  });
+
+  // ── Project sheet: unlock data row ───────────────────────────────────────
+  await finalizeSheet(wsPrj, {
+    name:                {},
+    creator:             {},
+    contact_email:       {},
+    copyright:           {},
+    publication_url:     {},
+    short_description:   {},
+    default_language:    {},
+    available_languages: {},
+  });
 
   // ── Footer comment on Project sheet ─────────────────────────────────────
   const footerCell = wsPrj.getCell(`A${wsPrj.rowCount + 2}`);
