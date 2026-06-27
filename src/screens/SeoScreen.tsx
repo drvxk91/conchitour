@@ -1,5 +1,5 @@
-import { useState, useRef, useMemo } from 'react';
-import { Tag, X, Sparkles, Loader2, CheckCircle, Undo2, Redo2, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { Tag, X, Sparkles, Loader2, CheckCircle, Undo2, Redo2, ChevronDown, ChevronRight, Globe } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { generateSeoWithAi } from '@/lib/ai-seo';
@@ -114,6 +114,49 @@ function SeoAuditPanel({ project }: { project: Parameters<typeof runSeoAudit>[0]
   );
 }
 
+// ── Google SERP Preview ───────────────────────────────────────────────────────
+
+function SerpPreview({ title, description, breadcrumb, favicon }: {
+  title: string;
+  description: string;
+  breadcrumb: string;
+  favicon: string;
+}) {
+  const TITLE_MAX = 60;
+  const DESC_MAX = 160;
+  const titleOver = title.length > TITLE_MAX;
+
+  return (
+    <div className="rounded-xl border border-[#dadce0] bg-white px-4 py-3 font-[Arial,Helvetica,sans-serif] text-[#202124] shadow-sm">
+      {/* Site line */}
+      <div className="flex items-center gap-2 mb-0.5">
+        <div className="w-[18px] h-[18px] rounded-sm bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-500 flex-shrink-0 uppercase">
+          {favicon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-[14px] leading-[20px] text-[#202124] truncate">
+            {breadcrumb || <span className="text-gray-400">yoursite.com</span>}
+          </p>
+          <p className="text-[12px] leading-[14px] text-[#4d5156] truncate">{breadcrumb || 'yoursite.com › virtual-tour'}</p>
+        </div>
+      </div>
+      {/* Title */}
+      <p className={`text-[20px] leading-[26px] mt-0.5 truncate cursor-default hover:underline ${
+        title ? (titleOver ? 'text-amber-600' : 'text-[#1a0dab]') : 'text-gray-300 italic'
+      }`}>
+        {title || 'Meta title will appear here…'}
+        {titleOver && <span className="ml-1 text-[11px] text-amber-500">({title.length} chars — may be cut)</span>}
+      </p>
+      {/* Description */}
+      <p className="text-[14px] leading-[22px] text-[#4d5156] mt-0.5">
+        {description
+          ? description.slice(0, DESC_MAX) + (description.length > DESC_MAX ? '…' : '')
+          : <span className="italic text-gray-300">Meta description will appear here…</span>}
+      </p>
+    </div>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function SeoScreen() {
@@ -123,6 +166,24 @@ export function SeoScreen() {
   const defaultLang = project.languages.default || 'en';
 
   const [kwInput, setKwInput] = useState('');
+
+  // ── SERP preview live state ────────────────────────────────────────────────
+  const [previewTitle, setPreviewTitle] = useState(s.metaTitle ?? '');
+  const [previewDesc, setPreviewDesc]   = useState(s.metaDescription ?? '');
+  const [serpMode, setSerpMode]         = useState<'tour' | 'scene'>('tour');
+  const [serpSceneIdx, setSerpSceneIdx] = useState(0);
+  // Sync when AI generates or undo/redo updates the store
+  useEffect(() => { setPreviewTitle(s.metaTitle ?? ''); }, [s.metaTitle]);
+  useEffect(() => { setPreviewDesc(s.metaDescription ?? ''); }, [s.metaDescription]);
+
+  const publicationBase = project.meta.publicationUrl?.replace(/\/+$/, '') || 'yoursite.com';
+  const siteLabel = publicationBase.replace(/^https?:\/\//, '');
+  const faviconLetter = (project.meta.name || siteLabel).charAt(0).toUpperCase();
+
+  const serpScene = project.scenes[Math.min(serpSceneIdx, project.scenes.length - 1)];
+  const serpSceneTitle  = serpScene ? (serpScene.title?.[defaultLang] || serpScene.slug) : '';
+  const serpSceneDesc   = serpScene ? (serpScene.description?.[defaultLang] || '') : '';
+  const serpSceneUrl    = serpScene ? `${siteLabel} › scene › ${serpScene.slug}` : siteLabel;
 
   // ── AI SEO generation ──────────────────────────────────────────────────────
   const [aiState, setAiState] = useState<'idle' | 'running' | 'done'>('idle');
@@ -311,26 +372,81 @@ export function SeoScreen() {
           <div className="space-y-1">
             <label className="text-xs font-medium text-ink-faded uppercase tracking-wide">Meta title</label>
             <input
-              key={s.metaTitle}
               className={inputCls}
-              defaultValue={s.metaTitle}
+              value={previewTitle}
               placeholder="My hotel virtual tour — Acme Photography"
+              onChange={(e) => setPreviewTitle(e.target.value)}
               onBlur={(e) => updateSeo({ metaTitle: e.target.value })}
             />
-            <p className="text-[11px] text-ink-faded/70">Shown in search results. Aim for 50–60 characters ({s.metaTitle?.length ?? 0}/60).</p>
+            <p className={`text-[11px] ${previewTitle.length > 60 ? 'text-amber-500' : 'text-ink-faded/70'}`}>
+              Shown in search results. Aim for 50–60 characters ({previewTitle.length}/60).
+            </p>
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-ink-faded uppercase tracking-wide">Meta description</label>
             <textarea
-              key={s.metaDescription}
               rows={3}
               className={inputCls + ' resize-none'}
-              defaultValue={s.metaDescription}
+              value={previewDesc}
               placeholder="Explore every corner of our 5-star hotel in stunning 360°…"
+              onChange={(e) => setPreviewDesc(e.target.value)}
               onBlur={(e) => updateSeo({ metaDescription: e.target.value })}
             />
-            <p className="text-[11px] text-ink-faded/70">Shown below the title in search results. Aim for 120–160 characters ({s.metaDescription?.length ?? 0}/160).</p>
+            <p className={`text-[11px] ${previewDesc.length > 160 ? 'text-amber-500' : 'text-ink-faded/70'}`}>
+              Shown below the title in search results. Aim for 120–160 characters ({previewDesc.length}/160).
+            </p>
+          </div>
+
+          {/* ── Google SERP preview ─────────────────────────────────── */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[10px] text-ink-faded uppercase tracking-widest font-semibold">
+                <Globe size={11} /> Google preview
+              </div>
+              {project.scenes.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setSerpMode('tour')}
+                    className={`text-[11px] px-2 py-0.5 rounded transition-colors ${serpMode === 'tour' ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'}`}
+                  >
+                    Tour page
+                  </button>
+                  <button
+                    onClick={() => setSerpMode('scene')}
+                    className={`text-[11px] px-2 py-0.5 rounded transition-colors ${serpMode === 'scene' ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'}`}
+                  >
+                    Scene page
+                  </button>
+                </div>
+              )}
+            </div>
+            {serpMode === 'scene' && project.scenes.length > 0 && (
+              <select
+                className="w-full bg-paper-strong border border-line-soft rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-accent"
+                value={serpSceneIdx}
+                onChange={(e) => setSerpSceneIdx(Number(e.target.value))}
+              >
+                {project.scenes.map((sc, i) => (
+                  <option key={sc.id} value={i}>{sc.title?.[defaultLang] || sc.slug}</option>
+                ))}
+              </select>
+            )}
+            {serpMode === 'tour' ? (
+              <SerpPreview
+                title={previewTitle}
+                description={previewDesc}
+                breadcrumb={siteLabel}
+                favicon={faviconLetter}
+              />
+            ) : (
+              <SerpPreview
+                title={serpSceneTitle ? `${serpSceneTitle} — ${project.meta.name || siteLabel}` : ''}
+                description={serpSceneDesc}
+                breadcrumb={serpSceneUrl}
+                favicon={faviconLetter}
+              />
+            )}
           </div>
 
           {/* Keywords tag input */}

@@ -197,7 +197,8 @@ export function CompileScreen() {
     if (res.ok) {
       const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
       setLicenseStatus(ls);
-      const info = parseLicenseCode(licenseCode);
+      // Prefer name/email from krpanotools output; fall back to parsing the code itself
+      const info = parseLicenseCode(res.message) ?? parseLicenseCode(licenseCode);
       if (info) patchSettings({ licenseInfo: info });
       setLicenseCode('');
     }
@@ -276,12 +277,14 @@ export function CompileScreen() {
         {/* ── LEFT: Setup ─────────────────────────────────────────────── */}
         <div className="space-y-7">
 
-          {/* krpano installation */}
-          <section className="space-y-3">
+          {/* krpano — installation + license in one card */}
+          <section className="rounded-xl border border-line-soft bg-paper-tinted p-4 space-y-3">
             <div className="flex items-center gap-2">
-              <Settings size={14} className="text-ink-soft" />
-              <span className="text-sm font-medium text-ink">krpano installation</span>
+              <Settings size={13} className="text-ink-soft" />
+              <span className="text-sm font-medium text-ink">krpano</span>
             </div>
+
+            {/* Path */}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -289,62 +292,58 @@ export function CompileScreen() {
                 onChange={(e) => setKrpanoPathDraft(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleValidate()}
                 placeholder="C:\Users\...\krpano"
-                className="flex-1 px-3 py-2 rounded-md border border-line-strong bg-paper-soft text-sm font-mono text-ink min-w-0 focus:outline-none focus:border-accent"
+                className="flex-1 px-3 py-1.5 rounded-md border border-line-strong bg-paper text-sm font-mono text-ink min-w-0 focus:outline-none focus:border-accent"
               />
-              <button onClick={handleValidate} disabled={validating || !krpanoPathDraft} className="btn shrink-0 disabled:opacity-50">
-                {validating ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
+              <button onClick={handleValidate} disabled={validating || !krpanoPathDraft} className="btn shrink-0 disabled:opacity-50 text-xs">
+                {validating ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
                 Detect
               </button>
             </div>
             {validation && (
-              <div className={clsx('rounded-md px-3 py-2 text-xs', validation.valid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+              <div className={clsx('rounded-md px-3 py-1.5 text-xs', validation.valid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
                 {validation.valid
-                  ? 'krpano installation OK — vtour skin, viewer runtime, and tools found.'
+                  ? 'Installation OK — vtour skin, viewer and tools found.'
                   : <>Missing: {validation.missing.map((m, i) => <span key={m}><code className="font-mono bg-amber-100 px-0.5 rounded">{m}</code>{i < validation.missing.length - 1 ? ', ' : ''}</span>)}</>}
               </div>
             )}
-          </section>
 
-          {/* License */}
-          {settings?.krpanoPath && licenseStatus !== null && (
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Key size={14} className="text-ink-soft" />
-                  <span className="text-sm font-medium text-ink">krpano license</span>
-                </div>
-                <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', licenseStatus.present ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
-                  {licenseStatus.present ? '✓ Activated' : 'Not activated'}
-                </span>
-              </div>
-              {licenseStatus.present && settings.licenseInfo && <LicenseInfoCard info={settings.licenseInfo} />}
-              {!licenseStatus.present && (
-                <div className="space-y-2">
-                  <p className="text-xs text-ink-faded">Paste your registration code from the krpano purchase email.</p>
-                  <input
-                    type="text"
-                    value={licenseCode}
-                    onChange={(e) => setLicenseCode(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleActivateLicense()}
-                    placeholder="Paste registration code…"
-                    className="w-full px-3 py-2 rounded-md border border-line-strong bg-paper-soft text-xs font-mono focus:outline-none focus:border-accent"
-                  />
-                  {parsedLicense && <LicenseInfoCard info={parsedLicense} preview />}
-                  <div className="flex items-center gap-3">
-                    <button onClick={handleActivateLicense} disabled={activating || !licenseCode.trim()} className="btn btn-accent disabled:opacity-50">
-                      {activating ? <Loader2 size={13} className="animate-spin" /> : <Key size={13} />}
-                      Activate
-                    </button>
-                    {licenseResult && (
-                      <span className={clsx('text-xs', licenseResult.ok ? 'text-emerald-600' : 'text-red-500')}>
-                        {licenseResult.message}
-                      </span>
-                    )}
+            {/* License — shown once the path is set */}
+            {settings?.krpanoPath && licenseStatus !== null && (
+              <div className="border-t border-line-soft/60 pt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs text-ink-soft">
+                    <Key size={11} /> License
                   </div>
+                  <span className={clsx('text-[11px] px-2 py-0.5 rounded-full font-medium', licenseStatus.present ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+                    {licenseStatus.present ? '✓ Activated' : 'Not activated'}
+                  </span>
                 </div>
-              )}
-            </section>
-          )}
+                {licenseStatus.present && settings.licenseInfo && <LicenseInfoCard info={settings.licenseInfo} />}
+                {!licenseStatus.present && (
+                  <>
+                    <input
+                      type="text"
+                      value={licenseCode}
+                      onChange={(e) => setLicenseCode(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleActivateLicense()}
+                      placeholder="Paste registration code from purchase email…"
+                      className="w-full px-3 py-1.5 rounded-md border border-line-strong bg-paper text-xs font-mono focus:outline-none focus:border-accent"
+                    />
+                    {parsedLicense && <LicenseInfoCard info={parsedLicense} preview />}
+                    <div className="flex items-center gap-3">
+                      <button onClick={handleActivateLicense} disabled={activating || !licenseCode.trim()} className="btn btn-accent text-xs disabled:opacity-50">
+                        {activating ? <Loader2 size={12} className="animate-spin" /> : <Key size={12} />}
+                        Activate
+                      </button>
+                      {licenseResult && !licenseResult.ok && (
+                        <span className="text-xs text-red-500">{licenseResult.message}</span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
 
           {/* Output folder */}
           <section className="space-y-2">
