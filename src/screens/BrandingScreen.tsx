@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { Upload, X } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Upload, X, Sparkles, Loader2 } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { toLocalUrl } from '@/lib/local-url';
+import { callAiStreaming } from '@/lib/ai-content';
+import { resolvedModelId, computeAiCost } from '@/lib/ai-tracking';
 import type { TourTheme } from '@/types';
 
 const inputCls =
@@ -70,12 +72,94 @@ const FONT_OPTIONS: { id: TourTheme['fontFamily']; label: string; sample: string
 ];
 
 export function BrandingScreen() {
-  const { project, updateBranding } = useProject();
+  const { project, updateBranding, recordAiUsage } = useProject();
   const b = project.branding;
   const langs = project.languages.available.length ? project.languages.available : ['en'];
   const defaultLang = project.languages.default || 'en';
   const [introLang, setIntroLang] = useState(defaultLang);
   const theme: TourTheme = b.tourTheme ?? {};
+
+  const [genState, setGenState] = useState<'idle' | 'generating' | 'error'>('idle');
+  const [genError, setGenError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+
+  async function handleGenerateIntro() {
+    const mods = project.modules;
+    const provider = mods.aiProvider ?? 'claude';
+    const apiKey = provider === 'gpt' ? mods.openaiApiKey : mods.anthropicApiKey;
+    if (!apiKey?.trim()) {
+      setGenError('No AI key configured. Go to AI screen first.');
+      setGenState('error');
+      return;
+    }
+
+    abortRef.current = new AbortController();
+    setGenState('generating');
+    setGenError('');
+
+    const modelId = resolvedModelId(
+      provider,
+      provider === 'gpt' ? mods.openaiModel : mods.claudeModel,
+    );
+    const ctx = project.aiContext;
+    const tone = ctx?.tone ?? 'marketing';
+    const audience = ctx?.audience ?? 'general';
+    const projectContext = ctx?.projectContext?.trim() ?? '';
+    const customInstructions = ctx?.customInstructions?.trim() ?? '';
+    const shortDesc = project.meta.shortDescription?.trim() ?? '';
+
+    const prompt = `You are writing splash screen intro text for a 360° virtual tour.
+
+Tour name: "${project.meta.name}"
+${shortDesc ? `Description: "${shortDesc}"` : ''}
+${projectContext ? `Editorial context: "${projectContext}"` : ''}
+Tone: ${tone}. Audience: ${audience}.
+
+Write a SHORT welcome message or tagline (1–2 lines maximum) to display below the tour title on the loading screen. It should be warm, enticing, and match the tour's identity.
+${customInstructions ? `Additional instructions: ${customInstructions}` : ''}
+
+Languages required: ${langs.join(', ')}
+
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  ${langs.map((l) => `"${l}": "..."`).join(',\n  ')}
+}`;
+
+    try {
+      const { text, tokensIn, tokensOut } = await callAiStreaming(
+        provider, apiKey, prompt, null,
+        abortRef.current.signal,
+        () => {},
+        modelId,
+      );
+
+      const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+      let parsed: Record<string, string> = {};
+      try { parsed = JSON.parse(clean); } catch { /* keep empty */ }
+
+      const newIntroText = { ...(b.introText ?? {}) };
+      for (const l of langs) {
+        if (parsed[l]) newIntroText[l] = parsed[l];
+      }
+      updateBranding({ introText: newIntroText });
+
+      const costUsd = computeAiCost(modelId, tokensIn, tokensOut);
+      recordAiUsage({
+        provider: provider === 'gpt' ? 'openai' : 'anthropic',
+        modelId,
+        inputTokens: tokensIn,
+        outputTokens: tokensOut,
+        costUsd,
+        operation: 'other',
+      });
+
+      setGenState('idle');
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') { setGenState('idle'); return; }
+      setGenError((err as Error).message || 'Generation failed');
+      setGenState('error');
+    }
+  }
 
   function patchTheme(patch: Partial<TourTheme>) {
     updateBranding({ tourTheme: { ...theme, ...patch } });
@@ -134,8 +218,27 @@ export function BrandingScreen() {
           </div>
 
           <div className="border-t border-line pt-6 space-y-3">
-            <ColTitle>Loading screen text</ColTitle>
+            <div className="flex items-center justify-between">
+              <ColTitle>Loading screen text</ColTitle>
+              <button
+                onClick={genState === 'generating' ? () => abortRef.current?.abort() : handleGenerateIntro}
+                disabled={false}
+                className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border transition-colors ${
+                  genState === 'generating'
+                    ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    : 'border-line-soft bg-paper-tinted text-ink-soft hover:bg-paper-strong hover:text-ink'
+                }`}
+                title="Generate a tagline or welcome message with AI"
+              >
+                {genState === 'generating'
+                  ? <><Loader2 size={11} className="animate-spin" /> Stop</>
+                  : <><Sparkles size={11} /> Generate</>}
+              </button>
+            </div>
             <p className="text-xs text-ink-faded">Displayed on the splash screen while the tour loads. Project title always appears; add a tagline or welcome message below.</p>
+            {genState === 'error' && (
+              <p className="text-[11px] text-red-500">{genError}</p>
+            )}
             {langs.length > 1 && (
               <div className="flex gap-1.5">
                 {langs.map((l) => (
