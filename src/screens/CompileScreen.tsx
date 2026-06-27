@@ -189,20 +189,31 @@ export function CompileScreen() {
   }, [krpanoPathDraft, patchSettings]);
 
   const handleActivateLicense = useCallback(async () => {
-    if (!settings?.krpanoPath || !licenseCode.trim()) return;
+    if (!settings?.krpanoPath) {
+      setLicenseResult({ ok: false, message: 'krpano path not set. Use the Detect button first.' });
+      return;
+    }
+    if (!licenseCode.trim()) {
+      setLicenseResult({ ok: false, message: 'Registration code is empty.' });
+      return;
+    }
     setActivating(true);
     setLicenseResult(null);
-    const res = await window.conchitect.krpanoRegister(settings.krpanoPath, licenseCode);
-    setLicenseResult(res);
-    if (res.ok) {
-      const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
-      setLicenseStatus(ls);
-      // Prefer name/email from krpanotools output; fall back to parsing the code itself
-      const info = parseLicenseCode(res.message) ?? parseLicenseCode(licenseCode);
-      if (info) patchSettings({ licenseInfo: info });
-      setLicenseCode('');
+    try {
+      const res = await window.conchitect.krpanoRegister(settings.krpanoPath, licenseCode);
+      setLicenseResult(res);
+      if (res.ok) {
+        const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
+        setLicenseStatus(ls);
+        const info = parseLicenseCode(res.message) ?? parseLicenseCode(licenseCode);
+        if (info) patchSettings({ licenseInfo: info });
+        setLicenseCode('');
+      }
+    } catch (err) {
+      setLicenseResult({ ok: false, message: `IPC error: ${String(err)}` });
+    } finally {
+      setActivating(false);
     }
-    setActivating(false);
   }, [settings?.krpanoPath, licenseCode, patchSettings]);
 
   const handlePickFolder = useCallback(async () => {
@@ -335,14 +346,15 @@ export function CompileScreen() {
                         {activating ? 'Activating…' : 'Activate'}
                       </button>
                     </div>
-                    {licenseResult && (
-                      <div className={clsx('rounded-md px-3 py-2 text-xs font-mono whitespace-pre-wrap break-all',
-                        licenseResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
-                      )}>
-                        {licenseResult.message}
-                      </div>
-                    )}
                   </>
+                )}
+                {/* Result shown regardless of activated/not — survives status flip */}
+                {licenseResult && (
+                  <div className={clsx('rounded-md px-3 py-2 text-xs font-mono whitespace-pre-wrap break-all',
+                    licenseResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
+                  )}>
+                    {licenseResult.message}
+                  </div>
                 )}
               </div>
             )}
