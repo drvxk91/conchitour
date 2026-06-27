@@ -288,35 +288,6 @@ export function ModulesScreen() {
           </div>
         </div>
 
-        {/* ── AI integrations ─────────────────────────────────────────────── */}
-        <p className="text-[10px] uppercase tracking-widest text-ink-faded font-semibold mt-8 mb-3">AI integrations</p>
-
-        {/* Claude */}
-        <div className="rounded-xl border border-dashed border-line-strong bg-paper-tinted p-4 opacity-60">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-paper-strong text-ink-faded">
-              <Sparkles size={18} />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-ink">Claude (Anthropic)</p>
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5">
-                  <Construction size={9} />
-                  Development in progress
-                </span>
-              </div>
-              <p className="text-xs text-ink-faded mt-1">
-                Auto-generate scene descriptions, alt texts, and SEO content from your panoramas.
-              </p>
-              <input
-                disabled
-                className={inputCls + ' mt-3 opacity-50 cursor-not-allowed'}
-                placeholder="sk-ant-xxxx — coming soon"
-              />
-            </div>
-          </div>
-        </div>
-
         {/* ChatGPT */}
         <div className="rounded-xl border border-dashed border-line-strong bg-paper-tinted p-4 opacity-60">
           <div className="flex items-start gap-3">

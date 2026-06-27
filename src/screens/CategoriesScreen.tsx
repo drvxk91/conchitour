@@ -287,7 +287,7 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function CategoriesScreen() {
-  const { project, addCategory, updateCategory, deleteCategory, updateScene, updatePage } = useProject();
+  const { project, addCategory, updateCategory, deleteCategory, updateScene, updatePage, updateAnalytics } = useProject();
   const [modalOpen, setModalOpen] = useState<'new' | string | null>(null); // 'new' | category id | null
   const [toast, setToast] = useState<string | null>(null);
 
@@ -371,6 +371,10 @@ export function CategoriesScreen() {
       for (const [pageId, patch] of Object.entries(result.pagePatch)) {
         updatePage(pageId, patch as Parameters<typeof updatePage>[1]);
       }
+    }
+    // Apply analytics patch
+    if (result.analyticsPatch) {
+      updateAnalytics(result.analyticsPatch as Parameters<typeof updateAnalytics>[0]);
     }
 
     const summary = `Import done — ${result.updated ?? 0} updated, ${result.skipped ?? 0} skipped` +

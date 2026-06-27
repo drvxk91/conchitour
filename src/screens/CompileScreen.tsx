@@ -2,10 +2,12 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
   Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown, Key,
+  ClipboardCheck,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
+import { runStaticAudit } from '@/lib/audit/static-checks';
 import type { CompileResult, ConchitectSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
 
 function parseLicenseCode(code: string): LicenseInfo | null {
@@ -77,7 +79,7 @@ function LicenseInfoCard({ info, preview = false }: { info: LicenseInfo; preview
 }
 
 export function CompileScreen() {
-  const { project, setIsCompiling, clearDirty } = useProject();
+  const { project, setIsCompiling, clearDirty, setActiveScreen } = useProject();
 
   const [settings, setSettings]             = useState<ConchitectSettings | null>(null);
   const [krpanoPathDraft, setKrpanoPathDraft] = useState('');
@@ -240,6 +242,10 @@ export function CompileScreen() {
   const sceneCount = project.scenes.length;
   const krpanoOk   = validation?.valid ?? false;
   const canCompile = outputDir.length > 0 && sceneCount > 0 && !running;
+
+  const auditIssues = useMemo(() => runStaticAudit(project), [project]);
+  const auditErrors   = auditIssues.filter((i) => i.severity === 'error').length;
+  const auditWarnings = auditIssues.filter((i) => i.severity === 'warning').length;
 
   const checks = [
     { label: sceneCount > 0 ? `${sceneCount} scene${sceneCount !== 1 ? 's' : ''} ready` : 'No scenes — add scenes first', ok: sceneCount > 0 },
@@ -412,6 +418,44 @@ export function CompileScreen() {
               ))}
             </ul>
           </section>
+
+          {/* Audit banner */}
+          {auditErrors > 0 ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-red-700">
+                  {auditErrors} error{auditErrors !== 1 ? 's' : ''} found — visitors may see problems.
+                </p>
+                <button
+                  onClick={() => setActiveScreen('audit')}
+                  className="mt-1 text-xs text-red-600 underline"
+                >
+                  Review in Audit screen
+                </button>
+              </div>
+            </div>
+          ) : auditWarnings > 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-amber-700">
+                  {auditWarnings} warning{auditWarnings !== 1 ? 's' : ''} — tour will compile but quality could improve.
+                </p>
+                <button
+                  onClick={() => setActiveScreen('audit')}
+                  className="mt-1 text-xs text-amber-600 underline"
+                >
+                  Review suggestions
+                </button>
+              </div>
+            </div>
+          ) : sceneCount > 0 ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+              <ClipboardCheck size={15} className="text-green-500 shrink-0" />
+              <p className="text-sm text-green-700 font-medium">Audit passed — ready to compile.</p>
+            </div>
+          ) : null}
 
           {/* Compile button */}
           <div className="flex items-center gap-3">
