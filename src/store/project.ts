@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Project, Scene, Category, UUID, Hotspot, StaticPage } from '@/types';
-import { newProject, BUILTIN_CATEGORIES } from '@/lib/factory';
+import type { Project, Scene, Category, UUID, Hotspot, StaticPage, AnalyticsConfig } from '@/types';
+import { newProject, BUILTIN_CATEGORIES, DEFAULT_ANALYTICS } from '@/lib/factory';
 import { DEFAULT_BUILTIN_PAGES } from '@/lib/builtin-pages';
 
 /** Ensure all built-in categories are present (migration for pre-v2 project files). */
@@ -76,6 +76,9 @@ interface ProjectStore {
   updatePage: (id: string, patch: Partial<StaticPage>) => void;
   deletePage: (id: string) => void;
 
+  // Analytics
+  updateAnalytics: (patch: Partial<AnalyticsConfig>) => void;
+
   // Hotspots
   addHotspot: (sceneId: UUID, hotspot: Hotspot) => void;
   updateHotspot: (sceneId: UUID, hotspotId: UUID, patch: Partial<Hotspot>) => void;
@@ -103,6 +106,7 @@ export type ScreenId =
   | 'scenes'
   | 'map'
   | 'categories'
+  | 'content'
   | 'project'
   | 'seo'
   | 'languages'
@@ -110,6 +114,8 @@ export type ScreenId =
   | 'branding'
   | 'share'
   | 'modules'
+  | 'analytics'
+  | 'audit'
   | 'compile';
 
 // ─── store ────────────────────────────────────────────────────────────────────
@@ -320,6 +326,14 @@ export const useProject = create<ProjectStore>((set) => ({
       withHistory(s, {
         ...s.project,
         modules: { ...s.project.modules, ...patch },
+      })
+    ),
+
+  updateAnalytics: (patch) =>
+    set((s) =>
+      withHistory(s, {
+        ...s.project,
+        analytics: { ...(s.project.analytics ?? DEFAULT_ANALYTICS), ...patch },
       })
     ),
 
