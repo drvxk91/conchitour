@@ -39,6 +39,16 @@ export function LanguagesScreen() {
 
   const [addInput, setAddInput] = useState('');
   const [addError, setAddError] = useState('');
+  const [deeplKeyDraft, setDeeplKeyDraft] = useState(modules.deeplApiKey ?? '');
+
+  async function autoSaveDeeplKey() {
+    const val = deeplKeyDraft.trim() || undefined;
+    updateModules({ deeplApiKey: val });
+    try {
+      const dir = await window.conchitect.getProjectDir();
+      if (dir) await window.conchitect.saveProject(useProject.getState().project);
+    } catch { /* non-fatal */ }
+  }
 
   function handleAdd() {
     const code = addInput.trim().toLowerCase().replace(/[^a-z]/g, '');
@@ -157,12 +167,13 @@ export function LanguagesScreen() {
             <input
               type="password"
               className="w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink font-mono placeholder-ink-faded focus:outline-none focus:border-accent"
-              defaultValue={modules.deeplApiKey ?? ''}
+              value={deeplKeyDraft}
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
-              onBlur={(e) => updateModules({ deeplApiKey: e.target.value || undefined })}
+              onChange={(e) => setDeeplKeyDraft(e.target.value)}
+              onBlur={autoSaveDeeplKey}
             />
           </div>
-          {modules.deeplApiKey && (
+          {deeplKeyDraft.trim() && (
             <p className="text-[11px] text-green-600 mt-1.5">
               API key saved. Translation will be available in the Scenes editor per-hotspot and per-scene.
             </p>
