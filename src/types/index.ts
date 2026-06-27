@@ -194,8 +194,12 @@ export interface ProjectModules {
   mapMode?: MapModeConfig;
   /** When true, hovering a map marker highlights the matching link hotspot in the 360° view and vice-versa */
   mapTourSync?: boolean;
-  /** Anthropic API key for AI audit (stored in project, NOT exported to Excel) */
+  /** Anthropic API key (stored in project, NOT exported to Excel) */
   anthropicApiKey?: string;
+  /** OpenAI API key (stored in project, NOT exported to Excel) */
+  openaiApiKey?: string;
+  /** Which AI provider is active for content generation */
+  aiProvider?: 'claude' | 'gpt';
 }
 
 export type BuiltInPageKind = 'privacy' | 'legal' | 'terms' | 'about' | 'contact';
@@ -288,6 +292,11 @@ export interface AnalyticsConfig {
   events: Record<TrackableEvent, boolean>;
 }
 
+export interface AiTokenCount {
+  in: number;
+  out: number;
+}
+
 export interface AiContext {
   tone: 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational';
   audience: 'general' | 'professional' | 'luxury' | 'youth' | 'family' | 'senior';
@@ -295,6 +304,10 @@ export interface AiContext {
   theme: string;
   length: 'short' | 'medium' | 'long';
   customInstructions?: string;
+  /** Free-text project description sent with every AI request as editorial context */
+  projectContext?: string;
+  /** Cumulative token usage per provider */
+  tokensUsed?: { claude: AiTokenCount; gpt: AiTokenCount };
 }
 
 export interface Project {

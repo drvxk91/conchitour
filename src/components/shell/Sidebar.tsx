@@ -1,7 +1,7 @@
 import { useProject, type ScreenId } from '@/store/project';
 import {
   Upload, Image, Map, Tags, Settings, Search, Languages,
-  Palette, Share2, Puzzle, Package, FileText, BarChart3, ClipboardCheck, Type,
+  Palette, Share2, Puzzle, Package, FileText, BarChart3, ClipboardCheck, Type, Brain,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -37,6 +37,7 @@ export function Sidebar() {
         { id: 'seo',       label: 'SEO',       Icon: Search },
         { id: 'modules',   label: 'Modules',   Icon: Puzzle },
         { id: 'analytics', label: 'Analytics', Icon: BarChart3 },
+        { id: 'ai',        label: 'AI',         Icon: Brain },
       ],
     },
     {

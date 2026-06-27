@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { Glasses, Smartphone, Maximize, MessageSquare, ClipboardList, Key, Bot, Sparkles, Construction, Cookie, Map, ArrowLeftRight, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { testAiConnection } from '@/lib/audit/ai-checks';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
+import { Glasses, Smartphone, Maximize, MessageSquare, ClipboardList, Cookie, Map, ArrowLeftRight } from 'lucide-react';
 import type { MapModeConfig } from '@/types';
 
 const inputCls =
@@ -56,33 +54,6 @@ const DEFAULT_MAP_MODE: MapModeConfig = {
 export function ModulesScreen() {
   const { project, updateModules } = useProject();
   const m = project.modules;
-  const [anthropicTestState, setAnthropicTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
-  const [anthropicTestMsg, setAnthropicTestMsg] = useState('');
-  // Controlled local state for key fields — avoids losing keys if user forgets Ctrl+S
-  const [anthropicKeyDraft, setAnthropicKeyDraft] = useState(m.anthropicApiKey ?? '');
-  const [deeplKeyDraft, setDeeplKeyDraft] = useState(m.deeplApiKey ?? '');
-
-  async function autoSave(patch: Parameters<typeof updateModules>[0]) {
-    updateModules(patch);
-    try {
-      const dir = await window.conchitect.getProjectDir();
-      if (dir) {
-        // Zustand set is synchronous — getState() reflects the patch just applied
-        const fresh = useProject.getState().project;
-        await window.conchitect.saveProject(fresh);
-      }
-    } catch { /* non-fatal: user can still Ctrl+S */ }
-  }
-
-  async function handleTestAnthropic() {
-    const key = anthropicKeyDraft.trim();
-    if (!key) return;
-    setAnthropicTestState('testing');
-    setAnthropicTestMsg('');
-    const result = await testAiConnection(key);
-    setAnthropicTestState(result.ok ? 'ok' : 'error');
-    setAnthropicTestMsg(result.error ?? '');
-  }
   const mapMode: MapModeConfig = m.mapMode ?? DEFAULT_MAP_MODE;
   const scenesWithGps = project.scenes.filter((s) => s.geo?.lat !== 0 || s.geo?.lng !== 0).length;
 
@@ -215,104 +186,6 @@ export function ModulesScreen() {
           onChange={(v) => updateModules({ mapTourSync: v })}
         />
 
-        {/* ── Anthropic API key ────────────────────────────────────────── */}
-        <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 mt-6">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-paper-strong text-ink-faded">
-              <Sparkles size={18} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-ink">Anthropic API key</p>
-              <p className="text-xs text-ink-faded mt-0.5 mb-3">
-                Used for the Tour Audit AI checks — scene quality, narrative flow, and SEO suggestions.
-                Get yours at{' '}
-                <a className="underline text-accent" onClick={(e) => { e.preventDefault(); window.conchitect.openUrl('https://console.anthropic.com'); }} href="#">
-                  console.anthropic.com
-                </a>
-                {' '}— keys start with <code className="font-mono bg-paper px-0.5 rounded">sk-ant-</code>
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  className={inputCls + ' flex-1'}
-                  value={anthropicKeyDraft}
-                  placeholder="sk-ant-api03-…"
-                  onChange={(e) => { setAnthropicKeyDraft(e.target.value); setAnthropicTestState('idle'); }}
-                  onBlur={() => autoSave({ anthropicApiKey: anthropicKeyDraft.trim() || undefined })}
-                />
-                <button
-                  onClick={handleTestAnthropic}
-                  disabled={!anthropicKeyDraft.trim() || anthropicTestState === 'testing'}
-                  className="btn shrink-0 disabled:opacity-50"
-                >
-                  {anthropicTestState === 'testing' ? <Loader2 size={13} className="animate-spin" /> : 'Test'}
-                </button>
-              </div>
-              {anthropicTestState === 'ok' && (
-                <p className="text-[11px] text-green-600 mt-1 flex items-center gap-1">
-                  <CheckCircle size={11} /> Connected — Anthropic API key is valid.
-                </p>
-              )}
-              {anthropicTestState === 'error' && (
-                <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle size={11} /> {anthropicTestMsg || 'Connection failed. Check your key.'}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* DeepL key (also editable from Languages screen) */}
-        <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 mt-6">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-paper-strong text-ink-faded">
-              <Key size={18} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-ink">DeepL API key</p>
-              <p className="text-xs text-ink-faded mt-0.5 mb-3">
-                Used for auto-translation in the Languages screen and the Scenes editor.
-              </p>
-              <input
-                type="password"
-                className={inputCls}
-                value={deeplKeyDraft}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
-                onChange={(e) => setDeeplKeyDraft(e.target.value)}
-                onBlur={() => autoSave({ deeplApiKey: deeplKeyDraft.trim() || undefined })}
-              />
-              {deeplKeyDraft.trim() && (
-                <p className="text-[11px] text-green-600 mt-1">API key stored.</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ChatGPT */}
-        <div className="rounded-xl border border-dashed border-line-strong bg-paper-tinted p-4 opacity-60">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-paper-strong text-ink-faded">
-              <Bot size={18} />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-ink">ChatGPT (OpenAI)</p>
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2 py-0.5">
-                  <Construction size={9} />
-                  Development in progress
-                </span>
-              </div>
-              <p className="text-xs text-ink-faded mt-1">
-                Generate tour narratives, suggest hotspot labels, and enrich metadata with GPT-4.
-              </p>
-              <input
-                disabled
-                className={inputCls + ' mt-3 opacity-50 cursor-not-allowed'}
-                placeholder="sk-xxxx — coming soon"
-              />
-            </div>
-          </div>
-        </div>
       </div>
     </ScreenShell>
   );

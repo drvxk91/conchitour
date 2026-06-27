@@ -15,6 +15,7 @@ import { AnalyticsScreen } from '@/screens/AnalyticsScreen';
 import { AuditScreen } from '@/screens/AuditScreen';
 import { CompileScreen } from '@/screens/CompileScreen';
 import { ContentScreen } from '@/screens/ContentScreen';
+import { AIScreen } from '@/screens/AIScreen';
 
 class ScreenErrorBoundary extends Component<
   { children: ReactNode },
@@ -63,6 +64,7 @@ function ActiveScreen() {
     case 'share':      return <ShareScreen />;
     case 'modules':    return <ModulesScreen />;
     case 'analytics':  return <AnalyticsScreen />;
+    case 'ai':         return <AIScreen />;
     case 'audit':      return <AuditScreen />;
     case 'compile':    return <CompileScreen />;
   }

@@ -70,6 +70,8 @@ export function newProject(): Project {
       audience: 'general' as const,
       theme: 'Tourism',
       length: 'medium' as const,
+      projectContext: '',
+      tokensUsed: { claude: { in: 0, out: 0 }, gpt: { in: 0, out: 0 } },
     },
   };
 }

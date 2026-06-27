@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Project, Scene, Category, UUID, Hotspot, StaticPage, AnalyticsConfig } from '@/types';
+import type { Project, Scene, Category, UUID, Hotspot, StaticPage, AnalyticsConfig, AiContext } from '@/types';
 import { newProject, BUILTIN_CATEGORIES, DEFAULT_ANALYTICS } from '@/lib/factory';
 import { DEFAULT_BUILTIN_PAGES } from '@/lib/builtin-pages';
 
@@ -79,6 +79,10 @@ interface ProjectStore {
   // Analytics
   updateAnalytics: (patch: Partial<AnalyticsConfig>) => void;
 
+  // AI context
+  updateAiContext: (patch: Partial<AiContext>) => void;
+  addAiTokens: (provider: 'claude' | 'gpt', input: number, output: number) => void;
+
   // Hotspots
   addHotspot: (sceneId: UUID, hotspot: Hotspot) => void;
   updateHotspot: (sceneId: UUID, hotspotId: UUID, patch: Partial<Hotspot>) => void;
@@ -115,6 +119,7 @@ export type ScreenId =
   | 'share'
   | 'modules'
   | 'analytics'
+  | 'ai'
   | 'audit'
   | 'compile';
 
@@ -336,6 +341,25 @@ export const useProject = create<ProjectStore>((set) => ({
         analytics: { ...(s.project.analytics ?? DEFAULT_ANALYTICS), ...patch },
       })
     ),
+
+  updateAiContext: (patch) =>
+    set((s) =>
+      withHistory(s, {
+        ...s.project,
+        aiContext: { ...(s.project.aiContext ?? { tone: 'marketing', audience: 'general', theme: 'Tourism', length: 'medium' }), ...patch },
+      })
+    ),
+
+  addAiTokens: (provider, input, output) =>
+    set((s) => {
+      const prev = s.project.aiContext ?? { tone: 'marketing' as const, audience: 'general' as const, theme: 'Tourism', length: 'medium' as const };
+      const used = prev.tokensUsed ?? { claude: { in: 0, out: 0 }, gpt: { in: 0, out: 0 } };
+      const updated = {
+        ...used,
+        [provider]: { in: (used[provider]?.in ?? 0) + input, out: (used[provider]?.out ?? 0) + output },
+      };
+      return withHistory(s, { ...s.project, aiContext: { ...prev, tokensUsed: updated } });
+    }),
 
   undo: () =>
     set((s) => {
