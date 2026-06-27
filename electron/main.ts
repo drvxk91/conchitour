@@ -2493,10 +2493,10 @@ ${hsPreviewCss}
     }
     #cookie-accept:hover{filter:brightness(1.1)}
     ${copyright ? `#tour-copyright{position:fixed;bottom:0;right:12px;z-index:45;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;padding-bottom:2px}` : ''}
-    #tour-footer{position:fixed;bottom:0;left:12px;z-index:44;display:flex;align-items:center;gap:6px;padding-bottom:2px;font-size:10px}
-    #tour-footer a{color:rgba(255,255,255,.28);text-decoration:none;transition:.12s}
-    #tour-footer a:hover{color:rgba(255,255,255,.65)}
-    #tour-footer .tf-sep{color:rgba(255,255,255,.15)}
+    #tour-footer{position:fixed;bottom:8px;left:12px;z-index:44;display:flex;align-items:center;gap:4px;padding:5px 12px;font-size:11px;background:rgba(0,0,0,.45);backdrop-filter:blur(10px);border-radius:6px;box-shadow:0 1px 6px rgba(0,0,0,.35)}
+    #tour-footer a{color:rgba(255,255,255,.80);text-decoration:none;transition:.15s}
+    #tour-footer a:hover{color:#fff;text-decoration:underline}
+    #tour-footer .tf-sep{color:rgba(255,255,255,.35);margin:0 2px}
 
     /* ── UI toast ───────────────────────────── */
     #ui-toast{

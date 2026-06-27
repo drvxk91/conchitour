@@ -261,7 +261,7 @@ export function ContentScreen() {
           className="btn btn-accent gap-1.5 text-xs"
         >
           <Sparkles size={13} />
-          Generate with Claude…
+          Generate with AI…
           {selected.size > 0 && <span className="text-accent/70">({selected.size} selected)</span>}
         </button>
       </div>

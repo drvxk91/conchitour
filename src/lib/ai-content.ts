@@ -1,5 +1,91 @@
 import type { Project, Scene } from '../types';
 
+// ── OpenAI streaming ──────────────────────────────────────────────────────────
+
+async function callOpenAIStreaming(
+  openaiKey: string,
+  prompt: string,
+  imageDataUrl: string | null,
+  signal: AbortSignal,
+  onToken: (text: string) => void,
+): Promise<{ text: string; tokensIn: number; tokensOut: number }> {
+  const userContent: unknown[] = [];
+  if (imageDataUrl) {
+    userContent.push({ type: 'image_url', image_url: { url: imageDataUrl, detail: 'low' } });
+  }
+  userContent.push({ type: 'text', text: prompt });
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${openaiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      max_tokens: 1500,
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: [{ role: 'user', content: userContent }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    if (response.status === 401) throw new Error('Invalid OpenAI API key (401).');
+    if (response.status === 429) throw new Error('Rate limit reached (429). Try again shortly.');
+    throw new Error(`GPT request failed: ${response.status} — ${errText.slice(0, 200)}`);
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+  let tokensIn = 0;
+  let tokensOut = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const obj = JSON.parse(payload);
+        const delta = obj.choices?.[0]?.delta?.content;
+        if (delta) { fullText += delta; onToken(delta); }
+        if (obj.usage) {
+          tokensIn  = obj.usage.prompt_tokens     ?? tokensIn;
+          tokensOut = obj.usage.completion_tokens ?? tokensOut;
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  return { text: fullText, tokensIn, tokensOut };
+}
+
+// ── Unified router ────────────────────────────────────────────────────────────
+
+export async function callAiStreaming(
+  provider: 'claude' | 'gpt',
+  apiKey: string,
+  prompt: string,
+  imageDataUrl: string | null,
+  signal: AbortSignal,
+  onToken: (text: string) => void,
+): Promise<{ text: string; tokensIn: number; tokensOut: number }> {
+  if (provider === 'gpt') {
+    return callOpenAIStreaming(apiKey, prompt, imageDataUrl, signal, onToken);
+  }
+  return callAnthropicStreaming(apiKey, prompt, imageDataUrl, signal, onToken);
+}
+
 export type ContentStreamEvent =
   | { type: 'status'; message: string }
   | { type: 'scene-start'; sceneSlug: string; sceneIndex: number; total: number }
@@ -225,11 +311,12 @@ async function callAnthropicStreaming(
 
 export async function generateContent(
   project: Project,
-  anthropicKey: string,
+  apiKeys: { provider: 'claude' | 'gpt'; anthropic?: string; openai?: string },
   options: GenerateOptions,
   onEvent: (ev: ContentStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<{ results: SceneContentResult[]; tokensIn: number; tokensOut: number }> {
+  const apiKey = apiKeys.provider === 'gpt' ? (apiKeys.openai ?? '') : (apiKeys.anthropic ?? '');
   const scenes = project.scenes.filter((s) => {
     if (options.scope === 'selected') return options.selectedIds.has(s.id);
     if (options.scope === 'empty') {
@@ -267,8 +354,8 @@ export async function generateContent(
     const prompt = buildContentPrompt(scene, project, options);
 
     let sceneText = '';
-    const { text, tokensIn, tokensOut } = await callAnthropicStreaming(
-      anthropicKey, prompt, imageDataUrl, signal,
+    const { text, tokensIn, tokensOut } = await callAiStreaming(
+      apiKeys.provider, apiKey, prompt, imageDataUrl, signal,
       (t) => { sceneText += t; onEvent({ type: 'token', text: t }); },
     );
 

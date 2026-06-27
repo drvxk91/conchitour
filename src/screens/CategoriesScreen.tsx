@@ -434,66 +434,76 @@ export function CategoriesScreen() {
         </div>
       </div>
 
-      {/* Category grid */}
-      {project.categories.length > 0 && (
-        <div className="grid grid-cols-2 gap-4" data-testid="categories-grid">
-          {project.categories.map((cat) => {
-            const count = sceneCountFor(cat.id);
-            const displayName = cat.name[defaultLang] || cat.name.en || Object.values(cat.name)[0] || cat.slug;
+      {/* Category grid — two sections */}
+      {project.categories.length > 0 && (() => {
+        const hotspotTypes = project.categories.filter((c) => c.builtIn && c.slug.startsWith('_'));
+        const sceneCategories = project.categories.filter((c) => !c.builtIn || !c.slug.startsWith('_'));
 
-            return (
-              <div
-                key={cat.id}
-                data-testid={`category-card-${cat.id}`}
-                className="bg-paper border border-line rounded-xl p-4 flex items-start gap-3 hover:border-line-strong transition-colors"
-              >
-                {/* Hotspot pin preview */}
-                <HotspotPinPreview iconSvg={cat.iconSvg} color={cat.color} size={36} />
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-medium text-ink-strong truncate">{displayName}</p>
-                    {cat.builtIn && (
-                      <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-ink-faded/10 text-ink-faded flex-shrink-0">
-                        Built-in
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-ink-faded mt-0.5">
-                    {count} scene{count !== 1 ? 's' : ''}
-                    <span className="mx-1.5 opacity-40">·</span>
-                    <span className="font-mono">{cat.color}</span>
-                  </p>
-                  <p className="text-[10px] text-ink-faded/60 mt-0.5 font-mono">{cat.slug}</p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => setModalOpen(cat.id)}
-                    className="btn text-xs p-1.5"
-                    title="Edit category"
-                    data-testid={`edit-category-${cat.id}`}
-                  >
-                    <Pencil size={12} />
-                  </button>
-                  {!cat.builtIn && (
-                    <button
-                      onClick={() => handleDelete(cat)}
-                      className="btn btn-danger text-xs p-1.5"
-                      title="Delete category"
-                      data-testid={`delete-category-${cat.id}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
+        function renderCard(cat: typeof project.categories[0]) {
+          const count = sceneCountFor(cat.id);
+          const displayName = cat.name[defaultLang] || cat.name.en || Object.values(cat.name)[0] || cat.slug;
+          const isHotspotType = cat.builtIn && cat.slug.startsWith('_');
+          return (
+            <div
+              key={cat.id}
+              data-testid={`category-card-${cat.id}`}
+              className="bg-paper border border-line rounded-xl p-4 flex items-start gap-3 hover:border-line-strong transition-colors"
+            >
+              <HotspotPinPreview iconSvg={cat.iconSvg} color={cat.color} size={36} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-ink-strong truncate">{displayName}</p>
+                  {isHotspotType && (
+                    <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-ink-faded/10 text-ink-faded flex-shrink-0">
+                      System
+                    </span>
                   )}
                 </div>
+                <p className="text-[11px] text-ink-faded mt-0.5">
+                  {isHotspotType ? 'Hotspot type — not a scene category' : `${count} scene${count !== 1 ? 's' : ''}`}
+                  {!isHotspotType && <><span className="mx-1.5 opacity-40">·</span><span className="font-mono">{cat.color}</span></>}
+                </p>
+                <p className="text-[10px] text-ink-faded/60 mt-0.5 font-mono">{cat.slug}</p>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div className="flex gap-1 flex-shrink-0">
+                {!isHotspotType && (
+                  <button onClick={() => setModalOpen(cat.id)} className="btn text-xs p-1.5" title="Edit" data-testid={`edit-category-${cat.id}`}>
+                    <Pencil size={12} />
+                  </button>
+                )}
+                {!cat.builtIn && (
+                  <button onClick={() => handleDelete(cat)} className="btn btn-danger text-xs p-1.5" title="Delete" data-testid={`delete-category-${cat.id}`}>
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <>
+            {/* Scene categories */}
+            {sceneCategories.length > 0 && (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faded mb-2">Scene categories</p>
+                <div className="grid grid-cols-2 gap-4 mb-6" data-testid="categories-grid">
+                  {sceneCategories.map(renderCard)}
+                </div>
+              </>
+            )}
+
+            {/* Divider */}
+            <div className="border-t border-line-soft pt-5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faded mb-1">Hotspot types</p>
+              <p className="text-[11px] text-ink-faded mb-3">System types used for hotspot pins — not assignable to scenes.</p>
+              <div className="grid grid-cols-2 gap-4">
+                {hotspotTypes.map(renderCard)}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Empty state */}
       {project.categories.length === 0 && (

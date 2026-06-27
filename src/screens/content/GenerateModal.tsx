@@ -26,7 +26,10 @@ interface GenerateModalProps {
 export function GenerateModal({
   project, selectedSceneIds, defaultLang, onClose, onApply, onToast,
 }: GenerateModalProps) {
-  const anthropicKey = project.modules?.anthropicApiKey ?? '';
+  const provider = project.modules?.aiProvider ?? 'claude';
+  const apiKey = provider === 'gpt'
+    ? (project.modules?.openaiApiKey ?? '')
+    : (project.modules?.anthropicApiKey ?? '');
   const langs = project.languages.available ?? ['en'];
   const aiCtx = project.aiContext;
 
@@ -73,7 +76,7 @@ export function GenerateModal({
   const sceneCount = scopeScenes.length;
   const costEst = estimateCost(sceneCount, imageQuality);
 
-  const canGenerate = anthropicKey && sceneCount > 0 && selectedLangs.size > 0 && (genTitles || genDescs || genAlt);
+  const canGenerate = apiKey && sceneCount > 0 && selectedLangs.size > 0 && (genTitles || genDescs || genAlt);
 
   function handleCancel() {
     abortRef.current?.abort();
@@ -135,7 +138,9 @@ export function GenerateModal({
 
     try {
       const { results: res } = await generateContent(
-        project, anthropicKey, options, handleEvent, ctrl.signal,
+        project,
+        { provider, anthropic: project.modules?.anthropicApiKey, openai: project.modules?.openaiApiKey },
+        options, handleEvent, ctrl.signal,
       );
       setResults(res);
       setShowDiff(true);

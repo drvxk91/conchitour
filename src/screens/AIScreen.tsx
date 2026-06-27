@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import {
   Sparkles, Bot, CheckCircle, AlertCircle, Loader2,
-  RotateCcw, Brain, Construction,
+  RotateCcw, Brain,
 } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
-import { testAiConnection } from '@/lib/audit/ai-checks';
+import { testAiConnection, testOpenAIConnection } from '@/lib/audit/ai-checks';
 import { AI_THEMES, AI_TONE_LABELS, AI_AUDIENCE_LABELS, AI_LENGTH_LABELS } from '@/lib/ai-themes';
 import type { AiContext } from '@/types';
 
@@ -38,9 +38,11 @@ export function AIScreen() {
   const [gptKeyDraft, setGptKeyDraft]       = useState(m.openaiApiKey ?? '');
   const [contextDraft, setContextDraft]     = useState(ai.projectContext ?? '');
 
-  // Test connection state
-  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
-  const [testMsg, setTestMsg]     = useState('');
+  // Test connection state — one per provider
+  const [claudeTestState, setClaudeTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [claudeTestMsg, setClaudeTestMsg]     = useState('');
+  const [gptTestState, setGptTestState]       = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [gptTestMsg, setGptTestMsg]           = useState('');
 
   async function autoSaveModules(patch: Parameters<typeof updateModules>[0]) {
     updateModules(patch);
@@ -61,11 +63,21 @@ export function AIScreen() {
   async function handleTestClaude() {
     const key = claudeKeyDraft.trim();
     if (!key) return;
-    setTestState('testing');
-    setTestMsg('');
+    setClaudeTestState('testing');
+    setClaudeTestMsg('');
     const result = await testAiConnection(key);
-    setTestState(result.ok ? 'ok' : 'error');
-    setTestMsg(result.error ?? '');
+    setClaudeTestState(result.ok ? 'ok' : 'error');
+    setClaudeTestMsg(result.error ?? '');
+  }
+
+  async function handleTestGpt() {
+    const key = gptKeyDraft.trim();
+    if (!key) return;
+    setGptTestState('testing');
+    setGptTestMsg('');
+    const result = await testOpenAIConnection(key);
+    setGptTestState(result.ok ? 'ok' : 'error');
+    setGptTestMsg(result.error ?? '');
   }
 
   function handleResetTokens(p: 'claude' | 'gpt') {
@@ -109,20 +121,18 @@ export function AIScreen() {
             {/* GPT card */}
             <button
               onClick={() => autoSaveModules({ aiProvider: 'gpt' })}
-              className={`rounded-xl border-2 p-4 text-left transition-all opacity-60 cursor-not-allowed ${
+              className={`rounded-xl border-2 p-4 text-left transition-all ${
                 provider === 'gpt'
                   ? 'border-accent bg-accent/5'
-                  : 'border-line-soft bg-paper-tinted'
+                  : 'border-line-soft bg-paper-tinted hover:border-line-strong'
               }`}
-              disabled
-              title="Coming soon"
             >
               <div className="flex items-center gap-2 mb-1">
-                <Bot size={16} className="text-ink-faded" />
-                <span className="text-sm font-semibold text-ink">ChatGPT</span>
-                <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-1.5 py-0.5">
-                  <Construction size={8} /> Soon
-                </span>
+                <Bot size={16} className={provider === 'gpt' ? 'text-accent' : 'text-ink-faded'} />
+                <span className={`text-sm font-semibold ${provider === 'gpt' ? 'text-accent' : 'text-ink'}`}>ChatGPT</span>
+                {provider === 'gpt' && (
+                  <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-accent bg-accent/10 rounded-full px-2 py-0.5">Active</span>
+                )}
               </div>
               <p className="text-xs text-ink-faded">OpenAI — GPT-4o</p>
             </button>
@@ -149,26 +159,26 @@ export function AIScreen() {
               className={inputCls + ' flex-1'}
               value={claudeKeyDraft}
               placeholder="sk-ant-api03-…"
-              onChange={(e) => { setClaudeKeyDraft(e.target.value); setTestState('idle'); }}
+              onChange={(e) => { setClaudeKeyDraft(e.target.value); setClaudeTestState('idle'); }}
               onBlur={() => autoSaveModules({ anthropicApiKey: claudeKeyDraft.trim() || undefined })}
             />
             <button
               onClick={handleTestClaude}
-              disabled={!claudeKeyDraft.trim() || testState === 'testing'}
+              disabled={!claudeKeyDraft.trim() || claudeTestState === 'testing'}
               className="btn shrink-0 disabled:opacity-50"
             >
-              {testState === 'testing' ? <Loader2 size={13} className="animate-spin" /> : 'Test'}
+              {claudeTestState === 'testing' ? <Loader2 size={13} className="animate-spin" /> : 'Test'}
             </button>
           </div>
 
-          {testState === 'ok' && (
+          {claudeTestState === 'ok' && (
             <p className="text-[11px] text-green-600 flex items-center gap-1">
               <CheckCircle size={11} /> Connected — API key valid.
             </p>
           )}
-          {testState === 'error' && (
+          {claudeTestState === 'error' && (
             <p className="text-[11px] text-red-500 flex items-center gap-1">
-              <AlertCircle size={11} /> {testMsg || 'Connection failed. Check your key.'}
+              <AlertCircle size={11} /> {claudeTestMsg || 'Connection failed. Check your key.'}
             </p>
           )}
 
@@ -194,28 +204,63 @@ export function AIScreen() {
           </div>
         </div>
 
-        {/* ── GPT key (disabled) ─────────────────────────────────────────── */}
-        <div className="rounded-xl border border-dashed border-line-strong bg-paper-tinted p-5 space-y-3 opacity-50">
+        {/* ── GPT key ────────────────────────────────────────────────────── */}
+        <div className="rounded-xl border border-line-soft bg-paper-tinted p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <Bot size={15} className="text-ink-faded" />
+            <Bot size={15} className="text-ink" />
             <span className="text-sm font-semibold text-ink">ChatGPT (OpenAI)</span>
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
-              <Construction size={8} /> Coming soon
-            </span>
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); window.conchitect.openUrl('https://platform.openai.com/api-keys'); }}
+              className="ml-auto text-[11px] text-accent underline"
+            >
+              Get key ↗
+            </a>
           </div>
-          <input
-            type="password"
-            disabled
-            className={inputCls + ' cursor-not-allowed'}
-            value={gptKeyDraft}
-            placeholder="sk-xxxx — coming soon"
-            onChange={(e) => setGptKeyDraft(e.target.value)}
-          />
+
+          <div className="flex gap-2">
+            <input
+              type="password"
+              className={inputCls + ' flex-1'}
+              value={gptKeyDraft}
+              placeholder="sk-proj-…"
+              onChange={(e) => { setGptKeyDraft(e.target.value); setGptTestState('idle'); }}
+              onBlur={() => autoSaveModules({ openaiApiKey: gptKeyDraft.trim() || undefined })}
+            />
+            <button
+              onClick={handleTestGpt}
+              disabled={!gptKeyDraft.trim() || gptTestState === 'testing'}
+              className="btn shrink-0 disabled:opacity-50"
+            >
+              {gptTestState === 'testing' ? <Loader2 size={13} className="animate-spin" /> : 'Test'}
+            </button>
+          </div>
+
+          {gptTestState === 'ok' && (
+            <p className="text-[11px] text-green-600 flex items-center gap-1">
+              <CheckCircle size={11} /> Connected — OpenAI key valid.
+            </p>
+          )}
+          {gptTestState === 'error' && (
+            <p className="text-[11px] text-red-500 flex items-center gap-1">
+              <AlertCircle size={11} /> {gptTestMsg || 'Connection failed. Check your key.'}
+            </p>
+          )}
+
           <div className="flex items-center gap-2 pt-1 border-t border-line-soft">
             <Brain size={12} className="text-ink-faded shrink-0" />
-            <span className="text-[11px] text-ink-faded flex-1">
-              {gptIn + gptOut > 0 ? `${fmt(gptIn)} in · ${fmt(gptOut)} out` : 'No tokens used yet.'}
-            </span>
+            {gptIn + gptOut > 0 ? (
+              <span className="text-[11px] text-ink-faded flex-1">
+                {fmt(gptIn)} in · {fmt(gptOut)} out
+              </span>
+            ) : (
+              <span className="text-[11px] text-ink-faded flex-1">No tokens used yet.</span>
+            )}
+            {(gptIn + gptOut > 0) && (
+              <button onClick={() => handleResetTokens('gpt')} title="Reset counter" className="p-0.5 rounded text-ink-faded hover:text-ink transition-colors">
+                <RotateCcw size={11} />
+              </button>
+            )}
           </div>
         </div>
 

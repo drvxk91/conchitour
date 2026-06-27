@@ -1,12 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
-import { FileText, Plus, Trash2, Eye, EyeOff, GripVertical, Lock } from 'lucide-react';
+import { FileText, Plus, Trash2, Eye, EyeOff, GripVertical, Lock, Sparkles, Loader2 } from 'lucide-react';
 import { marked } from 'marked';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import type { StaticPage } from '@/types';
 import { BUILTIN_PAGE_SLUGS } from '@/lib/builtin-pages';
+import { generatePageWithAi } from '@/lib/ai-seo';
 
 marked.setOptions({ breaks: true });
 
@@ -42,6 +43,11 @@ export function PagesScreen() {
   const [newTitle, setNewTitle] = useState('');
   const [newSlug, setNewSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
+
+  // AI generation
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
 
   const selected = pages.find((p) => p.id === selectedId) ?? null;
 
@@ -83,6 +89,38 @@ export function PagesScreen() {
   function handleSlugChange(val: string) {
     if (!selected || selected.builtIn) return;
     updatePage(selected.id, { slug: slugify(val) });
+  }
+
+  async function handleGeneratePage() {
+    if (!selected) return;
+    const m = project.modules;
+    const provider = m.aiProvider ?? 'claude';
+    const apiKey = provider === 'gpt' ? (m.openaiApiKey ?? '') : (m.anthropicApiKey ?? '');
+    if (!apiKey) {
+      setAiError('No API key — set your key in the AI screen first.');
+      return;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setAiGenerating(true);
+    setAiError('');
+    try {
+      const content = await generatePageWithAi(
+        project,
+        selected.slug,
+        selected.title[activeLang] || selected.title[defaultLang] || selected.slug,
+        activeLang,
+        provider,
+        apiKey,
+        () => {},
+        controller.signal,
+      );
+      updatePage(selected.id, { content: { ...selected.content, [activeLang]: content } });
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') setAiError(String(err));
+    } finally {
+      setAiGenerating(false);
+    }
   }
 
   function handleDelete(page: StaticPage) {
@@ -324,6 +362,16 @@ export function PagesScreen() {
                   </button>
                 ))}
                 <div className="flex-1" />
+                {aiError && <span className="text-[11px] text-red-500">{aiError}</span>}
+                <button
+                  onClick={aiGenerating ? () => abortRef.current?.abort() : handleGeneratePage}
+                  className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-700 px-2 py-1 rounded hover:bg-purple-50 transition-colors"
+                  title="Generate this page with AI"
+                >
+                  {aiGenerating
+                    ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
+                    : <><Sparkles size={12} /> Generate with AI</>}
+                </button>
                 <button
                   onClick={() => setShowPreview((v) => !v)}
                   className="flex items-center gap-1.5 text-xs text-ink-faded hover:text-ink px-2 py-1 rounded hover:bg-paper-tinted transition-colors"

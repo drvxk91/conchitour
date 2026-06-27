@@ -228,3 +228,25 @@ export async function testAiConnection(anthropicKey: string): Promise<{ ok: bool
     return { ok: false, error: String(err) };
   }
 }
+
+export async function testOpenAIConnection(openaiKey: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openaiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'ping' }],
+      }),
+    });
+    if (response.ok) return { ok: true };
+    const errText = await response.text().catch(() => '');
+    return { ok: false, error: `${response.status}: ${errText.slice(0, 100)}` };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
