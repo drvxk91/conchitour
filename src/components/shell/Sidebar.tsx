@@ -4,6 +4,7 @@ import {
   Palette, Share2, Puzzle, Package, FileText, BarChart3, ClipboardCheck, Type, Brain,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { GA_ID_RE } from '@/screens/AnalyticsScreen';
 
 interface NavEntry { id: ScreenId; label: string; Icon: typeof Upload; badge?: () => string | number | null; }
 
@@ -36,7 +37,14 @@ export function Sidebar() {
         { id: 'project',   label: 'Project',   Icon: Settings },
         { id: 'seo',       label: 'SEO',       Icon: Search },
         { id: 'modules',   label: 'Modules',   Icon: Puzzle },
-        { id: 'analytics', label: 'Analytics', Icon: BarChart3 },
+        {
+          id: 'analytics', label: 'Analytics', Icon: BarChart3,
+          badge: () => {
+            const a = project.analytics;
+            if (a?.enabled && !GA_ID_RE.test(a.measurementId ?? '')) return '!';
+            return null;
+          },
+        },
         { id: 'ai',        label: 'AI',         Icon: Brain },
       ],
     },

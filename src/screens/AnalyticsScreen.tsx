@@ -1,54 +1,56 @@
 import { useState } from 'react';
-import { BarChart3, Check, Copy, AlertTriangle, Info } from 'lucide-react';
+import {
+  BarChart3, Check, Copy, AlertTriangle, Info,
+  ExternalLink, Loader2, CheckCircle, AlertCircle,
+} from 'lucide-react';
+import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { DEFAULT_ANALYTICS } from '@/lib/factory';
 import type { TrackableEvent } from '@/types';
 
-const GA_ID_RE = /^G-[A-Z0-9]{9,12}$/;
+export const GA_ID_RE = /^G-[A-Z0-9]{9,12}$/;
 
-const inputCls =
-  'w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink placeholder-ink-faded font-mono focus:outline-none focus:border-accent';
+interface EventEntry {
+  id: TrackableEvent;
+  label: string;
+  description: string;
+}
 
 interface EventGroup {
   label: string;
-  events: { id: TrackableEvent; label: string; description: string }[];
+  events: EventEntry[];
 }
 
 const EVENT_GROUPS: EventGroup[] = [
   {
     label: 'Navigation',
     events: [
-      { id: 'tour_started',    label: 'Tour started',    description: 'Fires when the first scene loads' },
-      { id: 'scene_view',      label: 'Scene view',      description: 'Fires every time a scene becomes active' },
-      { id: 'scene_change',    label: 'Scene change',    description: 'Fires when navigating between scenes (with from/to)' },
-      { id: 'tour_completed',  label: 'Tour completed',  description: 'Fires once when the visitor has seen all scenes' },
+      { id: 'tour_started',   label: 'Tour started',   description: 'First scene loads' },
+      { id: 'scene_view',     label: 'Scene view',     description: 'Each scene becomes active' },
+      { id: 'scene_change',   label: 'Scene change',   description: 'Navigating between scenes (with from/to)' },
+      { id: 'tour_completed', label: 'Tour completed', description: 'Visitor has viewed all scenes' },
     ],
   },
   {
     label: 'Hotspots',
     events: [
       { id: 'link_hotspot_click',  label: 'Link hotspot click',  description: 'Navigation hotspot clicked' },
-      { id: 'hotspot_click',       label: 'Hotspot click',       description: 'Generic hotspot interaction' },
       { id: 'external_link_click', label: 'External link click', description: 'External URL hotspot opened' },
+      { id: 'hotspot_click',       label: 'Hotspot click',       description: 'Generic hotspot interaction' },
       { id: 'info_hotspot_open',   label: 'Info panel open',     description: 'Text/info popup opened from hotspot' },
-      { id: 'video_play',          label: 'Video play',          description: 'Video hotspot opened' },
+      { id: 'video_play',          label: 'Video play',          description: 'Video hotspot started' },
       { id: 'form_open',           label: 'Form open',           description: 'Contact form popup opened' },
-      { id: 'form_submit',         label: 'Form submit',         description: 'Contact form submitted (mailto opened)' },
+      { id: 'form_submit',         label: 'Form submit',         description: 'Contact form submitted' },
     ],
   },
   {
     label: 'Map & UI',
     events: [
-      { id: 'map_open',         label: 'Map opened',      description: 'Visitor opened the map panel' },
+      { id: 'map_open',         label: 'Map opened',       description: 'Visitor opened the map panel' },
       { id: 'map_marker_click', label: 'Map marker click', description: 'Visitor clicked a scene pin on the map' },
-      { id: 'info_panel_open',  label: 'Info panel open', description: 'Right-side info panel toggled open' },
+      { id: 'info_panel_open',  label: 'Info panel open',  description: 'Right-side info panel toggled open' },
       { id: 'fullscreen_enter', label: 'Fullscreen enter', description: 'Visitor entered fullscreen mode' },
-    ],
-  },
-  {
-    label: 'Sharing & Consent',
-    events: [
       { id: 'share_click',      label: 'Share click',      description: 'Social share button clicked (with platform)' },
       { id: 'language_change',  label: 'Language change',  description: 'Visitor switched language' },
       { id: 'cookie_accepted',  label: 'Cookie accepted',  description: 'Visitor accepted the cookie consent banner' },
@@ -56,22 +58,58 @@ const EVENT_GROUPS: EventGroup[] = [
   },
 ];
 
+const ALL_EVENT_IDS = EVENT_GROUPS.flatMap((g) => g.events.map((e) => e.id));
+
 export function AnalyticsScreen() {
   const { project, updateAnalytics } = useProject();
   const cfg = project.analytics ?? DEFAULT_ANALYTICS;
   const [copied, setCopied] = useState(false);
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [testMsg, setTestMsg] = useState('');
 
   const idValid = GA_ID_RE.test(cfg.measurementId);
-  const canEnable = cfg.measurementId.length > 0 && idValid;
 
   function setEvent(id: TrackableEvent, value: boolean) {
     updateAnalytics({ events: { ...cfg.events, [id]: value } });
   }
 
+  function setAllEvents(value: boolean) {
+    const events = Object.fromEntries(ALL_EVENT_IDS.map((id) => [id, value])) as Record<TrackableEvent, boolean>;
+    updateAnalytics({ events });
+  }
+
+  function resetToRecommended() {
+    updateAnalytics({ events: { ...DEFAULT_ANALYTICS.events } });
+  }
+
+  function openUrl(url: string) {
+    window.conchitect.openUrl(url);
+  }
+
+  async function handleTest() {
+    if (!idValid) return;
+    setTestState('testing');
+    setTestMsg('');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      await fetch(`https://www.googletagmanager.com/gtag/js?id=${cfg.measurementId}`, {
+        method: 'HEAD',
+        mode: 'no-cors',
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      setTestState('ok');
+      setTimeout(() => setTestState('idle'), 3000);
+    } catch {
+      clearTimeout(timer);
+      setTestState('error');
+      setTestMsg('Could not reach GA4 servers');
+    }
+  }
+
   function copySnippet() {
-    const snippet = `<!-- Paste in your browser console to verify GA4 is firing -->
-gtag('event', 'test_ping', { source: 'conchitect_verify' });
-console.log('GA4 measurement ID:', '${cfg.measurementId}');`;
+    const snippet = `gtag('event', 'test_ping', { source: 'conchitect_verify' });\nconsole.log('GA4 ID:', '${cfg.measurementId}');`;
     navigator.clipboard.writeText(snippet).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -80,148 +118,221 @@ console.log('GA4 measurement ID:', '${cfg.measurementId}');`;
 
   return (
     <ScreenShell title="Analytics" subtitle="Track visitor engagement with Google Analytics 4.">
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-2xl space-y-5">
 
-        {/* ── Master toggle ─────────────────────────────────────────────── */}
-        <div className={`rounded-xl border p-5 transition-colors ${cfg.enabled ? 'border-accent/40 bg-accent/4' : 'border-line-soft bg-paper-tinted'}`}>
-          <label className="flex items-center gap-4 cursor-pointer select-none">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${cfg.enabled ? 'bg-accent/15 text-accent' : 'bg-paper-strong text-ink-faded'}`}>
-              <BarChart3 size={18} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-ink">Enable Google Analytics 4</p>
-              <p className="text-xs text-ink-faded mt-0.5">
-                Injects the gtag.js snippet into the compiled tour. No data leaves your project — the GA4 property belongs to you.
-              </p>
-            </div>
+        {/* ── Config block ─────────────────────────────────────────────── */}
+        <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 space-y-3">
+
+          {/* Enable toggle */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={cfg.enabled}
               onChange={(e) => {
-                if (e.target.checked && !canEnable) return;
+                if (e.target.checked && !idValid) return;
                 updateAnalytics({ enabled: e.target.checked });
               }}
-              className="w-4 h-4 accent-accent flex-shrink-0"
+              className="w-4 h-4 accent-accent shrink-0"
             />
+            <BarChart3 size={14} className={cfg.enabled ? 'text-accent' : 'text-ink-faded'} />
+            <span className={clsx('text-sm font-medium', cfg.enabled ? 'text-ink-strong' : 'text-ink')}>
+              Enable Google Analytics 4
+            </span>
+            <span className="text-xs text-ink-faded">Injects gtag.js into the compiled tour.</span>
           </label>
-        </div>
 
-        {/* ── Measurement ID ────────────────────────────────────────────── */}
-        <div className="rounded-xl border border-line-soft bg-paper p-5 space-y-3">
-          <p className="text-sm font-medium text-ink">Measurement ID</p>
-          <div className="space-y-1">
-            <input
-              className={inputCls + (!idValid && cfg.measurementId ? ' border-red-400' : '')}
-              type="text"
-              value={cfg.measurementId}
-              placeholder="G-XXXXXXXXXX"
-              onChange={(e) => updateAnalytics({ measurementId: e.target.value.toUpperCase() })}
-            />
-            {cfg.measurementId && !idValid && (
-              <p className="text-xs text-red-500 flex items-center gap-1">
-                <AlertTriangle size={11} /> Format must be G- followed by 9–12 uppercase letters/digits
-              </p>
-            )}
-            {idValid && (
-              <p className="text-xs text-green-600 flex items-center gap-1">
-                <Check size={11} /> Valid Measurement ID
-              </p>
-            )}
-          </div>
-          <p className="text-xs text-ink-faded">
-            Found in your GA4 property → Admin → Data Streams → your stream → Measurement ID.
-          </p>
-
-          {/* Privacy options */}
+          {/* Measurement ID */}
           <div className="border-t border-line-soft pt-3 space-y-2">
-            <label className="flex items-center gap-3 cursor-pointer">
+            <div className="flex items-start gap-2">
+              <label className="text-xs text-ink-soft w-28 shrink-0 pt-2">Measurement ID</label>
+              <div className="flex-1 space-y-1">
+                <div className="flex gap-2">
+                  <input
+                    className={clsx(
+                      'flex-1 bg-paper-strong border rounded px-3 py-1.5 text-sm text-ink placeholder-ink-faded font-mono focus:outline-none',
+                      cfg.measurementId && !idValid ? 'border-red-400 focus:border-red-400' :
+                      idValid ? 'border-green-500/60 focus:border-green-500' :
+                      'border-line-soft focus:border-accent',
+                    )}
+                    type="text"
+                    value={cfg.measurementId}
+                    placeholder="G-XXXXXXXXXX"
+                    onChange={(e) => {
+                      setTestState('idle');
+                      updateAnalytics({ measurementId: e.target.value.toUpperCase() });
+                    }}
+                  />
+                  <button
+                    onClick={handleTest}
+                    disabled={!idValid || testState === 'testing'}
+                    className={clsx(
+                      'btn shrink-0 text-xs min-w-[48px] disabled:opacity-40',
+                      testState === 'ok' && 'text-green-600',
+                      testState === 'error' && 'text-red-500',
+                    )}
+                  >
+                    {testState === 'testing' ? <Loader2 size={12} className="animate-spin" />
+                      : testState === 'ok' ? <CheckCircle size={12} />
+                      : testState === 'error' ? <AlertCircle size={12} />
+                      : 'Test'}
+                  </button>
+                </div>
+
+                {cfg.measurementId && !idValid && (
+                  <p className="text-[11px] text-red-500 flex items-center gap-1">
+                    <AlertTriangle size={10} /> Expected format: G-XXXXXXXXXX
+                  </p>
+                )}
+                {idValid && testState === 'idle' && (
+                  <p className="text-[11px] text-green-600 flex items-center gap-1">
+                    <Check size={10} /> Valid Measurement ID
+                  </p>
+                )}
+                {idValid && testState === 'ok' && (
+                  <p className="text-[11px] text-green-600 flex items-center gap-1">
+                    <Check size={10} /> Valid · GA4 servers reachable
+                  </p>
+                )}
+                {testState === 'error' && (
+                  <p className="text-[11px] text-red-500 flex items-center gap-1">
+                    <AlertCircle size={10} /> {testMsg}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Helper links */}
+            <div className="flex items-center gap-3 pl-[7.5rem] text-[11px]">
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); openUrl('https://analytics.google.com/'); }}
+                className="flex items-center gap-1 text-accent hover:underline"
+              >
+                <ExternalLink size={10} /> Open GA4 dashboard
+              </a>
+              <span className="text-ink-faded">·</span>
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); openUrl('https://support.google.com/analytics/answer/9539598'); }}
+                className="flex items-center gap-1 text-accent hover:underline"
+              >
+                <ExternalLink size={10} /> How to find Measurement ID
+              </a>
+            </div>
+          </div>
+
+          {/* GDPR options */}
+          <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-line-soft pt-3">
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={cfg.anonymizeIp}
                 onChange={(e) => updateAnalytics({ anonymizeIp: e.target.checked })}
                 className="w-3.5 h-3.5 accent-accent"
               />
-              <span className="text-xs text-ink">Anonymize IP addresses <span className="text-ink-faded">(GDPR-safe, recommended)</span></span>
+              <span className="text-xs text-ink">
+                Anonymize IP <span className="text-ink-faded">(GDPR)</span>
+              </span>
             </label>
-            <label className="flex items-center gap-3 cursor-pointer">
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={cfg.respectCookieConsent}
                 onChange={(e) => updateAnalytics({ respectCookieConsent: e.target.checked })}
                 className="w-3.5 h-3.5 accent-accent"
               />
-              <span className="text-xs text-ink">
-                Block events until visitor accepts cookies{' '}
-                <span className="text-ink-faded">(requires Cookie consent module enabled)</span>
-              </span>
+              <span className="text-xs text-ink">Wait for cookie consent</span>
             </label>
             {!cfg.respectCookieConsent && (
-              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
-                <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-700">
-                  Events will fire immediately on page load without consent. This may not comply with GDPR/ePrivacy regulations in the EU.
-                </p>
-              </div>
+              <p className="w-full text-[11px] text-amber-600 flex items-center gap-1">
+                <AlertTriangle size={10} />
+                Events fire immediately without consent — may not comply with GDPR/ePrivacy in the EU.
+              </p>
             )}
           </div>
         </div>
 
-        {/* ── Event checkboxes ──────────────────────────────────────────── */}
-        <div className="rounded-xl border border-line-soft bg-paper p-5 space-y-5">
-          <p className="text-sm font-medium text-ink">Events to track</p>
+        {/* ── Event groups ─────────────────────────────────────────────── */}
+        <div className="space-y-3">
+          <p className="text-[10px] uppercase tracking-widest text-ink-faded font-semibold">
+            Events to track
+          </p>
+
           {EVENT_GROUPS.map((group) => (
-            <div key={group.label}>
-              <p className="text-[10px] uppercase tracking-widest text-ink-faded font-semibold mb-2">{group.label}</p>
-              <div className="space-y-1.5">
+            <fieldset key={group.label} className="border border-line-soft rounded-xl p-4">
+              <legend className="text-xs font-semibold text-ink px-1.5 -ml-1.5">{group.label}</legend>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 mt-1.5">
                 {group.events.map(({ id, label, description }) => (
-                  <label key={id} className="flex items-start gap-3 cursor-pointer group">
+                  <label
+                    key={id}
+                    title={`${id}\n${description}`}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <input
                       type="checkbox"
                       checked={cfg.events[id] ?? true}
                       onChange={(e) => setEvent(id, e.target.checked)}
-                      className="w-3.5 h-3.5 accent-accent flex-shrink-0 mt-0.5"
+                      className="w-3.5 h-3.5 accent-accent shrink-0"
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-ink font-medium">{label}</span>
-                        <code className="text-[10px] font-mono text-ink-faded bg-paper-strong px-1 rounded">{id}</code>
-                      </div>
-                      <p className="text-[11px] text-ink-faded">{description}</p>
-                    </div>
+                    <span className="text-xs text-ink">{label}</span>
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
           ))}
+
+          {/* Quick actions */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAllEvents(true)}
+              className="text-xs px-2.5 py-1 rounded-lg border border-line-soft bg-paper hover:bg-paper-tinted transition-colors"
+            >
+              Select all
+            </button>
+            <button
+              onClick={resetToRecommended}
+              className="text-xs px-2.5 py-1 rounded-lg border border-line-soft bg-paper hover:bg-paper-tinted transition-colors"
+            >
+              Recommended only
+            </button>
+            <button
+              onClick={() => setAllEvents(false)}
+              className="text-xs px-2.5 py-1 rounded-lg border border-line-soft bg-paper hover:bg-paper-tinted transition-colors text-ink-faded"
+            >
+              Clear all
+            </button>
+          </div>
         </div>
 
-        {/* ── Test / verify ─────────────────────────────────────────────── */}
+        {/* ── Verify integration ───────────────────────────────────────── */}
         {cfg.enabled && idValid && (
-          <div className="rounded-xl border border-line-soft bg-paper p-5 space-y-3">
-            <p className="text-sm font-medium text-ink">Verify integration</p>
-            <p className="text-xs text-ink-faded">
-              After compiling and opening your tour, open the browser console and run the snippet below.
-              Then check <strong>GA4 → Reports → Realtime</strong> — the <code>test_ping</code> event should appear within 30 seconds.
-            </p>
-            <div className="bg-paper-strong rounded-lg p-3 font-mono text-xs text-ink-soft whitespace-pre-wrap break-all">
-              {`gtag('event', 'test_ping', { source: 'conchitect_verify' });`}
+          <div className="rounded-xl border border-line-soft bg-paper p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-ink">Verify integration</p>
+              <button
+                onClick={copySnippet}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-line-soft bg-paper-tinted hover:bg-paper-strong transition-colors"
+              >
+                {copied ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+                {copied ? 'Copied!' : 'Copy snippet'}
+              </button>
             </div>
-            <button
-              onClick={copySnippet}
-              className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-line-soft bg-paper-tinted hover:bg-paper-strong transition-colors"
-            >
-              {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
-              {copied ? 'Copied!' : 'Copy snippet'}
-            </button>
+            <div className="bg-paper-strong rounded-lg px-3 py-2 font-mono text-xs text-ink-soft whitespace-pre-wrap">
+              {`gtag('event', 'test_ping', { source: 'conchitect_verify' });\nconsole.log('GA4 ID:', '${cfg.measurementId}');`}
+            </div>
+            <p className="text-[11px] text-ink-faded">
+              Run in the browser console after compiling. Check{' '}
+              <strong>GA4 → Reports → Realtime</strong> — <code>test_ping</code> should appear within 30 s.
+            </p>
           </div>
         )}
 
-        {/* ── Privacy reminder ──────────────────────────────────────────── */}
+        {/* ── Privacy reminder ─────────────────────────────────────────── */}
         <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-          <Info size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
+          <Info size={13} className="text-blue-500 shrink-0 mt-0.5" />
           <p className="text-xs text-blue-700">
-            You are responsible for disclosing your use of Google Analytics in your tour's Privacy Policy page.
-            Enable the <strong>Privacy Policy</strong> page in the Pages screen and mention GA4 data collection.
+            Disclose your use of Google Analytics in your tour's Privacy Policy page.
+            Enable <strong>Privacy Policy</strong> in Pages and mention GA4 data collection.
           </p>
         </div>
 
