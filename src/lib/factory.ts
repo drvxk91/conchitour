@@ -1,6 +1,27 @@
 import { v4 as uuid } from 'uuid';
-import type { Project, Category } from '@/types';
+import type { Project, Category, AnalyticsConfig, TrackableEvent } from '@/types';
 import { DEFAULT_BUILTIN_PAGES } from './builtin-pages';
+
+const ALL_EVENTS: TrackableEvent[] = [
+  'scene_view', 'scene_change', 'tour_started', 'tour_completed',
+  'hotspot_click', 'link_hotspot_click', 'external_link_click',
+  'info_hotspot_open', 'video_play', 'form_open', 'form_submit',
+  'map_open', 'map_marker_click',
+  'share_click', 'language_change', 'cookie_accepted',
+  'info_panel_open', 'fullscreen_enter',
+];
+
+const DEFAULT_EVENTS_OFF: TrackableEvent[] = ['tour_completed', 'info_panel_open', 'fullscreen_enter'];
+
+export const DEFAULT_ANALYTICS: AnalyticsConfig = {
+  enabled: false,
+  measurementId: '',
+  anonymizeIp: true,
+  respectCookieConsent: true,
+  events: Object.fromEntries(
+    ALL_EVENTS.map((e) => [e, !DEFAULT_EVENTS_OFF.includes(e)])
+  ) as Record<TrackableEvent, boolean>,
+};
 
 export function newProject(): Project {
   return {
@@ -43,6 +64,13 @@ export function newProject(): Project {
       formsEnabled: false,
     },
     pages: DEFAULT_BUILTIN_PAGES.map((p) => ({ ...p })),
+    analytics: { ...DEFAULT_ANALYTICS, events: { ...DEFAULT_ANALYTICS.events } },
+    aiContext: {
+      tone: 'marketing' as const,
+      audience: 'general' as const,
+      theme: 'Tourism',
+      length: 'medium' as const,
+    },
   };
 }
 

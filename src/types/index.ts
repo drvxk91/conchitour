@@ -194,6 +194,8 @@ export interface ProjectModules {
   mapMode?: MapModeConfig;
   /** When true, hovering a map marker highlights the matching link hotspot in the 360° view and vice-versa */
   mapTourSync?: boolean;
+  /** Anthropic API key for AI audit (stored in project, NOT exported to Excel) */
+  anthropicApiKey?: string;
 }
 
 export type BuiltInPageKind = 'privacy' | 'legal' | 'terms' | 'about' | 'contact';
@@ -212,6 +214,87 @@ export interface StaticPage {
   showInFooter: boolean;
   /** Sort order in the footer link list. */
   order: number;
+}
+
+export type AuditSeverity = 'error' | 'warning' | 'suggestion' | 'info';
+
+export type AuditCategory =
+  | 'content'
+  | 'navigation'
+  | 'seo'
+  | 'i18n'
+  | 'branding'
+  | 'modules'
+  | 'pages'
+  | 'analytics'
+  | 'media'
+  | 'ai-content'
+  | 'ai-narrative';
+
+export interface AuditIssue {
+  id: string;
+  severity: AuditSeverity;
+  category: AuditCategory;
+  title: string;
+  description: string;
+  targetScreen?: string;
+  targetEntityId?: string;
+  targetEntityType?: 'scene' | 'category' | 'hotspot' | 'page' | 'project';
+  suggestion?: string;
+  /** Which scene field the suggestion applies to (for one-click Apply) */
+  fixField?: 'title' | 'description' | 'altText';
+  fixable?: boolean;
+  aiGenerated?: boolean;
+  dismissedAt?: number;
+}
+
+export interface AuditReport {
+  generatedAt: number;
+  issues: AuditIssue[];
+  summary: Record<AuditSeverity, number>;
+  aiUsed: boolean;
+  aiTokensIn?: number;
+  aiTokensOut?: number;
+}
+
+export type TrackableEvent =
+  | 'scene_view'
+  | 'scene_change'
+  | 'tour_started'
+  | 'tour_completed'
+  | 'hotspot_click'
+  | 'link_hotspot_click'
+  | 'external_link_click'
+  | 'info_hotspot_open'
+  | 'video_play'
+  | 'form_open'
+  | 'form_submit'
+  | 'map_open'
+  | 'map_marker_click'
+  | 'share_click'
+  | 'language_change'
+  | 'cookie_accepted'
+  | 'info_panel_open'
+  | 'fullscreen_enter';
+
+export interface AnalyticsConfig {
+  enabled: boolean;
+  /** GA4 Measurement ID, format: G-XXXXXXXXXX */
+  measurementId: string;
+  /** Pass anonymize_ip: true to gtag (GDPR-safe default) */
+  anonymizeIp: boolean;
+  /** When true, no events fire until the user accepts the cookie consent banner */
+  respectCookieConsent: boolean;
+  events: Record<TrackableEvent, boolean>;
+}
+
+export interface AiContext {
+  tone: 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational';
+  audience: 'general' | 'professional' | 'luxury' | 'youth' | 'family' | 'senior';
+  /** One of AI_THEMES values or 'custom' */
+  theme: string;
+  length: 'short' | 'medium' | 'long';
+  customInstructions?: string;
 }
 
 export interface Project {
@@ -236,4 +319,6 @@ export interface Project {
   share: ProjectShare;
   modules: ProjectModules;
   pages: StaticPage[];
+  analytics?: AnalyticsConfig;
+  aiContext?: AiContext;
 }
