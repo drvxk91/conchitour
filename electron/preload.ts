@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('conchitect', {
   openUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:openUrl', url),
   captureSceneThumbnail: (slug: string, rect: { x: number; y: number; width: number; height: number }): Promise<boolean> =>
     ipcRenderer.invoke('capture-scene-thumbnail', slug, rect),
+  compressForAi: (args: { sourcePath: string; targetWidth: number; quality: number }): Promise<CompressForAiResult> =>
+    ipcRenderer.invoke('media:compress-for-ai', args),
+  excelBackup: (projectData: unknown, projectDir: string): Promise<ExcelBackupResult> =>
+    ipcRenderer.invoke('excel:backup', projectData, projectDir),
+  exportExcelStyled: (projectData: unknown): Promise<ExcelExportResult> =>
+    ipcRenderer.invoke('excel:export-styled', projectData),
 });
 
 export interface PhotoExif {
@@ -94,6 +100,7 @@ export interface ExcelImportResult {
   scenePatch?: Record<string, Record<string, unknown>>;
   catPatch?: Record<string, Record<string, unknown>>;
   pagePatch?: Record<string, Record<string, unknown>>;
+  analyticsPatch?: Record<string, unknown>;
 }
 
 export interface ExcelExportResult {
@@ -170,6 +177,22 @@ export interface CompileRunState {
   startedAt: number;
 }
 
+export interface CompressForAiResult {
+  ok: boolean;
+  dataUrl?: string;
+  bytes?: number;
+  error?: string;
+}
+
+export interface ExcelBackupResult {
+  ok: boolean;
+  path?: string;
+  filename?: string;
+  bytes?: number;
+  cleaned?: number;
+  error?: string;
+}
+
 export interface ProjectOpenResult {
   projectDir: string;
   project: unknown;
@@ -221,6 +244,9 @@ declare global {
       tourServerStatus: () => Promise<TourServerStatus | null>;
       openUrl: (url: string) => Promise<void>;
       captureSceneThumbnail: (slug: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
+      compressForAi: (args: { sourcePath: string; targetWidth: number; quality: number }) => Promise<CompressForAiResult>;
+      excelBackup: (projectData: unknown, projectDir: string) => Promise<ExcelBackupResult>;
+      exportExcelStyled: (projectData: unknown) => Promise<ExcelExportResult>;
     };
   }
 }

@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { marked } from 'marked';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -266,6 +267,84 @@ ipcMain.handle('tiles:generate', async (_e, _scenePath: string) => {
   return true;
 });
 
+// ── Image compression for AI vision ──────────────────────────────────────────
+
+ipcMain.handle('media:compress-for-ai', async (_e, args: {
+  sourcePath: string;
+  targetWidth: number;
+  quality: number;
+}) => {
+  try {
+    const sharpMod = (await import(/* @vite-ignore */ 'sharp')).default;
+    const buf = await sharpMod(args.sourcePath)
+      .resize({ width: args.targetWidth, fit: 'inside' })
+      .jpeg({ quality: args.quality })
+      .toBuffer();
+    return {
+      ok: true,
+      dataUrl: 'data:image/jpeg;base64,' + buf.toString('base64'),
+      bytes: buf.length,
+    };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// ── Excel backup (auto-save to projectDir/backups/) ───────────────────────────
+
+ipcMain.handle('excel:backup', async (_e, projectData: unknown, projectDir: string) => {
+  try {
+    const backupsDir = path.join(projectDir, 'backups');
+    await fs.mkdir(backupsDir, { recursive: true });
+
+    const proj = projectData as Record<string, unknown>;
+    const slug = (proj?.meta as Record<string, string> | undefined)?.name?.replace(/[^a-z0-9]/gi, '-').toLowerCase() ?? 'project';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `${slug}-backup-${ts}.xlsx`;
+    const filePath = path.join(backupsDir, filename);
+
+    const wb = XLSX.utils.book_new();
+    const langs: string[] = ((proj.languages as Record<string, unknown>)?.available as string[]) ?? ['en'];
+    const scenes = (proj.scenes as unknown[]) ?? [];
+
+    const sceneHeader = ['slug', 'heading', 'gps_lat', 'gps_lng',
+      ...langs.flatMap((l: string) => [`title_${l}`, `description_${l}`, `altText_${l}`]),
+    ];
+    const sceneRows = scenes.map((s) => {
+      const sc = s as Record<string, unknown>;
+      const geo = sc.geo as Record<string, number> | undefined;
+      return [
+        sc.slug ?? '', sc.heading ?? 0,
+        geo?.lat ?? '', geo?.lng ?? '',
+        ...langs.flatMap((l: string) => {
+          const t = sc.title as Record<string, string> | undefined;
+          const d = sc.description as Record<string, string> | undefined;
+          const a = sc.altText as Record<string, string> | undefined;
+          return [t?.[l] ?? '', d?.[l] ?? '', a?.[l] ?? ''];
+        }),
+      ];
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([sceneHeader, ...sceneRows]), 'Scenes');
+    XLSX.writeFile(wb, filePath);
+
+    // Keep only last 20 backups
+    const all = await fs.readdir(backupsDir);
+    const xlsxFiles = all
+      .filter((f) => f.endsWith('.xlsx'))
+      .sort()
+      .reverse();
+    for (const old of xlsxFiles.slice(20)) {
+      await fs.unlink(path.join(backupsDir, old)).catch(() => {});
+    }
+    const cleaned = Math.max(0, xlsxFiles.length - 20);
+
+    const stat = await fs.stat(filePath);
+    return { ok: true, path: filePath, filename, bytes: stat.size, cleaned };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
 // ── Excel export ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
@@ -414,6 +493,45 @@ ipcMain.handle('excel:export', async (_e, projectData: unknown) => {
   const pagesExportSheet = XLSX.utils.aoa_to_sheet([pagesExportHeader, ...pagesExportRows]);
   XLSX.utils.book_append_sheet(wb, pagesExportSheet, 'Pages');
 
+  // ── Sheet: Analytics ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const analytics: any = (proj as any).analytics ?? {};
+  const gaEventsExport: Record<string, boolean> = analytics.events ?? {};
+  const analyticsHeader = [
+    'enabled', 'measurement_id', 'anonymize_ip', 'respect_cookie_consent',
+    'ev_scene_view', 'ev_scene_change', 'ev_tour_started', 'ev_tour_completed',
+    'ev_hotspot_click', 'ev_link_hotspot_click', 'ev_external_link_click',
+    'ev_info_hotspot_open', 'ev_video_play', 'ev_form_open', 'ev_form_submit',
+    'ev_map_open', 'ev_map_marker_click', 'ev_share_click', 'ev_language_change',
+    'ev_cookie_accepted', 'ev_info_panel_open', 'ev_fullscreen_enter',
+  ];
+  const analyticsRow = [
+    analytics.enabled ? 'true' : 'false',
+    analytics.measurementId ?? '',
+    analytics.anonymizeIp !== false ? 'true' : 'false',
+    analytics.respectCookieConsent !== false ? 'true' : 'false',
+    gaEventsExport.scene_view !== false ? 'true' : 'false',
+    gaEventsExport.scene_change !== false ? 'true' : 'false',
+    gaEventsExport.tour_started !== false ? 'true' : 'false',
+    gaEventsExport.tour_completed ? 'true' : 'false',
+    gaEventsExport.hotspot_click !== false ? 'true' : 'false',
+    gaEventsExport.link_hotspot_click !== false ? 'true' : 'false',
+    gaEventsExport.external_link_click !== false ? 'true' : 'false',
+    gaEventsExport.info_hotspot_open !== false ? 'true' : 'false',
+    gaEventsExport.video_play !== false ? 'true' : 'false',
+    gaEventsExport.form_open !== false ? 'true' : 'false',
+    gaEventsExport.form_submit !== false ? 'true' : 'false',
+    gaEventsExport.map_open !== false ? 'true' : 'false',
+    gaEventsExport.map_marker_click !== false ? 'true' : 'false',
+    gaEventsExport.share_click !== false ? 'true' : 'false',
+    gaEventsExport.language_change !== false ? 'true' : 'false',
+    gaEventsExport.cookie_accepted !== false ? 'true' : 'false',
+    gaEventsExport.info_panel_open ? 'true' : 'false',
+    gaEventsExport.fullscreen_enter ? 'true' : 'false',
+  ];
+  const analyticsSheet = XLSX.utils.aoa_to_sheet([analyticsHeader, analyticsRow]);
+  XLSX.utils.book_append_sheet(wb, analyticsSheet, 'Analytics');
+
   try {
     XLSX.writeFile(wb, result.filePath);
     return { canceled: false, path: result.filePath };
@@ -498,6 +616,25 @@ ipcMain.handle('excel:download-template', async (_e, projectData: unknown) => {
     ...langs.map(() => '# Privacy Policy\n\nYour policy text here.'),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([pagesTplH, pagesTplEx]), 'Pages');
+
+  // ── Analytics ──
+  const gaH = [
+    'enabled', 'measurement_id', 'anonymize_ip', 'respect_cookie_consent',
+    'ev_scene_view', 'ev_scene_change', 'ev_tour_started', 'ev_tour_completed',
+    'ev_hotspot_click', 'ev_link_hotspot_click', 'ev_external_link_click',
+    'ev_info_hotspot_open', 'ev_video_play', 'ev_form_open', 'ev_form_submit',
+    'ev_map_open', 'ev_map_marker_click', 'ev_share_click', 'ev_language_change',
+    'ev_cookie_accepted', 'ev_info_panel_open', 'ev_fullscreen_enter',
+  ];
+  const gaEx = [
+    'false', 'G-XXXXXXXXXX', 'true', 'true',
+    'true', 'true', 'true', 'false',
+    'true', 'true', 'true',
+    'true', 'true', 'true', 'true',
+    'true', 'true', 'true', 'true',
+    'true', 'false', 'false',
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([gaH, gaEx]), 'Analytics');
 
   try {
     XLSX.writeFile(wb, result.filePath);
@@ -664,7 +801,307 @@ ipcMain.handle('excel:import', async (_e, projectData: unknown) => {
     }
   }
 
-  return { canceled: false, updated, skipped, errors, scenePatch, catPatch, pagePatch };
+  // ── Parse Analytics sheet ──
+  let analyticsPatch: Record<string, unknown> | undefined;
+  const analyticsWs = wb.Sheets['Analytics'];
+  if (analyticsWs) {
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(analyticsWs, { header: 1 });
+    const [aHeader, aRow] = rows as string[][];
+    if (aHeader && aRow) {
+      const col = (name: string) => aHeader.indexOf(name);
+      const tb = (v: unknown) => String(v ?? '').trim().toLowerCase() === 'true';
+      const mid = String(aRow[col('measurement_id')] ?? '').trim();
+      const evKeys = [
+        'scene_view', 'scene_change', 'tour_started', 'tour_completed',
+        'hotspot_click', 'link_hotspot_click', 'external_link_click',
+        'info_hotspot_open', 'video_play', 'form_open', 'form_submit',
+        'map_open', 'map_marker_click', 'share_click', 'language_change',
+        'cookie_accepted', 'info_panel_open', 'fullscreen_enter',
+      ] as const;
+      const events: Record<string, boolean> = {};
+      for (const k of evKeys) {
+        const idx = col(`ev_${k}`);
+        if (idx >= 0) events[k] = tb(aRow[idx]);
+      }
+      analyticsPatch = {
+        enabled: tb(aRow[col('enabled')]),
+        measurementId: mid,
+        anonymizeIp: tb(aRow[col('anonymize_ip')]),
+        respectCookieConsent: tb(aRow[col('respect_cookie_consent')]),
+        events,
+      };
+      updated++;
+    }
+  }
+
+  return { canceled: false, updated, skipped, errors, scenePatch, catPatch, pagePatch, analyticsPatch };
+});
+
+// ── Excel full export (exceljs styled) ───────────────────────────────────────
+
+function applyHeaderRow(ws: ExcelJS.Worksheet, headerRow: ExcelJS.Row) {
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  headerRow.alignment = { vertical: 'middle' };
+  headerRow.height = 20;
+}
+
+ipcMain.handle('excel:export-styled', async (_e, projectData: unknown) => {
+  const result = await dialog.showSaveDialog({
+    title: 'Export project to Excel',
+    defaultPath: 'conchitect-project.xlsx',
+    filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proj = projectData as any;
+  const langs: string[] = proj.languages?.available ?? ['en'];
+  const defaultLang: string = proj.languages?.default ?? 'en';
+  const scenes = (proj.scenes ?? []) as Record<string, unknown>[];
+  const categories = (proj.categories ?? []) as Record<string, unknown>[];
+  const hotspots: { sceneSlug: string; h: Record<string, unknown> }[] = [];
+  for (const sc of scenes) {
+    for (const h of ((sc.hotspots ?? []) as Record<string, unknown>[])) {
+      hotspots.push({ sceneSlug: sc.slug as string, h });
+    }
+  }
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Conchitect';
+  wb.created = new Date();
+
+  const generatedBy = `Generated by Conchitect on ${new Date().toISOString().split('T')[0]}`;
+
+  // ── Sheet: Project ──────────────────────────────────────────────────────
+  const wsPrj = wb.addWorksheet('Project', { tabColor: { argb: 'FF185FA5' } });
+  wsPrj.columns = [
+    { header: 'name', key: 'name', width: 30 },
+    { header: 'creator', key: 'creator', width: 25 },
+    { header: 'contact_email', key: 'contact_email', width: 30 },
+    { header: 'copyright', key: 'copyright', width: 30 },
+    { header: 'publication_url', key: 'publication_url', width: 35 },
+    { header: 'short_description', key: 'short_description', width: 40 },
+    { header: 'default_language', key: 'default_language', width: 16 },
+    { header: 'available_languages', key: 'available_languages', width: 20 },
+  ];
+  applyHeaderRow(wsPrj, wsPrj.getRow(1));
+  wsPrj.addRow({
+    name: proj.meta?.name ?? '',
+    creator: proj.meta?.creator ?? '',
+    contact_email: proj.meta?.contactEmail ?? '',
+    copyright: proj.meta?.copyright ?? '',
+    publication_url: proj.meta?.publicationUrl ?? '',
+    short_description: proj.meta?.shortDescription ?? '',
+    default_language: defaultLang,
+    available_languages: langs.join(', '),
+  });
+  wsPrj.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Scenes ────────────────────────────────────────────────────────
+  const wsScn = wb.addWorksheet('Scenes', { tabColor: { argb: 'FF1D9E75' } });
+  const scnCols: Partial<ExcelJS.Column>[] = [
+    { header: 'slug', key: 'slug', width: 22 },
+    { header: 'heading', key: 'heading', width: 10 },
+    { header: 'gps_lat', key: 'gps_lat', width: 12 },
+    { header: 'gps_lng', key: 'gps_lng', width: 12 },
+    { header: 'category_slugs', key: 'category_slugs', width: 22 },
+    { header: 'visibility_radius', key: 'visibility_radius', width: 16 },
+    ...langs.flatMap((l) => [
+      { header: `title_${l}`, key: `title_${l}`, width: 28 },
+      { header: `description_${l}`, key: `description_${l}`, width: 40 },
+      { header: `altText_${l}`, key: `altText_${l}`, width: 35 },
+    ]),
+  ];
+  wsScn.columns = scnCols;
+  applyHeaderRow(wsScn, wsScn.getRow(1));
+  for (const s of scenes) {
+    const geo = s.geo as Record<string, number> | undefined;
+    const catSlugs = ((s.categoryIds ?? []) as string[])
+      .map((id) => categories.find((c) => c.id === id)?.slug ?? id)
+      .join(', ');
+    const row: Record<string, unknown> = {
+      slug: s.slug ?? '',
+      heading: s.heading ?? 0,
+      gps_lat: geo?.lat ?? '',
+      gps_lng: geo?.lng ?? '',
+      category_slugs: catSlugs,
+      visibility_radius: s.visibilityRadius ?? '',
+    };
+    for (const l of langs) {
+      row[`title_${l}`] = (s.title as Record<string, string>)?.[l] ?? '';
+      row[`description_${l}`] = (s.description as Record<string, string>)?.[l] ?? '';
+      row[`altText_${l}`] = (s.altText as Record<string, string>)?.[l] ?? '';
+    }
+    const added = wsScn.addRow(row);
+    // Conditional formatting: highlight empty default title in light red
+    const titleCol = `title_${defaultLang}`;
+    const titleCell = added.getCell(titleCol);
+    if (!titleCell.value) {
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+    }
+  }
+  wsScn.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Hotspots ──────────────────────────────────────────────────────
+  const wsHs = wb.addWorksheet('Hotspots', { tabColor: { argb: 'FF8B5CF6' } });
+  wsHs.columns = [
+    { header: 'scene_slug', key: 'scene_slug', width: 22 },
+    { header: 'id', key: 'id', width: 36 },
+    { header: 'type', key: 'type', width: 10 },
+    { header: 'ath', key: 'ath', width: 8 },
+    { header: 'atv', key: 'atv', width: 8 },
+    { header: 'target_scene_slug', key: 'target_scene_slug', width: 22 },
+    { header: 'url', key: 'url', width: 40 },
+    ...langs.flatMap((l) => [
+      { header: `title_${l}`, key: `title_${l}`, width: 28 },
+      { header: `body_${l}`, key: `body_${l}`, width: 35 },
+    ]),
+  ];
+  applyHeaderRow(wsHs, wsHs.getRow(1));
+  for (const { sceneSlug, h } of hotspots) {
+    const row: Record<string, unknown> = {
+      scene_slug: sceneSlug,
+      id: h.id ?? '',
+      type: h.type ?? '',
+      ath: h.ath ?? 0,
+      atv: h.atv ?? 0,
+      target_scene_slug: (h.type === 'link')
+        ? (scenes.find((s) => s.id === (h as Record<string, unknown>).targetSceneId)?.slug ?? '')
+        : '',
+      url: (h as Record<string, unknown>).url ?? '',
+    };
+    for (const l of langs) {
+      row[`title_${l}`] = (h.title as Record<string, string>)?.[l] ?? '';
+      row[`body_${l}`] = (h.body as Record<string, string>)?.[l] ?? '';
+    }
+    wsHs.addRow(row);
+  }
+  wsHs.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Categories ────────────────────────────────────────────────────
+  const wsCat = wb.addWorksheet('Categories', { tabColor: { argb: 'FFBA7517' } });
+  wsCat.columns = [
+    { header: 'slug', key: 'slug', width: 22 },
+    { header: 'color', key: 'color', width: 10 },
+    { header: 'built_in', key: 'built_in', width: 10 },
+    ...langs.map((l) => ({ header: `name_${l}`, key: `name_${l}`, width: 22 })),
+  ];
+  applyHeaderRow(wsCat, wsCat.getRow(1));
+  for (const c of categories) {
+    const row: Record<string, unknown> = {
+      slug: c.slug ?? '',
+      color: c.color ?? '',
+      built_in: c.builtIn ? 'true' : 'false',
+    };
+    for (const l of langs) row[`name_${l}`] = (c.name as Record<string, string>)?.[l] ?? '';
+    wsCat.addRow(row);
+  }
+  wsCat.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Pages ─────────────────────────────────────────────────────────
+  const wsPages = wb.addWorksheet('Pages', { tabColor: { argb: 'FF3B82F6' } });
+  wsPages.columns = [
+    { header: 'slug', key: 'slug', width: 18 },
+    { header: 'enabled', key: 'enabled', width: 10 },
+    { header: 'show_in_footer', key: 'show_in_footer', width: 14 },
+    { header: 'order', key: 'order', width: 8 },
+    { header: 'built_in', key: 'built_in', width: 10 },
+    ...langs.flatMap((l) => [
+      { header: `title_${l}`, key: `title_${l}`, width: 28 },
+      { header: `content_${l}`, key: `content_${l}`, width: 50 },
+    ]),
+  ];
+  applyHeaderRow(wsPages, wsPages.getRow(1));
+  for (const p of ((proj.pages ?? []) as Record<string, unknown>[])) {
+    const row: Record<string, unknown> = {
+      slug: p.slug ?? '',
+      enabled: p.enabled ? 'true' : 'false',
+      show_in_footer: p.showInFooter ? 'true' : 'false',
+      order: p.order ?? 0,
+      built_in: p.builtIn ?? '',
+    };
+    for (const l of langs) {
+      row[`title_${l}`] = (p.title as Record<string, string>)?.[l] ?? '';
+      row[`content_${l}`] = (p.content as Record<string, string>)?.[l] ?? '';
+    }
+    wsPages.addRow(row);
+  }
+  wsPages.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Modules ───────────────────────────────────────────────────────
+  const wsMod = wb.addWorksheet('Modules');
+  wsMod.columns = [
+    { header: 'key', key: 'key', width: 28 },
+    { header: 'value', key: 'value', width: 40 },
+  ];
+  applyHeaderRow(wsMod, wsMod.getRow(1));
+  const mods = (proj.modules ?? {}) as Record<string, unknown>;
+  const modEntries: [string, unknown][] = [
+    ['vr', mods.vr],
+    ['gyroscope', mods.gyroscope],
+    ['fullscreen', mods.fullscreen],
+    ['feedback_mailto', mods.feedbackMailto ?? ''],
+    ['forms_enabled', mods.formsEnabled],
+    ['deepl_api_key', mods.deeplApiKey ?? ''],
+    ['cookie_consent', mods.cookieConsent ?? false],
+  ];
+  for (const [k, v] of modEntries) wsMod.addRow({ key: k, value: String(v ?? '') });
+  wsMod.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Analytics ────────────────────────────────────────────────────
+  const wsAna = wb.addWorksheet('Analytics');
+  wsAna.columns = [
+    { header: 'setting', key: 'setting', width: 32 },
+    { header: 'value', key: 'value', width: 20 },
+  ];
+  applyHeaderRow(wsAna, wsAna.getRow(1));
+  const ga = (proj.analytics ?? {}) as Record<string, unknown>;
+  const gaEvents = (ga.events ?? {}) as Record<string, boolean>;
+  wsAna.addRow({ setting: 'enabled', value: String(ga.enabled ?? 'false') });
+  wsAna.addRow({ setting: 'measurement_id', value: ga.measurementId ?? '' });
+  wsAna.addRow({ setting: 'anonymize_ip', value: String(ga.anonymizeIp ?? 'true') });
+  wsAna.addRow({ setting: 'respect_cookie_consent', value: String(ga.respectCookieConsent ?? 'true') });
+  for (const [k, v] of Object.entries(gaEvents)) wsAna.addRow({ setting: `event_${k}`, value: String(v) });
+  wsAna.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: AI Context ────────────────────────────────────────────────────
+  const wsAi = wb.addWorksheet('AI Context');
+  wsAi.columns = [
+    { header: 'setting', key: 'setting', width: 28 },
+    { header: 'value', key: 'value', width: 40 },
+  ];
+  applyHeaderRow(wsAi, wsAi.getRow(1));
+  const aiCtx = (proj.aiContext ?? {}) as Record<string, unknown>;
+  wsAi.addRow({ setting: 'tone', value: aiCtx.tone ?? 'marketing' });
+  wsAi.addRow({ setting: 'audience', value: aiCtx.audience ?? 'general' });
+  wsAi.addRow({ setting: 'theme', value: aiCtx.theme ?? 'Tourism' });
+  wsAi.addRow({ setting: 'length', value: aiCtx.length ?? 'medium' });
+  wsAi.addRow({ setting: 'custom_instructions', value: aiCtx.customInstructions ?? '' });
+  wsAi.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Sheet: Notes ─────────────────────────────────────────────────────────
+  const wsNotes = wb.addWorksheet('Notes');
+  wsNotes.columns = [
+    { header: 'scene_slug', key: 'scene_slug', width: 22 },
+    { header: 'note', key: 'note', width: 80 },
+  ];
+  applyHeaderRow(wsNotes, wsNotes.getRow(1));
+  for (const s of scenes) wsNotes.addRow({ scene_slug: s.slug ?? '', note: '' });
+  wsNotes.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // ── Footer comment on Project sheet ─────────────────────────────────────
+  const footerCell = wsPrj.getCell(`A${wsPrj.rowCount + 2}`);
+  footerCell.value = generatedBy;
+  footerCell.font = { italic: true, color: { argb: 'FF94A3B8' }, size: 9 };
+
+  try {
+    await wb.xlsx.writeFile(result.filePath);
+    return { canceled: false, path: result.filePath };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { canceled: false, error: msg };
+  }
 });
 
 // Temporary store for preview scene data (consumed by preview:getData immediately after window loads)
@@ -1299,7 +1736,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
         const tCatId: string | undefined = (targetScene.categoryIds as string[])?.[0];
         const tCat = tCatId ? categories.find((c: any) => c.id === tCatId) : null;
         const iconUrl = tCat?.slug ? `/hotspots/cat-${tCat.slug}.svg` : '/hotspots/default.svg';
-        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="js(_onHotspotHover('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.18,0.15);" onout="js(_onHotspotHoverOut('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
+        xml += `    <hotspot name="${hsName}" type="image" url="${iconUrl}" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="js(_onHotspotHover('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.18,0.15);" onout="js(_onHotspotHoverOut('${targetScene.slug}')); tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(window._track('link_hotspot_click',{target:'${targetScene.slug}'}));loadscene(${linkedScene},null,MERGE,BLEND(0.5));"/>\n`;
       } else {
         // Non-link hotspots use stored ath/atv (manually placed by user)
         const ath: string = (hs.ath as number ?? 0).toFixed(2);
@@ -1309,8 +1746,7 @@ function generateKrpanoXml(project: any, tiledScenes: Map<string, TileInfo | nul
           xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-text.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showTextHs('${hs.id}'));"/>\n`;
         } else if (hs.type === 'external') {
           const tooltip = xmlEsc(loc(hs.label, lang) || 'Link');
-          const url = xmlEsc(hs.url || '');
-          xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-external.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="openurl(${url}, _blank);"/>\n`;
+          xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-external.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(window._openExternalLink('${hs.id}'));"/>\n`;
         } else if (hs.type === 'video') {
           const tooltip = xmlEsc(loc(hs.title, lang) || 'Video');
           xml += `    <hotspot name="${hsName}" type="image" url="/hotspots/hs-video.svg" ath="${ath}" atv="${atv}" width="${hsW}" height="${hsH}" edge="bottom" distorted="false" cursor="pointer" tooltip="${tooltip}" onover="tween(hotspot[${hsName}].scale,1.18,0.15);" onout="tween(hotspot[${hsName}].scale,1.0,0.15);" onclick="js(showVideoHs('${hs.id}'));"/>\n`;
@@ -1608,12 +2044,15 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const hotspotTexts: Record<string, unknown> = {};
   const hotspotVideos: Record<string, unknown> = {};
   const hotspotForms: Record<string, unknown> = {};
+  const hotspotExternalUrls: Record<string, string> = {};
   for (const scene of scenes as any[]) {
     for (const hs of (scene.hotspots || []) as any[]) {
       if (hs.type === 'text') {
         hotspotTexts[hs.id] = { title: loc(hs.title, lang) || '', body: loc(hs.body, lang) || '' };
       } else if (hs.type === 'video') {
         hotspotVideos[hs.id] = { url: hs.url || '', title: loc(hs.title, lang) || '' };
+      } else if (hs.type === 'external') {
+        hotspotExternalUrls[hs.id] = hs.url || '';
       } else if (hs.type === 'form') {
         hotspotForms[hs.id] = {
           mailto: hs.mailto || '',
@@ -1653,6 +2092,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     hotspotTexts,
     hotspotVideos,
     hotspotForms,
+    hotspotExternalUrls,
     hotspotSizePx: branding.hotspotSizePx || 32,
   }).replace(/<\//g, '<\\/');
 
@@ -1690,6 +2130,32 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   }
   if (keywords.length) headExtras += `  <meta name="keywords" content="${xmlEsc(keywords.join(', '))}">\n`;
 
+  // GA4 analytics
+  const _ga: any = (project as any).analytics ?? {};
+  const gaEnabled: boolean = !!(
+    _ga.enabled &&
+    _ga.measurementId &&
+    /^G-[A-Z0-9]{9,12}$/.test(_ga.measurementId)
+  );
+  const gaMid: string = _ga.measurementId || '';
+  const gaAnonymize: boolean = _ga.anonymizeIp !== false;
+  const gaConsent: boolean = !!_ga.respectCookieConsent;
+  const gaEvents: Record<string, boolean> = _ga.events ?? {};
+  if (gaEnabled) {
+    headExtras += `  <script async src="https://www.googletagmanager.com/gtag/js?id=${gaMid}"></script>\n`;
+    headExtras +=
+      `  <script>window.dataLayer=window.dataLayer||[];` +
+      `function gtag(){dataLayer.push(arguments);}` +
+      `gtag('js',new Date());` +
+      `gtag('config','${gaMid}',{'anonymize_ip':${gaAnonymize},'send_page_view':false});` +
+      `window.__gaEnabled=true;` +
+      `window.__gaMid='${gaMid}';` +
+      `window.__gaRespectConsent=${gaConsent};` +
+      `window.__gaConsented=${!gaConsent};` +
+      `window.__gaEvents=${JSON.stringify(gaEvents).replace(/<\//g, '<\\/')};` +
+      `</script>\n`;
+  }
+
   // Share bar
   let shareStyles = '';
   let shareBar    = '';
@@ -1701,11 +2167,11 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
       `background:rgba(0,0,0,.55);color:#fff;text-decoration:none;font-size:13px;font-family:sans-serif;transition:background .2s}` +
       `#share-bar a:hover{background:${accentColor}}`;
     const links: string[] = [];
-    if (share.facebook) links.push(`<a href="#" onclick="window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="Facebook">f</a>`);
-    if (share.twitter)  links.push(`<a href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener,noreferrer');return false;" title="X">X</a>`);
-    if (share.whatsapp) links.push(`<a href="#" onclick="window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="WhatsApp">W</a>`);
-    if (share.linkedin) links.push(`<a href="#" onclick="window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="LinkedIn">in</a>`);
-    if (share.email)    links.push(`<a href="#" onclick="location.href='mailto:?subject='+encodeURIComponent(document.title)+'&body='+encodeURIComponent(location.href);return false;" title="Email">@</a>`);
+    if (share.facebook) links.push(`<a href="#" onclick="_track('share_click',{platform:'facebook'});window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="Facebook">f</a>`);
+    if (share.twitter)  links.push(`<a href="#" onclick="_track('share_click',{platform:'twitter'});window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener,noreferrer');return false;" title="X">X</a>`);
+    if (share.whatsapp) links.push(`<a href="#" onclick="_track('share_click',{platform:'whatsapp'});window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="WhatsApp">W</a>`);
+    if (share.linkedin) links.push(`<a href="#" onclick="_track('share_click',{platform:'linkedin'});window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener,noreferrer');return false;" title="LinkedIn">in</a>`);
+    if (share.email)    links.push(`<a href="#" onclick="_track('share_click',{platform:'email'});location.href='mailto:?subject='+encodeURIComponent(document.title)+'&body='+encodeURIComponent(location.href);return false;" title="Email">@</a>`);
     shareBar = `  <div id="share-bar">${links.join('')}</div>\n`;
   }
 
@@ -1753,7 +2219,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     da:'🇩🇰', fi:'🇫🇮', nb:'🇳🇴', no:'🇳🇴', uk:'🇺🇦',
   };
   const langHdrBtns: string = allLangs.length > 1
-    ? `<select id="lang-sel" onchange="var p=window.location.pathname,m=p.match(/\\/scene\\/([^/]+)\\//),s=_curScene||(m?m[1]:'');location.href=s?'/scene/'+s+'/'+this.value+'/':'/'+this.value+'/';">` +
+    ? `<select id="lang-sel" onchange="_track('language_change',{lang:this.value});var p=window.location.pathname,m=p.match(/\\/scene\\/([^/]+)\\//),s=_curScene||(m?m[1]:'');location.href=s?'/scene/'+s+'/'+this.value+'/':'/'+this.value+'/';">` +
       allLangs.map((l: string) => {
         const flag: string = FLAG_MAP[l] || '🌐';
         return `<option value="${xmlEsc(l)}"${l === lang ? ' selected' : ''}>${flag} ${l.toUpperCase()}</option>`;
@@ -1761,10 +2227,10 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
       `</select>`
     : '';
   const shareHdrLinks: string[] = [];
-  if (share.facebook) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="Facebook">f</a>`);
-  if (share.twitter)  shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener');return false;" title="X">𝕏</a>`);
-  if (share.whatsapp) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener');return false;" title="WhatsApp">W</a>`);
-  if (share.linkedin) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="LinkedIn">in</a>`);
+  if (share.facebook) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'facebook'});window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="Facebook">f</a>`);
+  if (share.twitter)  shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'twitter'});window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener');return false;" title="X">𝕏</a>`);
+  if (share.whatsapp) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'whatsapp'});window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener');return false;" title="WhatsApp">W</a>`);
+  if (share.linkedin) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'linkedin'});window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="LinkedIn">in</a>`);
   // Note: share.email is intentionally NOT added to the header (it would duplicate the feedbackMailto button).
   // Email sharing is available in the bottom share bar only.
   const shareHdrHtml: string = shareHdrLinks.join('');
@@ -2367,11 +2833,23 @@ ${showMap ? `  <div id="map-panel">
     if (_krpano) _krpano.call('loadscene(scene_' + slug + ',null,MERGE,BLEND(0.5));');
   }
 
+  window.__gaVisited = window.__gaVisited || {};
+  window.__gaTourCompleted = false;
+
   function _onScene(xmlName) {
     var slug = (xmlName || '').replace(/^scene_/, '');
     if (!slug || !TOUR.scenes[slug] || slug === _curScene) return;
     var prevSlug = _curScene;
     _curScene = slug;
+    // GA4: navigation events
+    if (!_firstDone) { window._track('tour_started', {scene: slug}); }
+    if (prevSlug) { window._track('scene_change', {from: prevSlug, to: slug}); }
+    window._track('scene_view', {scene_slug: slug});
+    window.__gaVisited[slug] = 1;
+    if (!window.__gaTourCompleted && Object.keys(window.__gaVisited).length >= Object.keys(TOUR.scenes).length) {
+      window.__gaTourCompleted = true;
+      window._track('tour_completed', {total: Object.keys(TOUR.scenes).length});
+    }
     var scene = TOUR.scenes[slug];
     var titleEl = document.getElementById('hdr-title');
     var dispTitle = _displayTitle(slug);
@@ -2440,6 +2918,7 @@ ${showMap ? `  <div id="map-panel">
     // On mobile (pointer:coarse or narrow screen) → fullscreen overlay
     if (window.matchMedia('(max-width:768px),(pointer:coarse)').matches) {
       _openDescOverlay();
+      window._track('info_panel_open');
       return;
     }
     var p = document.getElementById('info-panel');
@@ -2447,6 +2926,7 @@ ${showMap ? `  <div id="map-panel">
     p.classList.toggle('open');
     var b = document.getElementById('info-btn');
     if (b) b.style.background = p.classList.contains('open') ? '#f0f0f0' : '';
+    if (p.classList.contains('open')) window._track('info_panel_open');
   }
 
   // Scene strip — click handled via inline onclick; hover animation is CSS-only
@@ -2458,6 +2938,7 @@ ${showMap ? `  <div id="map-panel">
     document.getElementById('text-popup-title').textContent = data.title || '';
     document.getElementById('text-popup-body').innerHTML = data.body || '';
     document.getElementById('text-popup').classList.add('open');
+    window._track('info_hotspot_open', {id: id, title: data.title || ''});
   };
   window.closeTextPopup = function() {
     document.getElementById('text-popup').classList.remove('open');
@@ -2477,6 +2958,7 @@ ${showMap ? `  <div id="map-panel">
   window.showVideoHs = function(id) {
     var data = TOUR.hotspotVideos && TOUR.hotspotVideos[id];
     if (!data || !data.url) return;
+    window._track('video_play', {id: id, title: data.title || ''});
     var popup = document.getElementById('video-popup');
     var frame = document.getElementById('video-iframe');
     var vid   = document.getElementById('video-tag');
@@ -2508,6 +2990,7 @@ ${showMap ? `  <div id="map-panel">
     var data = TOUR.hotspotForms && TOUR.hotspotForms[id];
     if (!data) return;
     _formData = data;
+    window._track('form_open', {id: id});
     document.getElementById('form-popup-title').textContent = data.subject || 'Contact';
     var fieldsEl = document.getElementById('form-popup-fields');
     fieldsEl.innerHTML = '';
@@ -2539,6 +3022,7 @@ ${showMap ? `  <div id="map-panel">
     inputs.forEach(function(inp) { if (inp.value) lines.push((inp.name || inp.placeholder || '') + ': ' + inp.value); });
     var subject = encodeURIComponent(_formData.subject || 'Contact');
     var body = encodeURIComponent(lines.join('\\n'));
+    window._track('form_submit', {subject: _formData.subject || ''});
     window.open('mailto:' + (_formData.mailto || '') + '?subject=' + subject + '&body=' + body);
     closeFormPopup();
   };
@@ -2556,6 +3040,21 @@ ${showMap ? `  <div id="map-panel">
     try { localStorage.setItem('cc_ok', '1'); } catch(e) {}
     var b = document.getElementById('cookie-banner');
     if (b) b.style.display = 'none';
+    if (window.__gaEnabled && window.__gaRespectConsent) { window.__gaConsented = true; }
+    window._track('cookie_accepted');
+  };
+
+  // GA4 tracking helper — all events go through here so we can gate on consent
+  window._track = function(evt, params) {
+    if (!window.__gaEnabled || !window.__gaEvents || !window.__gaEvents[evt]) return;
+    if (window.__gaRespectConsent && !window.__gaConsented) return;
+    try { if (typeof gtag === 'function') gtag('event', evt, params || {}); } catch(e) {}
+  };
+  window._openExternalLink = function(id) {
+    var url = TOUR.hotspotExternalUrls && TOUR.hotspotExternalUrls[id];
+    if (!url) return;
+    window._track('external_link_click', {url: url});
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   function _toggleFs() {
@@ -2568,6 +3067,7 @@ ${showMap ? `  <div id="map-panel">
   document.addEventListener('fullscreenchange', function() {
     var b = document.getElementById('fs-btn');
     if (b) b.innerHTML = document.fullscreenElement ? '&#x26F7;' : '&#x26F6;';
+    if (document.fullscreenElement) window._track('fullscreen_enter');
   });
 
   // Mobile description overlay
@@ -2662,6 +3162,7 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
   function _openMap() {
     var p = document.getElementById('map-panel');
     p.classList.add('open');
+    window._track('map_open');
     if (_lmap) { setTimeout(function(){ _lmap.invalidateSize(); }, 300); return; }
     setTimeout(function() {
       _lmap = L.map('leaflet-map');
@@ -2692,6 +3193,7 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
         m.on('click', function() {
           window.hideHotspotPreview();
           _closeMap();
+          window._track('map_marker_click', {scene: slug});
           _navTo(slug);
         });
         m.on('mouseover', function() {
