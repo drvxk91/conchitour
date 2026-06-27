@@ -66,7 +66,7 @@ export function LanguagesScreen() {
 
   return (
     <ScreenShell title="Languages" subtitle="Add interface languages for the compiled tour.">
-      <div className="max-w-xl space-y-6">
+      <div className="max-w-2xl mx-auto space-y-6">
 
         {/* ── Active languages ─── */}
         <div>

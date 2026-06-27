@@ -201,10 +201,13 @@ export function CompileScreen() {
     setLicenseResult(null);
     try {
       const res = await window.conchitect.krpanoRegister(settings.krpanoPath, licenseCode);
-      setLicenseResult(res);
-      if (res.ok) {
-        const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
-        setLicenseStatus(ls);
+      // Always refresh license file status regardless of exit code —
+      // krpanotools may return non-zero even on success ("Code registered.")
+      const ls = await window.conchitect.krpanoLicenseStatus(settings.krpanoPath);
+      setLicenseStatus(ls);
+      const effective = { ...res, ok: res.ok || ls.present };
+      setLicenseResult(effective);
+      if (ls.present) {
         const info = parseLicenseCode(res.message) ?? parseLicenseCode(licenseCode);
         if (info) patchSettings({ licenseInfo: info });
         setLicenseCode('');
@@ -283,7 +286,7 @@ export function CompileScreen() {
 
   return (
     <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
-      <div className="grid grid-cols-2 gap-8 max-w-5xl">
+      <div className="grid grid-cols-2 gap-8 max-w-5xl mx-auto">
 
         {/* ── LEFT: Setup ─────────────────────────────────────────────── */}
         <div className="space-y-7">

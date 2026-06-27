@@ -19,10 +19,15 @@ function buildSeoPrompt(
 ): string {
   const defaultLang = project.languages.default || 'en';
   const scenes = project.scenes.slice(0, 20);
-  const sceneNames = scenes
-    .map((s) => s.title?.[metaLang] || s.title?.[defaultLang] || s.slug)
-    .filter(Boolean)
-    .join(', ');
+
+  // Rich scene context: title + description snippet
+  const sceneDetails = scenes
+    .map((s) => {
+      const title = s.title?.[metaLang] || s.title?.[defaultLang] || s.slug;
+      const desc  = s.description?.[metaLang] || s.description?.[defaultLang] || '';
+      return desc ? `  • ${title}: ${desc.slice(0, 80)}` : `  • ${title}`;
+    })
+    .join('\n');
 
   const cats = project.categories
     .filter((c) => !c.builtIn)
@@ -30,64 +35,116 @@ function buildSeoPrompt(
     .filter(Boolean)
     .join(', ');
 
-  const gpsHints = project.scenes
-    .filter((s) => s.geo?.lat && s.geo.lat !== 0)
-    .map((s) => `${s.geo!.lat.toFixed(4)},${s.geo!.lng.toFixed(4)}`)
+  const gpsScenes = project.scenes.filter((s) => s.geo?.lat && s.geo.lat !== 0);
+  const gpsHints  = gpsScenes
     .slice(0, 3)
-    .join(' / ');
+    .map((s) => {
+      const title = s.title?.[defaultLang] || s.slug;
+      return `${title} (${s.geo!.lat.toFixed(4)}, ${s.geo!.lng.toFixed(4)})`;
+    })
+    .join('; ');
 
-  const ctx = project.aiContext;
+  const ctx            = project.aiContext;
   const projectContext = ctx?.projectContext?.trim() ?? '';
+  const audience       = ctx?.audience?.trim() ?? '';
+  const tone           = ctx?.tone?.trim() ?? '';
 
-  const existingSeo = project.seo;
+  const existingSeo    = project.seo;
   const hasExistingMeta = fillMode === 'empty' && (existingSeo?.metaTitle || existingSeo?.metaDescription);
 
+  // Build scene list for alt text
   const sceneListForAlt = genAltTexts
-    ? scenes.map((s) => `- ${s.slug}: "${s.title?.[defaultLang] || s.slug}"`).join('\n')
+    ? scenes.map((s) => {
+        const title = s.title?.[defaultLang] || s.slug;
+        const desc  = s.description?.[defaultLang] || '';
+        return `- ${s.slug}: "${title}"${desc ? ` — ${desc.slice(0, 60)}` : ''}`;
+      }).join('\n')
     : null;
-
-  const altLangsNote = genAltTexts && langs.length > 1
-    ? `Languages for alt text: ${langs.join(', ')} — write each alt text in the correct language.`
-    : genAltTexts
-      ? `Language for alt text: ${langs[0] || metaLang}.`
-      : '';
 
   const altTextShape = genAltTexts && sceneListForAlt
-    ? `{\n${langs.map((l) => `  "${l}": { "scene-slug": "alt text in ${l} for this scene", ... }`).join(',\n')}\n}`
+    ? `{\n${langs.map((l) => `  "${l}": { "<scene-slug>": "<alt text in ${l}>", ... }`).join(',\n')}\n}`
     : null;
 
-  return `You are a world-class SEO expert specializing in tourism, hospitality, and location-based experiences.
+  // Determine language hint for CTAs
+  const ctaHint = metaLang.startsWith('fr') ? '"Découvrez", "Explorez", "Visitez"'
+    : metaLang.startsWith('es') ? '"Explore", "Descubra", "Visite"'
+    : metaLang.startsWith('de') ? '"Entdecken Sie", "Erkunden Sie"'
+    : '"Explore", "Discover", "Step inside"';
 
-PROJECT INFORMATION:
-- Tour name: ${project.meta.name || 'Virtual tour'}
-- Description: ${project.meta.shortDescription || '(none)'}
-- Creator: ${project.meta.creator || '(none)'}
-- Primary language for meta tags: ${metaLang}
-- Scenes (${project.scenes.length}): ${sceneNames || '(no titles yet)'}
-- Categories: ${cats || '(none)'}
-- GPS hints: ${gpsHints || '(no GPS)'}
-${projectContext ? `\nEditorial context provided by the author:\n"${projectContext}"` : ''}
-${hasExistingMeta ? `\nEXISTING VALUES (only fill empty ones):\n- metaTitle: "${existingSeo.metaTitle || '(empty)'}"\n- metaDescription: "${existingSeo.metaDescription || '(empty)'}"` : ''}
+  return `You are a world-class SEO specialist for 360° virtual tours and location experiences.
+Your task: generate SEO metadata that scores 95+/100 in this scoring system AND reflects the actual content of this tour.
 
-TASK:
-Generate the best possible SEO metadata to maximize organic search ranking and click-through rate.
-${fillMode === 'empty' ? 'Only generate values for fields that are currently empty (marked as "(empty)" above). Keep existing values as-is.' : ''}
+━━━ SCORING RULES (internalize these — they determine your score) ━━━
+• Meta title   → GOOD if 50–60 chars. Problem if <30 or >70. Aim for exactly 55–60.
+• Focus keyword → MUST appear in title (ideally first 3 words) AND in description.
+• Meta description → GOOD if 120–160 chars. Aim for exactly 145–155.
+• Keywords → GOOD if 5–15 total. Aim for 10–12. First keyword = focus keyword.
+• schemaType → any valid value scores full points.
 
-RULES (follow strictly):
-1. Meta title: 50–60 characters, must include the primary keyword, location if known, and a unique value proposition (include "360°" or "visite virtuelle" depending on language). No keyword stuffing. Write in language: ${metaLang}.
-2. Meta description: 120–160 characters. Must be compelling, include a CTA ("Explore…", "Découvrez…"), and mention 2-3 secondary keywords naturally. Write in language: ${metaLang}.
-3. Keywords: 10-15 keywords, mix of short-tail high-volume (2-3 words), long-tail high-intent (4-6 words), location-specific if GPS available. All in language: ${metaLang}.
-4. schemaType: pick the best fit from: TouristAttraction | Hotel | Museum | Place
-${genAltTexts && sceneListForAlt ? `5. altTexts: write a short descriptive alt text (1-2 sentences, plain language) for each scene image. ${altLangsNote}
-Scenes:\n${sceneListForAlt}` : ''}
+━━━ PROJECT CONTEXT ━━━
+Name: ${project.meta.name || 'Virtual tour'}
+Short description: ${project.meta.shortDescription || '(none)'}
+Creator: ${project.meta.creator || '(none)'}
+Website: ${project.meta.publicationUrl || '(none)'}
+Language to write in: ${metaLang}
+${audience ? `Target audience: ${audience}` : ''}
+${tone ? `Tone: ${tone}` : ''}
+${projectContext ? `\nEditorial context (written by the author — use this extensively):\n"${projectContext}"` : ''}
 
-Return ONLY valid JSON — no markdown, no preamble, no explanation:
+Scenes (${project.scenes.length} total):
+${sceneDetails || '(no scene titles yet)'}
+
+Categories: ${cats || '(none)'}
+GPS / location: ${gpsHints || '(no GPS data)'}
+${hasExistingMeta ? `\n━━━ FILL-EMPTY MODE — keep existing non-empty values ━━━\nCurrent metaTitle: "${existingSeo.metaTitle || '(empty)'}"\nCurrent metaDescription: "${existingSeo.metaDescription || '(empty)'}"\n` : ''}
+━━━ REQUIREMENTS ━━━
+1. FOCUS KEYWORD (keywords[0]):
+   - Choose the single most searched phrase for this tour (2-4 words, includes location or type if known)
+   - It MUST appear verbatim in the meta title, ideally within the first 3 words
+   - It MUST appear verbatim in the meta description
+
+2. META TITLE — target exactly 55–60 characters (count carefully):
+   - Start with or near the focus keyword
+   - Add location or unique differentiator (use "360°" or equivalent in ${metaLang})
+   - Write in ${metaLang}
+   - DO NOT exceed 60 characters
+
+3. META DESCRIPTION — target exactly 145–155 characters (count carefully):
+   - Include focus keyword naturally in the first half
+   - Use an action-oriented opener: ${ctaHint}
+   - Mention 2 secondary keywords naturally
+   - End with an implicit or explicit CTA
+   - Write in ${metaLang}
+   - DO NOT exceed 160 characters
+
+4. KEYWORDS — exactly 10–12, all in ${metaLang}:
+   - keywords[0] = focus keyword (same as used in title/description)
+   - keywords[1–3] = close variants (singular/plural, synonyms)
+   - keywords[4–7] = secondary topics from the scene list above
+   - keywords[8–11] = long-tail phrases (4-6 words, location or intent specific)
+
+5. SCHEMA TYPE — pick exactly one: TouristAttraction | Hotel | Museum | Place
+
+${genAltTexts && sceneListForAlt ? `6. ALT TEXTS — one per scene per language (${langs.join(', ')}):
+   - 1 concise sentence per scene, describe what the panorama shows
+   - Use scene title and description as context
+   - Write each alt text in its target language
+   - Scenes:\n${sceneListForAlt}` : ''}
+
+━━━ OUTPUT ━━━
+Return ONLY valid JSON, no markdown, no explanation, no comments:
 {
   "metaTitle": "...",
   "metaDescription": "...",
-  "keywords": ["kw1", "kw2", ...],
+  "keywords": ["focus kw", "variant", ...],
   "schemaType": "TouristAttraction"${genAltTexts && altTextShape ? `,\n  "altTexts": ${altTextShape}` : ''}
-}`;
+}
+
+Before finalising, silently verify:
+- title length is between 55 and 60 chars
+- description length is between 145 and 155 chars
+- keywords[0] appears verbatim in both title and description
+- keywords count is between 10 and 12`;
 }
 
 export async function generateSeoWithAi(

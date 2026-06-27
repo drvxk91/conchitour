@@ -71,8 +71,8 @@ export function SceneSidebar() {
         </div>
       </div>
 
-      {/* Category filter chips */}
-      {project.categories.length > 0 && (
+      {/* Category filter chips (scene categories only, no hotspot types) */}
+      {project.categories.some((c) => !(c.builtIn && c.slug.startsWith('_'))) && (
         <div className="flex gap-1 px-2 py-1.5 flex-wrap border-b border-line">
           <button
             onClick={() => setFilterCat(null)}
@@ -85,7 +85,7 @@ export function SceneSidebar() {
           >
             All
           </button>
-          {project.categories.map((cat) => (
+          {project.categories.filter((c) => !(c.builtIn && c.slug.startsWith('_'))).map((cat) => (
             <button
               key={cat.id}
               onClick={() => setFilterCat(filterCat === cat.id ? null : cat.id)}

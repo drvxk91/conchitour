@@ -2064,13 +2064,20 @@ ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
 });
 
 ipcMain.handle('krpano:license-status', async (_e, krpanoPath: string) => {
-  const licensePath = path.join(krpanoPath, 'krpanolicense.xml');
-  try {
-    await fs.access(licensePath);
-    return { present: true, path: licensePath };
-  } catch {
-    return { present: false, path: licensePath };
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const pathWithoutDrive = krpanoPath.replace(/^[A-Za-z]:[\\\/]/, '');
+  const candidates = [
+    path.join(krpanoPath, 'krpanolicense.xml'),
+    path.join(localAppData, 'VirtualStore', pathWithoutDrive, 'krpanolicense.xml'),
+    path.join(path.dirname(krpanoPath), 'krpanolicense.xml'),
+  ];
+  for (const licensePath of candidates) {
+    try {
+      await fs.access(licensePath);
+      return { present: true, path: licensePath };
+    } catch { /* try next */ }
   }
+  return { present: false, path: candidates[0] };
 });
 
 ipcMain.handle('krpano:register', async (_e, krpanoPath: string, code: string) => {
@@ -2101,12 +2108,53 @@ ipcMain.handle('krpano:register', async (_e, krpanoPath: string, code: string) =
       resolve({ ok: false, message: 'krpanotools timed out after 30 seconds.' });
     }, 30_000);
 
-    proc.on('close', (exitCode) => {
+    proc.on('close', async (exitCode) => {
       clearTimeout(timer);
       const raw = output.trim();
-      const ok = exitCode === 0;
-      const msg = raw || (ok ? 'License activated successfully.' : `Registration failed (exit code ${exitCode}).`);
-      resolve({ ok, message: msg });
+      const okByOutput = /registered/i.test(raw) || /success/i.test(raw) || /activated/i.test(raw);
+      const ok = exitCode === 0 || okByOutput;
+
+      // Search for krpanolicense.xml in all likely locations
+      const appData    = process.env.APPDATA || '';
+      const localAppData = process.env.LOCALAPPDATA || '';
+      const userProfile  = process.env.USERPROFILE || '';
+      const pathWithoutDrive = krpanoPath.replace(/^[A-Za-z]:[\\\/]/, '');
+      const candidates = [
+        path.join(krpanoPath, 'krpanolicense.xml'),
+        path.join(path.dirname(krpanoPath), 'krpanolicense.xml'),
+        path.join(localAppData, 'VirtualStore', pathWithoutDrive, 'krpanolicense.xml'),
+        path.join(appData, 'krpano', 'krpanolicense.xml'),
+        path.join(localAppData, 'krpano', 'krpanolicense.xml'),
+        path.join(userProfile, 'krpanolicense.xml'),
+      ];
+
+      // Also do a shallow recursive search from the krpano parent dir
+      let foundPath: string | null = null;
+      for (const p of candidates) {
+        try { await fs.access(p); foundPath = p; break; } catch { /* next */ }
+      }
+
+      // If still not found, walk up to 2 levels from krpanoPath
+      if (!foundPath) {
+        const dirs = [krpanoPath, path.dirname(krpanoPath), path.dirname(path.dirname(krpanoPath))];
+        outer: for (const dir of dirs) {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const e of entries) {
+              if (e.name === 'krpanolicense.xml') {
+                foundPath = path.join(dir, e.name);
+                break outer;
+              }
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      const diag = foundPath
+        ? `\nLicense file found at:\n${foundPath}`
+        : `\nLicense file not found. Searched:\n${candidates.join('\n')}`;
+
+      resolve({ ok: ok || !!foundPath, message: (raw || (ok ? 'License activated.' : `Exit code ${exitCode}.`)) + diag });
     });
 
     proc.on('error', (err) => {
@@ -2604,7 +2652,7 @@ function generatePageHtml(project: any, page: any, lang: string, bodyHtml: strin
 </head>
 <body>
   <header class="sp-header">
-    ${logoPath ? `<img src="/media/logo${path.extname(logoPath) || '.png'}" alt="${projectTitle}" class="sp-logo" />` : ''}
+    ${logoPath ? `<img src="/assets/logo${path.extname(logoPath) || '.png'}" alt="${projectTitle}" class="sp-logo" />` : ''}
     <span class="sp-header-title">${projectTitle}</span>
     ${allLangs.length > 1 ? `<div class="sp-lang">${langLinks}</div>` : ''}
     <a href="${backHref}" class="sp-back">← Back to tour</a>

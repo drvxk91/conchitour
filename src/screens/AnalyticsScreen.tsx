@@ -118,7 +118,7 @@ export function AnalyticsScreen() {
 
   return (
     <ScreenShell title="Analytics" subtitle="Track visitor engagement with Google Analytics 4.">
-      <div className="max-w-2xl space-y-5">
+      <div className="max-w-4xl mx-auto space-y-5">
 
         {/* ── Config block ─────────────────────────────────────────────── */}
         <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 space-y-3">

@@ -14,15 +14,11 @@ export function MetaTab({ scene }: { scene: Scene }) {
   const defaultLang = project.languages.default || 'en';
   const [lang, setLang] = useState(langs.includes(defaultLang) ? defaultLang : langs[0]);
 
-  const [slug, setSlug]   = useState(scene.slug);
-  const [title, setTitle] = useState(scene.title[lang] ?? '');
-  const [desc, setDesc]   = useState(scene.description[lang] ?? '');
+  const [slug, setSlug] = useState(scene.slug);
 
   // Sync when active scene or editing language changes
   useEffect(() => {
     setSlug(scene.slug);
-    setTitle(scene.title[lang] ?? '');
-    setDesc(scene.description[lang] ?? '');
   }, [scene.id, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const otherSlugs = project.scenes.filter((s) => s.id !== scene.id).map((s) => s.slug);
@@ -35,20 +31,17 @@ export function MetaTab({ scene }: { scene: Scene }) {
     else setSlug(scene.slug); // revert
   }
 
-  function saveTitle() {
-    updateScene(scene.id, { title: { ...scene.title, [lang]: title } });
-  }
-
-  function saveDesc() {
-    updateScene(scene.id, { description: { ...scene.description, [lang]: desc } });
-  }
-
   function toggleCategory(catId: string) {
     const ids = scene.categoryIds.includes(catId)
       ? scene.categoryIds.filter((id) => id !== catId)
       : [...scene.categoryIds, catId];
     updateScene(scene.id, { categoryIds: ids });
   }
+
+  // Only scene categories (not hotspot types like _link, _video, etc.)
+  const sceneCategories = project.categories.filter(
+    (cat) => !(cat.builtIn && cat.slug.startsWith('_')),
+  );
 
   return (
     <div className="p-4 space-y-4 text-sm">
@@ -101,35 +94,12 @@ export function MetaTab({ scene }: { scene: Scene }) {
         </div>
       )}
 
-      {/* Title */}
-      <div>
-        <label className="label-sm">Title [{lang.toUpperCase()}]</label>
-        <input
-          data-testid="title-input"
-          className="input"
-          value={title}
-          onChange={(e) => { setTitle(e.target.value); updateScene(scene.id, { title: { ...scene.title, [lang]: e.target.value } }); }}
-          onBlur={saveTitle}
-        />
-      </div>
-
-      {/* Description */}
-      <div>
-        <label className="label-sm">Description [{lang.toUpperCase()}]</label>
-        <textarea
-          className="input resize-none h-20"
-          value={desc}
-          onChange={(e) => { setDesc(e.target.value); updateScene(scene.id, { description: { ...scene.description, [lang]: e.target.value } }); }}
-          onBlur={saveDesc}
-        />
-      </div>
-
-      {/* Categories */}
-      {project.categories.length > 0 && (
+      {/* Categories (scene categories only, no hotspot types) */}
+      {sceneCategories.length > 0 && (
         <div>
           <label className="label-sm">Categories</label>
           <div className="flex flex-wrap gap-1.5 mt-1">
-            {project.categories.map((cat) => {
+            {sceneCategories.map((cat) => {
               const active = scene.categoryIds.includes(cat.id);
               return (
                 <button

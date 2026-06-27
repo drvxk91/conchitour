@@ -10,6 +10,7 @@ import { runStaticAudit } from '@/lib/audit/static-checks';
 import { runAiAuditStreaming, type AuditStreamEvent } from '@/lib/audit/ai-checks';
 import { resolveAiProvider } from '@/lib/ai-resolve';
 import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
+import { runSeoAudit } from '@/lib/seo-audit';
 import type { AuditIssue, AuditReport, AuditSeverity, AuditCategory } from '@/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ export function AuditScreen() {
 
   const [report, setReport] = useState<AuditReport | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [appliedFixes, setAppliedFixes] = useState<Set<string>>(new Set());
   const [severityFilter, setSeverityFilter] = useState<AuditSeverity | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<AuditCategory | 'all'>('all');
   const [showAiOnly, setShowAiOnly] = useState(false);
@@ -253,8 +255,9 @@ export function AuditScreen() {
     if (!issue.targetEntityId || !issue.suggestion || !issue.fixField) return;
     const scene = project.scenes.find((s) => s.id === issue.targetEntityId);
     if (!scene) return;
-    const existing = (scene[issue.fixField] as Record<string, string>) ?? {};
+    const existing = (scene[issue.fixField as keyof typeof scene] as Record<string, string>) ?? {};
     updateScene(issue.targetEntityId, { [issue.fixField]: { ...existing, [defaultLang]: issue.suggestion } });
+    setAppliedFixes((prev) => new Set([...prev, `${issue.fixField}|${issue.targetEntityId}`]));
     handleDismiss(issue.id);
     showToast('Applied ✓');
   }
@@ -269,9 +272,10 @@ export function AuditScreen() {
       if (severityFilter !== 'all' && i.severity !== severityFilter) return false;
       if (categoryFilter !== 'all' && i.category !== categoryFilter) return false;
       if (showAiOnly && !i.aiGenerated) return false;
+      if (!showDismissed && i.fixField && i.targetEntityId && appliedFixes.has(`${i.fixField}|${i.targetEntityId}`)) return false;
       return true;
     });
-  }, [report, dismissed, severityFilter, categoryFilter, showAiOnly, showDismissed]);
+  }, [report, dismissed, appliedFixes, severityFilter, categoryFilter, showAiOnly, showDismissed]);
 
   const groupedIssues = useMemo(() => {
     const groups: { sev: AuditSeverity; issues: AuditIssue[] }[] = [];
@@ -291,11 +295,22 @@ export function AuditScreen() {
     ? computeAiCost(auditModelId, report.aiTokensIn, report.aiTokensOut ?? 0).toFixed(4)
     : null;
 
+  const seoAudit = useMemo(() => runSeoAudit(project), [project]);
+  const SEO_GRADE = {
+    good: { color: 'text-green-600', bg: 'bg-green-50 border-green-200', label: 'Good' },
+    ok:   { color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', label: 'Needs work' },
+    poor: { color: 'text-red-600',   bg: 'bg-red-50 border-red-200',     label: 'Poor' },
+  } as const;
+  const seoG          = SEO_GRADE[seoAudit.grade];
+  const seoProblems   = seoAudit.checks.filter((c) => c.status === 'problem').length;
+  const seoImprove    = seoAudit.checks.filter((c) => c.status === 'improvement').length;
+  const seoGood       = seoAudit.checks.filter((c) => c.status === 'good').length;
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <ScreenShell title="Tour Audit" subtitle="Pre-flight checks before publishing.">
-      <div className="max-w-3xl space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
 
         {/* ── Header actions ─────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3">
@@ -351,6 +366,31 @@ export function AuditScreen() {
                 <SummaryTile key={sev} sev={sev} count={report.summary[sev]} />
               ))}
             </div>
+
+            {/* SEO score */}
+            <div className={clsx('flex items-center gap-3 rounded-xl border px-4 py-3', seoG.bg)}>
+              <div className="flex items-baseline gap-1 flex-shrink-0">
+                <span className={clsx('text-2xl font-bold leading-none', seoG.color)}>{seoAudit.score}</span>
+                <span className="text-[10px] text-ink-faded">/100</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <span className={clsx('text-sm font-semibold', seoG.color)}>SEO Score</span>
+                <span className={clsx('text-xs', seoG.color)}>— {seoG.label}</span>
+              </div>
+              <div className="flex gap-2.5 text-[11px] ml-1">
+                {seoProblems > 0 && <span className="text-red-500">{seoProblems} problem{seoProblems !== 1 ? 's' : ''}</span>}
+                {seoImprove  > 0 && <span className="text-amber-500">{seoImprove} improvement{seoImprove !== 1 ? 's' : ''}</span>}
+                {seoGood     > 0 && <span className="text-green-600">{seoGood} good</span>}
+              </div>
+              <div className="flex-1" />
+              <button
+                onClick={() => setActiveScreen('seo' as ScreenId)}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-line-soft bg-white/60 hover:bg-white transition-colors text-ink-soft hover:text-ink"
+              >
+                <ExternalLink size={11} /> Edit SEO
+              </button>
+            </div>
+
             <div className="flex items-center gap-4 text-xs text-ink-faded">
               <span>Last audit: {new Date(report.generatedAt).toLocaleTimeString()}</span>
               {report.aiUsed
@@ -443,17 +483,26 @@ export function AuditScreen() {
                   {SEV_CONFIG[sev].label}s — {items.length}
                 </span>
               </div>
-              {items.map((issue) => (
-                <IssueCard
-                  key={issue.id}
-                  issue={issue}
-                  dismissed={dismissed.has(issue.id)}
-                  onNavigate={issue.targetScreen ? () => handleNavigate(issue) : undefined}
-                  onApply={issue.fixable ? () => handleApply(issue) : undefined}
-                  onDismiss={() => handleDismiss(issue.id)}
-                  onRestore={() => setDismissed((prev) => { const n = new Set(prev); n.delete(issue.id); return n; })}
-                />
-              ))}
+              {items.map((issue) => {
+                const targetScene = issue.targetEntityId && issue.targetEntityType === 'scene'
+                  ? project.scenes.find((s) => s.id === issue.targetEntityId)
+                  : undefined;
+                const sceneName = targetScene
+                  ? (targetScene.title?.[defaultLang] || targetScene.slug)
+                  : undefined;
+                return (
+                  <IssueCard
+                    key={issue.id}
+                    issue={issue}
+                    sceneName={sceneName}
+                    dismissed={dismissed.has(issue.id)}
+                    onNavigate={issue.targetScreen ? () => handleNavigate(issue) : undefined}
+                    onApply={issue.fixable ? () => handleApply(issue) : undefined}
+                    onDismiss={() => handleDismiss(issue.id)}
+                    onRestore={() => setDismissed((prev) => { const n = new Set(prev); n.delete(issue.id); return n; })}
+                  />
+                );
+              })}
             </div>
           );
         })}
@@ -474,6 +523,7 @@ export function AuditScreen() {
 
 interface IssueCardProps {
   issue: AuditIssue;
+  sceneName?: string;
   dismissed: boolean;
   onNavigate?: () => void;
   onApply?: () => void;
@@ -481,7 +531,7 @@ interface IssueCardProps {
   onRestore: () => void;
 }
 
-function IssueCard({ issue, dismissed, onNavigate, onApply, onDismiss, onRestore }: IssueCardProps) {
+function IssueCard({ issue, sceneName, dismissed, onNavigate, onApply, onDismiss, onRestore }: IssueCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { bg } = SEV_CONFIG[issue.severity];
 
@@ -494,6 +544,11 @@ function IssueCard({ issue, dismissed, onNavigate, onApply, onDismiss, onRestore
       <div className="flex items-start gap-2 flex-wrap">
         <SeverityBadge sev={issue.severity} />
         <CategoryBadge cat={issue.category} />
+        {sceneName && (
+          <span className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 max-w-[180px] truncate" title={sceneName}>
+            {sceneName}
+          </span>
+        )}
         {issue.aiGenerated && (
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-purple-50 border-purple-200 text-purple-700">
             <Sparkles size={9} /> AI

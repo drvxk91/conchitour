@@ -27,7 +27,7 @@ export function ShareScreen() {
 
   return (
     <ScreenShell title="Share" subtitle="Configure the social sharing bar displayed in the compiled tour.">
-      <div className="max-w-xl space-y-6">
+      <div className="max-w-2xl mx-auto space-y-6">
 
         {/* Social toggles */}
         <div className="space-y-2">

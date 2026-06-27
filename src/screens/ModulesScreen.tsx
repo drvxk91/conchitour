@@ -59,7 +59,7 @@ export function ModulesScreen() {
 
   return (
     <ScreenShell title="Modules" subtitle="Enable optional viewer features and integrations.">
-      <div className="max-w-xl space-y-3">
+      <div className="max-w-2xl mx-auto space-y-3">
 
         <ModuleToggle
           Icon={Glasses}

@@ -167,7 +167,7 @@ Return ONLY valid JSON (no markdown, no explanation):
 
   return (
     <ScreenShell title="Branding" subtitle="Logo, colors, typography, and opening scene for the compiled tour.">
-      <div className="grid grid-cols-2 gap-10 max-w-5xl">
+      <div className="grid grid-cols-2 gap-10 max-w-6xl mx-auto">
 
         {/* ── LEFT: Assets + Scene + Intro ──────────────────────────── */}
         <div className="space-y-6">

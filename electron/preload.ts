@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('conchitect', {
   exportExcel: (projectData: unknown) => ipcRenderer.invoke('excel:export', projectData),
   downloadExcelTemplate: (projectData: unknown) => ipcRenderer.invoke('excel:download-template', projectData),
   importExcel: (projectData: unknown) => ipcRenderer.invoke('excel:import', projectData),
+  gitCommit: (projectDir: string, message: string): Promise<GitCommitResult> =>
+    ipcRenderer.invoke('project:git-commit', projectDir, message),
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Synchronous: returns the port of the localhost file server started in main.
@@ -92,15 +94,36 @@ export interface PhotoMetaResult {
   exif?: PhotoExif;
 }
 
-export interface ExcelImportResult {
+export interface ImportChange {
+  id: string;
+  entityType: 'scene' | 'category' | 'page' | 'analytics' | 'hotspot' | 'project' | 'modules' | 'ai_context';
+  entityId: string;
+  parentId?: string;  // hotspot only: scene ID
+  entityLabel: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  patchValue: unknown;
+}
+
+export interface ImportValidationError {
+  entityLabel: string;
+  field: string;
+  value: string;
+  message: string;
+}
+
+export interface ImportDiffResult {
   canceled: boolean;
-  updated?: number;
-  skipped?: number;
-  errors?: string[];
-  scenePatch?: Record<string, Record<string, unknown>>;
-  catPatch?: Record<string, Record<string, unknown>>;
-  pagePatch?: Record<string, Record<string, unknown>>;
-  analyticsPatch?: Record<string, unknown>;
+  changes: ImportChange[];
+  validationErrors: ImportValidationError[];
+  error?: string;
+}
+
+export interface GitCommitResult {
+  ok: boolean;
+  sha?: string;
+  error?: string;
 }
 
 export interface ExcelExportResult {
@@ -221,7 +244,8 @@ declare global {
       getPreviewData: () => Promise<unknown>;
       exportExcel: (projectData: unknown) => Promise<ExcelExportResult>;
       downloadExcelTemplate: (projectData: unknown) => Promise<ExcelExportResult>;
-      importExcel: (projectData: unknown) => Promise<ExcelImportResult>;
+      importExcel: (projectData: unknown) => Promise<ImportDiffResult>;
+      gitCommit: (projectDir: string, message: string) => Promise<GitCommitResult>;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
       settingsGet: () => Promise<ConchitectSettings>;

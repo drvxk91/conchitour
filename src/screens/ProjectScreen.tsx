@@ -20,7 +20,7 @@ export function ProjectScreen() {
 
   return (
     <ScreenShell title="Project" subtitle="Global metadata: name, creator, copyright, publication URL.">
-      <div className="max-w-xl space-y-5">
+      <div className="max-w-2xl mx-auto space-y-5">
         <Field label="Tour name">
           <input
             className={inputCls}

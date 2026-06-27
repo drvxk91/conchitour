@@ -20,6 +20,7 @@
     "check:no-js": "node -e \"const fs=require('fs');const r=(d)=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?r(d+'/'+e.name):[d+'/'+e.name]);const files=r('src').filter(f=>f.endsWith('.js')&&!f.endsWith('.d.ts'));if(files.length){console.error('Found .js files in src:');console.error(files.join('\\n'));process.exit(1);}console.log('No leftover .js files in src');\""
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.4",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
     "exifr": "^7.1.3",
