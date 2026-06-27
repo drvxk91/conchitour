@@ -21,6 +21,7 @@ Tagline: *Architect your virtual tours.*
 - **exifr** for EXIF parsing
 - **xlsx** (SheetJS) for Excel import/export
 - **marked** for Markdown → HTML at compile time (static pages)
+- **exceljs** for styled Excel export (bold headers, frozen rows, tab colors, conditional formatting)
 - **krpano** as the runtime viewer in the **exported** site
 
 ## Folder structure
@@ -52,7 +53,7 @@ Read it before touching anything. Every field has a reason. Key invariants:
 - `Hotspot.ath` and `atv` are in degrees, krpano convention. `ath` in `[-180, 180]`, `atv` in `[-90, 90]`.
 - `Project.schemaVersion` is for future migrations. Bump it carefully.
 
-## The 11 screens
+## The 15 screens
 
 | # | Screen | File | What it does |
 |---|---|---|---|
@@ -67,7 +68,10 @@ Read it before touching anything. Every field has a reason. Key invariants:
 | 9 | Branding | `BrandingScreen.tsx` | Logo, loader, opening scene, colors |
 | 10 | Share | `ShareScreen.tsx` | Social buttons + live view screenshot |
 | 11 | Modules | `ModulesScreen.tsx` | VR, gyroscope, feedback, DeepL key |
-| 12 | Compile | `CompileScreen.tsx` | Static site generator |
+| 12 | Analytics | `AnalyticsScreen.tsx` | GA4 event config |
+| 13 | Audit | `AuditScreen.tsx` | Static + AI pre-flight checks (streaming) |
+| 14 | Content | `ContentScreen.tsx` | Inline title/description grid + AI batch generation |
+| 15 | Compile | `CompileScreen.tsx` | Static site generator |
 
 **Screen 2 (Scenes) is where users spend 80% of their time.** It deserves the most polish. See `conchitect-scene-editor-v2.html` mockup for the target layout.
 
