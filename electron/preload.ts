@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { LocalLicense, LicenseGateStatus, LicenseActivateResult } from '../src/types/license';
 
 contextBridge.exposeInMainWorld('conchitour', {
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
@@ -77,6 +78,24 @@ contextBridge.exposeInMainWorld('conchitour', {
     ipcRenderer.invoke('excel:backup', projectData, projectDir),
   exportExcelStyled: (projectData: unknown): Promise<ExcelExportResult> =>
     ipcRenderer.invoke('excel:export-styled', projectData),
+  // License
+  licenseGetInitialStatus: (): Promise<{ status: LicenseGateStatus }> =>
+    ipcRenderer.invoke('license:get-initial-status'),
+  licenseCheck: (): Promise<{ status: LicenseGateStatus; license: LocalLicense | null }> =>
+    ipcRenderer.invoke('license:check'),
+  licenseActivate: (key: string): Promise<LicenseActivateResult> =>
+    ipcRenderer.invoke('license:activate', key),
+  licenseStartTrial: (): Promise<{ ok: boolean; license?: LocalLicense }> =>
+    ipcRenderer.invoke('license:start-trial'),
+  licenseDeactivate: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('license:deactivate'),
+  licenseGetLocal: (): Promise<LocalLicense | null> =>
+    ipcRenderer.invoke('license:get-local'),
+  onLicenseStatusChanged: (cb: (status: LicenseGateStatus) => void): (() => void) => {
+    const handler = (_event: unknown, status: LicenseGateStatus) => cb(status);
+    ipcRenderer.on('license:status-changed', handler as Parameters<typeof ipcRenderer.on>[1]);
+    return () => ipcRenderer.removeListener('license:status-changed', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
+  },
 });
 
 export interface PhotoExif {
@@ -271,6 +290,16 @@ declare global {
       compressForAi: (args: { sourcePath: string; targetWidth: number; quality: number }) => Promise<CompressForAiResult>;
       excelBackup: (projectData: unknown, projectDir: string) => Promise<ExcelBackupResult>;
       exportExcelStyled: (projectData: unknown) => Promise<ExcelExportResult>;
+      // License
+      licenseGetInitialStatus: () => Promise<{ status: LicenseGateStatus }>;
+      licenseCheck: () => Promise<{ status: LicenseGateStatus; license: LocalLicense | null }>;
+      licenseActivate: (key: string) => Promise<LicenseActivateResult>;
+      licenseStartTrial: () => Promise<{ ok: boolean; license?: LocalLicense }>;
+      licenseDeactivate: () => Promise<{ ok: boolean; error?: string }>;
+      licenseGetLocal: () => Promise<LocalLicense | null>;
+      onLicenseStatusChanged: (cb: (status: LicenseGateStatus) => void) => () => void;
     };
   }
 }
+
+export type { LocalLicense, LicenseGateStatus, LicenseActivateResult };

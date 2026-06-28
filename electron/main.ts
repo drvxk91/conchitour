@@ -8,6 +8,13 @@ import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { marked } from 'marked';
+import {
+  checkLicenseStatus,
+  activateLicense,
+  startTrial,
+  deactivateThisMachine,
+  getLocalLicense,
+} from './license/gate';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -36,6 +43,7 @@ async function createWindow() {
 }
 
 let fileServerPort = 0;
+let initialLicenseStatus: import('../src/types/license').LicenseGateStatus = 'none';
 
 // ── Tour preview server ───────────────────────────────────────────────────────
 let tourPreviewServer: import('http').Server | null = null;
@@ -144,7 +152,23 @@ app.whenReady().then(async () => {
   });
 
   setupAppMenu();
+
+  // Check license before showing main window so renderer gets initial status immediately
+  initialLicenseStatus = await checkLicenseStatus().catch(() => 'none' as const);
+
   await createWindow();
+
+  // Background heartbeat: re-check every 24h, notify renderer if status degrades
+  setInterval(async () => {
+    try {
+      const status = await checkLicenseStatus();
+      if (status === 'expired' || status === 'invalid') {
+        BrowserWindow.getAllWindows().forEach((w) =>
+          w.webContents.send('license:status-changed', status),
+        );
+      }
+    } catch { /* ignore */ }
+  }, 24 * 60 * 60 * 1000);
 });
 
 // Synchronous IPC so the renderer can get the port before rendering any image.
@@ -4990,4 +5014,39 @@ ipcMain.handle('tour-server:status', async () => {
       ).catch(() => 'en'))
     : 'en';
   return { port: tourPreviewPort, url: `http://localhost:${tourPreviewPort}/${defaultLang}/`, dir: tourPreviewDir };
+});
+
+// ── License IPC ───────────────────────────────────────────────────────────────
+
+ipcMain.handle('license:get-initial-status', () => ({
+  status: initialLicenseStatus,
+}));
+
+ipcMain.handle('license:check', async () => {
+  const status = await checkLicenseStatus();
+  initialLicenseStatus = status;
+  const license = await getLocalLicense();
+  return { status, license };
+});
+
+ipcMain.handle('license:activate', async (_e, key: string) => {
+  const result = await activateLicense(key);
+  if (result.ok) initialLicenseStatus = 'valid';
+  return result;
+});
+
+ipcMain.handle('license:start-trial', async () => {
+  const result = await startTrial();
+  if (result.ok) initialLicenseStatus = 'trial';
+  return result;
+});
+
+ipcMain.handle('license:deactivate', async () => {
+  const result = await deactivateThisMachine();
+  if (result.ok) initialLicenseStatus = 'none';
+  return result;
+});
+
+ipcMain.handle('license:get-local', async () => {
+  return getLocalLicense();
 });
