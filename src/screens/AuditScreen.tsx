@@ -11,6 +11,9 @@ import { runAiAuditStreaming, type AuditStreamEvent } from '@/lib/audit/ai-check
 import { resolveAiProvider } from '@/lib/ai-resolve';
 import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
 import { runSeoAudit } from '@/lib/seo-audit';
+import { consumeTrialAiCall } from '@/lib/trial';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import type { UpgradeFeature } from '@/components/UpgradeModal';
 import type { AuditIssue, AuditReport, AuditSeverity, AuditCategory } from '@/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -159,6 +162,7 @@ export function AuditScreen() {
   const [aiTokensOut, setAiTokensOut] = useState(0);
   const [aiError, setAiError] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [upgradeFeature, setUpgradeFeature] = useState<UpgradeFeature | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const ai = resolveAiProvider(project.modules ?? {});
@@ -193,6 +197,8 @@ export function AuditScreen() {
 
   async function handleRunAi() {
     if (!ai || aiRunning) return;
+    const trialErr = await consumeTrialAiCall();
+    if (trialErr) { setUpgradeFeature('ai'); return; }
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setAiRunning(true);
@@ -515,6 +521,7 @@ export function AuditScreen() {
           {toast}
         </div>
       )}
+      {upgradeFeature && <UpgradeModal feature={upgradeFeature} onClose={() => setUpgradeFeature(null)} />}
     </ScreenShell>
   );
 }

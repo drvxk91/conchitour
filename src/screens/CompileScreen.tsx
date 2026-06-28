@@ -7,6 +7,7 @@ import {
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { useLicense } from '@/store/license';
+import { useTrialState } from '@/lib/trial';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { runStaticAudit } from '@/lib/audit/static-checks';
 import type { CompileResult, ConchitourSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
@@ -81,8 +82,9 @@ function LicenseInfoCard({ info, preview = false }: { info: LicenseInfo; preview
 
 export function CompileScreen() {
   const { project, setIsCompiling, clearDirty, setActiveScreen } = useProject();
-  const { status: licenseStatus } = useLicense();
-  const licenseExpired = licenseStatus === 'expired';
+  const { status: appLicenseStatus } = useLicense();
+  const trial = useTrialState();
+  const licenseExpired = appLicenseStatus === 'expired' || (trial?.isExpired ?? false);
 
   const [settings, setSettings]             = useState<ConchitourSettings | null>(null);
   const [krpanoPathDraft, setKrpanoPathDraft] = useState('');

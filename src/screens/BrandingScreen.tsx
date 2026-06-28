@@ -5,6 +5,9 @@ import { ScreenShell } from '@/components/shell/ScreenShell';
 import { toLocalUrl } from '@/lib/local-url';
 import { callAiStreaming } from '@/lib/ai-content';
 import { resolvedModelId, computeAiCost } from '@/lib/ai-tracking';
+import { consumeTrialAiCall } from '@/lib/trial';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import type { UpgradeFeature } from '@/components/UpgradeModal';
 import type { TourTheme } from '@/types';
 
 const inputCls =
@@ -81,6 +84,7 @@ export function BrandingScreen() {
 
   const [genState, setGenState] = useState<'idle' | 'generating' | 'error'>('idle');
   const [genError, setGenError] = useState('');
+  const [upgradeFeature, setUpgradeFeature] = useState<UpgradeFeature | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   async function handleGenerateIntro() {
@@ -92,6 +96,9 @@ export function BrandingScreen() {
       setGenState('error');
       return;
     }
+
+    const trialErr = await consumeTrialAiCall();
+    if (trialErr) { setUpgradeFeature('ai'); return; }
 
     abortRef.current = new AbortController();
     setGenState('generating');
@@ -409,6 +416,7 @@ Return ONLY valid JSON (no markdown, no explanation):
         </div>
 
       </div>
+      {upgradeFeature && <UpgradeModal feature={upgradeFeature} onClose={() => setUpgradeFeature(null)} />}
     </ScreenShell>
   );
 }

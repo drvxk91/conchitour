@@ -9,6 +9,9 @@ import type { StaticPage } from '@/types';
 import { BUILTIN_PAGE_SLUGS } from '@/lib/builtin-pages';
 import { generatePageWithAi } from '@/lib/ai-seo';
 import { resolveAiProvider } from '@/lib/ai-resolve';
+import { consumeTrialAiCall } from '@/lib/trial';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import type { UpgradeFeature } from '@/components/UpgradeModal';
 
 marked.setOptions({ breaks: true });
 
@@ -48,6 +51,7 @@ export function PagesScreen() {
   // AI generation
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [upgradeFeature, setUpgradeFeature] = useState<UpgradeFeature | null>(null);
   const [undoContent, setUndoContent] = useState<{ pageId: string; lang: string; content: string } | null>(null);
   const [redoContent, setRedoContent] = useState<{ pageId: string; lang: string; content: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -101,6 +105,8 @@ export function PagesScreen() {
       setAiError('No API key configured — set your key in the AI screen first.');
       return;
     }
+    const trialErr = await consumeTrialAiCall();
+    if (trialErr) { setUpgradeFeature('ai'); return; }
     const controller = new AbortController();
     abortRef.current = controller;
     setAiGenerating(true);
@@ -523,6 +529,7 @@ export function PagesScreen() {
           </div>
         </div>
       )}
+      {upgradeFeature && <UpgradeModal feature={upgradeFeature} onClose={() => setUpgradeFeature(null)} />}
     </ScreenShell>
   );
 }

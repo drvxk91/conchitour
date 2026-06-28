@@ -14,6 +14,9 @@ import {
 } from '@/lib/ai-content';
 import { resolveAiProvider } from '@/lib/ai-resolve';
 import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
+import { consumeTrialAiCall } from '@/lib/trial';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import type { UpgradeFeature } from '@/components/UpgradeModal';
 import { DiffPreviewModal } from './DiffPreviewModal';
 
 interface GenerateModalProps {
@@ -68,6 +71,7 @@ export function GenerateModal({
   // ── Diff preview state ──────────────────────────────────────────────────────
   const [results, setResults] = useState<SceneContentResult[] | null>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<UpgradeFeature | null>(null);
 
   // ── Computed values ─────────────────────────────────────────────────────────
   const scopeScenes = project.scenes.filter((s) => {
@@ -90,6 +94,8 @@ export function GenerateModal({
 
   async function handleGenerate() {
     if (!canGenerate || running) return;
+    const trialErr = await consumeTrialAiCall();
+    if (trialErr) { setUpgradeFeature('ai'); return; }
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setRunning(true);
@@ -430,6 +436,7 @@ export function GenerateModal({
           </button>
         </div>
       </div>
+      {upgradeFeature && <UpgradeModal feature={upgradeFeature} onClose={() => setUpgradeFeature(null)} />}
     </div>
   );
 }
