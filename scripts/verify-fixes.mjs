@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const SHOTS = 'C:/Users/matth/AppData/Local/Temp/conchitect-shots';
+const SHOTS = 'C:/Users/matth/AppData/Local/Temp/conchitour-shots';
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const MAIN_JS = path.join(ROOT, 'dist-electron/main.js');
@@ -20,7 +20,7 @@ await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(800);
 
 // Get port and build URL
-const port = await page.evaluate(() => window.conchitect?.getFileServerPort?.());
+const port = await page.evaluate(() => window.conchitour?.getFileServerPort?.());
 console.log('File server port:', port);
 
 const encoded = FIXTURE.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
