@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
+import { useLicense } from '@/store/license';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { runStaticAudit } from '@/lib/audit/static-checks';
 import type { CompileResult, ConchitourSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
@@ -80,6 +81,8 @@ function LicenseInfoCard({ info, preview = false }: { info: LicenseInfo; preview
 
 export function CompileScreen() {
   const { project, setIsCompiling, clearDirty, setActiveScreen } = useProject();
+  const { status: licenseStatus } = useLicense();
+  const licenseExpired = licenseStatus === 'expired';
 
   const [settings, setSettings]             = useState<ConchitourSettings | null>(null);
   const [krpanoPathDraft, setKrpanoPathDraft] = useState('');
@@ -256,7 +259,7 @@ export function CompileScreen() {
 
   const sceneCount = project.scenes.length;
   const krpanoOk   = validation?.valid ?? false;
-  const canCompile = outputDir.length > 0 && sceneCount > 0 && !running;
+  const canCompile = outputDir.length > 0 && sceneCount > 0 && !running && !licenseExpired;
 
   const auditIssues = useMemo(() => runStaticAudit(project), [project]);
   const auditErrors   = auditIssues.filter((i) => i.severity === 'error').length;
@@ -286,6 +289,18 @@ export function CompileScreen() {
 
   return (
     <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
+      {licenseExpired && (
+        <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 max-w-5xl mx-auto">
+          <AlertTriangle size={15} className="text-amber-500 flex-shrink-0" />
+          <p className="text-sm text-amber-800 flex-1">License expired. Compile is disabled until renewal.</p>
+          <button
+            onClick={() => window.conchitour.openUrl('https://conchitour.com')}
+            className="text-xs font-medium text-amber-700 hover:text-amber-900 underline whitespace-nowrap"
+          >
+            Renew now
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-8 max-w-5xl mx-auto">
 
         {/* ── LEFT: Setup ─────────────────────────────────────────────── */}

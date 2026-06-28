@@ -1,7 +1,7 @@
 import { useProject, type ScreenId } from '@/store/project';
 import {
   Upload, Image, Map, Tags, Settings, Search, Languages,
-  Palette, Share2, Puzzle, Package, FileText, BarChart3, ClipboardCheck, Type, Brain,
+  Palette, Share2, Puzzle, Package, FileText, BarChart3, ClipboardCheck, Type, Brain, KeyRound,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { GA_ID_RE } from '@/screens/AnalyticsScreen';
@@ -53,6 +53,7 @@ export function Sidebar() {
       entries: [
         { id: 'audit',   label: 'Audit',   Icon: ClipboardCheck },
         { id: 'compile', label: 'Compile',  Icon: Package, badge: () => isCompiling ? '…' : null },
+        { id: 'license', label: 'License',  Icon: KeyRound },
       ],
     },
   ];

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import {
   Sparkles, Bot, CheckCircle, AlertCircle, Loader2,
-  RotateCcw, Brain, ChevronDown,
+  RotateCcw, Brain, ChevronDown, AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
+import { useLicense } from '@/store/license';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { testAiConnection, testOpenAIConnection } from '@/lib/audit/ai-checks';
 import { AI_THEMES, AI_TONE_LABELS, AI_AUDIENCE_LABELS, AI_LENGTH_LABELS } from '@/lib/ai-themes';
@@ -91,6 +92,8 @@ function TestButton({ state, disabled, onClick }: { state: TestState; disabled: 
 
 export function AIScreen() {
   const { project, updateModules, updateAiContext, recordAiUsage, resetAiUsage, updateUiPreferences } = useProject();
+  const { status: licenseStatus } = useLicense();
+  const licenseExpired = licenseStatus === 'expired';
   const m  = project.modules;
   const ai = project.aiContext ?? { tone: 'marketing' as const, audience: 'general' as const, theme: 'Tourism', length: 'medium' as const };
 
@@ -163,6 +166,18 @@ export function AIScreen() {
 
   return (
     <ScreenShell title="AI" subtitle="Configure AI providers, model selection, and editorial context.">
+      {licenseExpired && (
+        <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 max-w-6xl mx-auto">
+          <AlertTriangle size={15} className="text-amber-500 flex-shrink-0" />
+          <p className="text-sm text-amber-800 flex-1">License expired. AI features are disabled.</p>
+          <button
+            onClick={() => window.conchitour.openUrl('https://conchitour.com')}
+            className="text-xs font-medium text-amber-700 hover:text-amber-900 underline whitespace-nowrap"
+          >
+            Renew now
+          </button>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 

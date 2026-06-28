@@ -16,6 +16,7 @@ import { AuditScreen } from '@/screens/AuditScreen';
 import { CompileScreen } from '@/screens/CompileScreen';
 import { ContentScreen } from '@/screens/ContentScreen';
 import { AIScreen } from '@/screens/AIScreen';
+import { LicenseScreen } from '@/screens/LicenseScreen';
 
 class ScreenErrorBoundary extends Component<
   { children: ReactNode },
@@ -67,6 +68,7 @@ function ActiveScreen() {
     case 'ai':         return <AIScreen />;
     case 'audit':      return <AuditScreen />;
     case 'compile':    return <CompileScreen />;
+    case 'license':    return <LicenseScreen />;
   }
 }
 

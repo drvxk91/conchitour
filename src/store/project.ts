@@ -141,7 +141,8 @@ export type ScreenId =
   | 'analytics'
   | 'ai'
   | 'audit'
-  | 'compile';
+  | 'compile'
+  | 'license';
 
 // ─── store ────────────────────────────────────────────────────────────────────
 
