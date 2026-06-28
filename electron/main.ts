@@ -154,6 +154,7 @@ app.whenReady().then(async () => {
   });
 
   setupAppMenu();
+  cleanupOldPreviews().catch(() => {});
 
   // One-shot migration: copy user data from the old conchitect-app userData folder
   // (Electron derives the folder from package.json "name"; renaming it loses the data)
@@ -207,6 +208,15 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+app.on('before-quit', () => {
+  if (tourPreviewServer) {
+    try { tourPreviewServer.close(); } catch { /* ignore */ }
+    tourPreviewServer = null;
+    tourPreviewPort = 0;
+  }
+  // Async temp dir cleanup happens on next launch — don't block quit
 });
 
 // ------ IPC handlers ------
@@ -2282,6 +2292,23 @@ interface CompileRunState {
 
 let compileRunState: CompileRunState | null = null;
 let compileCancelToken = { canceled: false };
+
+// ── Preview temp-dir helpers ───────────────────────────────────────────────────
+function getTrialPreviewDir(): string {
+  const id = crypto.randomBytes(8).toString('hex');
+  return path.join(os.tmpdir(), `.conchitour-preview-${id}`);
+}
+
+async function cleanupOldPreviews(): Promise<void> {
+  try {
+    const entries = await fs.readdir(os.tmpdir(), { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory() && e.name.startsWith('.conchitour-preview-')) {
+        try { await fs.rm(path.join(os.tmpdir(), e.name), { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+}
 
 ipcMain.handle('compile:get-state', () => compileRunState);
 
@@ -4470,28 +4497,21 @@ start "" "${krpanoPath}\\krpano Testing Server.exe"
 `;
 }
 
-ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: string) => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const project = projectData as any;
+type ProgressFn   = (msg: string, status: 'running' | 'ok' | 'error' | 'info') => void;
+type TileProgressFn = (data: { sceneSlug: string; sceneIndex: number; totalScenes: number; percent: number }) => void;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runCompilePipeline(project: any, outputDir: string, opts: { forceRegenTiles?: boolean; isPreview?: boolean }, onProgress: ProgressFn, onTileProgress: TileProgressFn, getIsCanceled: () => boolean): Promise<{ ok: boolean; outputDir?: string; fileCount?: number; sizeBytes?: number; previewUrl?: string; error?: string }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scenes: any[] = project.scenes || [];
   const settings = await readSettings();
-  const forceRegenTiles: boolean = (projectData as Record<string, unknown>)?.__forceRegenTiles === true;
+  const forceRegenTiles: boolean = opts.forceRegenTiles ?? false;
   const localLicense = await getLocalLicense();
   const isTrialBuild = localLicense?.status === 'trial';
-
-  compileRunState = { running: true, log: [], startedAt: Date.now() };
-  compileCancelToken = { canceled: false };
-  const token = compileCancelToken;
-
-  function progress(msg: string, status: 'running' | 'ok' | 'error' | 'info') {
-    const entry: CompileLogEntry = { msg, status };
-    if (compileRunState) compileRunState.log.push(entry);
-    try { event.sender.send('compile:progress', { msg, status }); } catch { /* window closed */ }
-  }
+  const progress = onProgress;
 
   function checkCancel() {
-    if (token.canceled) throw new Error('Compile canceled');
+    if (getIsCanceled()) throw new Error('Compile canceled');
   }
 
   try {
@@ -4711,19 +4731,17 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
                 lastOutputAt = Date.now();
                 const lines = chunk.toString().split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
                 for (const line of lines) {
-                  try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
+                  onProgress(`  ${line}`, 'info');
                   const pctMatch = line.match(/(\d+)%/);
                   if (pctMatch) {
-                    try { event.sender.send('compile:tile-progress', {
-                      sceneSlug, sceneIndex, totalScenes, percent: parseInt(pctMatch[1], 10),
-                    }); } catch { /* */ }
+                    onTileProgress({ sceneSlug, sceneIndex, totalScenes, percent: parseInt(pctMatch[1], 10) });
                   }
                 }
               });
               proc.stderr?.on('data', (chunk: Buffer) => {
                 lastOutputAt = Date.now();
                 const line = chunk.toString().trim();
-                if (line) try { event.sender.send('compile:progress', { msg: `  ${line}`, status: 'info' }); } catch { /* */ }
+                if (line) onProgress(`  ${line}`, 'info');
               });
               proc.on('close', (code) => {
                 clearInterval(hangChecker);
@@ -4959,8 +4977,8 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       progress(`Preview server: ${previewUrl}`, 'ok');
     } catch { /* preview server is optional */ }
 
-    // Persist output dir in the project lock file (per-project, not global)
-    if (currentProjectDir) {
+    // Persist output dir in project lock file (skip for preview builds — temp dir)
+    if (!opts.isPreview && currentProjectDir) {
       try {
         const lockPath = path.join(currentProjectDir, 'conchitour.lock');
         const existing = JSON.parse(await fs.readFile(lockPath, 'utf-8').catch(() => '{}')).valueOf() as Record<string, unknown>;
@@ -4968,19 +4986,97 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       } catch { /* non-fatal */ }
     }
 
-    const result = { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes, previewUrl };
-    if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
-    try { event.sender.send('compile:done', result); } catch { /* window closed */ }
-    return result;
+    return { ok: true, outputDir, fileCount: totalFiles, sizeBytes: totalBytes, previewUrl };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    const isCanceled = token.canceled;
+    const isCanceled = getIsCanceled();
     progress(isCanceled ? 'Compile canceled' : `Error: ${msg}`, isCanceled ? 'info' : 'error');
-    const result = { ok: false, error: isCanceled ? 'Compile canceled' : msg };
-    if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
-    try { event.sender.send('compile:done', result); } catch { /* window closed */ }
-    return result;
+    return { ok: false, error: isCanceled ? 'Compile canceled' : msg };
   }
+}
+
+ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: string) => {
+  const project = projectData as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const forceRegenTiles: boolean = (projectData as Record<string, unknown>)?.__forceRegenTiles === true;
+  compileRunState = { running: true, log: [], startedAt: Date.now() };
+  compileCancelToken = { canceled: false };
+  const token = compileCancelToken;
+  const onProgress: ProgressFn = (msg, status) => {
+    const entry: CompileLogEntry = { msg, status };
+    if (compileRunState) compileRunState.log.push(entry);
+    try { event.sender.send('compile:progress', { msg, status }); } catch { /* window closed */ }
+  };
+  const onTileProgress: TileProgressFn = (data) => {
+    try { event.sender.send('compile:tile-progress', data); } catch { /* window closed */ }
+  };
+  const result = await runCompilePipeline(project, outputDir, { forceRegenTiles }, onProgress, onTileProgress, () => token.canceled);
+  if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
+  try { event.sender.send('compile:done', result); } catch { /* window closed */ }
+  return result;
+});
+
+ipcMain.handle('preview:start', async (event, projectData: unknown) => {
+  // Clean up any existing preview temp dirs, then create a fresh one
+  await cleanupOldPreviews();
+  const outputDir = getTrialPreviewDir();
+  await fs.mkdir(outputDir, { recursive: true });
+
+  compileRunState = { running: true, log: [], startedAt: Date.now() };
+  compileCancelToken = { canceled: false };
+  const token = compileCancelToken;
+  const onProgress: ProgressFn = (msg, status) => {
+    const entry: CompileLogEntry = { msg, status };
+    if (compileRunState) compileRunState.log.push(entry);
+    try { event.sender.send('compile:progress', { msg, status }); } catch { /* window closed */ }
+  };
+  const onTileProgress: TileProgressFn = (data) => {
+    try { event.sender.send('compile:tile-progress', data); } catch { /* window closed */ }
+  };
+  const project = projectData as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const result = await runCompilePipeline(project, outputDir, { isPreview: true }, onProgress, onTileProgress, () => token.canceled);
+  if (compileRunState) { compileRunState.running = false; compileRunState.result = result; }
+
+  if (result.ok && result.previewUrl) {
+    try { await shell.openExternal(result.previewUrl); } catch { /* ignore */ }
+  } else if (!result.ok) {
+    // Compile failed — clean up the temp dir
+    try { await fs.rm(outputDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
+  const finalResult = { ...result, isPreview: true };
+  try { event.sender.send('compile:done', finalResult); } catch { /* window closed */ }
+  return finalResult;
+});
+
+ipcMain.handle('preview:stop', async () => {
+  if (tourPreviewServer) {
+    await new Promise<void>(r => { tourPreviewServer!.close(() => r()); }).catch(() => {});
+    tourPreviewServer = null;
+    tourPreviewPort = 0;
+    if (tourPreviewDir && path.basename(tourPreviewDir).startsWith('.conchitour-preview-')) {
+      try { await fs.rm(tourPreviewDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    tourPreviewDir = '';
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('preview:status', () => {
+  if (tourPreviewServer && tourPreviewPort > 0) {
+    return { running: true, url: `http://localhost:${tourPreviewPort}/`, port: tourPreviewPort };
+  }
+  return { running: false };
+});
+
+ipcMain.handle('preview:lan-url', () => {
+  if (!tourPreviewServer || tourPreviewPort === 0) return null;
+  const ifaces = os.networkInterfaces();
+  for (const iface of Object.values(ifaces).flat()) {
+    if (iface && iface.family === 'IPv4' && !iface.internal) {
+      return `http://${iface.address}:${tourPreviewPort}/`;
+    }
+  }
+  return null;
 });
 
 ipcMain.handle('dialog:openFolder', async () => {
