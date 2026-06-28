@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld('conchitour', {
   showProjectFolderDialog: (): Promise<string | null> => ipcRenderer.invoke('dialog:openProjectFolder'),
   getDefaultOutputDir: (): Promise<string | null> => ipcRenderer.invoke('project:default-output-dir'),
   compileRun: (projectData: unknown, outputDir: string): Promise<CompileResult> => ipcRenderer.invoke('compile:run', projectData, outputDir),
+  // Preview (trial + licensed)
+  previewStart: (projectData: unknown): Promise<CompileResult> => ipcRenderer.invoke('preview:start', projectData),
+  previewStop: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('preview:stop'),
+  previewStatus: (): Promise<{ running: boolean; url?: string; port?: number }> => ipcRenderer.invoke('preview:status'),
+  previewGetLanUrl: (): Promise<string | null> => ipcRenderer.invoke('preview:lan-url'),
   onCompileProgress: (cb: (msg: string, status: string) => void): (() => void) => {
     const handler = (_event: unknown, data: { msg: string; status: string }) => cb(data.msg, data.status);
     ipcRenderer.on('compile:progress', handler as Parameters<typeof ipcRenderer.on>[1]);
@@ -195,6 +200,7 @@ export interface CompileResult {
   sizeBytes?: number;
   previewUrl?: string;
   error?: string;
+  isPreview?: boolean;
 }
 
 export interface TourServerResult {
@@ -286,6 +292,10 @@ declare global {
       compileCancel: () => Promise<boolean>;
       onCompileDone: (cb: (result: CompileResult) => void) => () => void;
       onTileProgress: (cb: (data: TileProgressData) => void) => () => void;
+      previewStart: (projectData: unknown) => Promise<CompileResult>;
+      previewStop: () => Promise<{ ok: boolean }>;
+      previewStatus: () => Promise<{ running: boolean; url?: string; port?: number }>;
+      previewGetLanUrl: () => Promise<string | null>;
       openFolder: (folderPath: string) => Promise<void>;
       tourServerStart: (outputDir: string, defaultLang: string) => Promise<TourServerResult>;
       tourServerStop: () => Promise<boolean>;
