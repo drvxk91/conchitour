@@ -4,9 +4,12 @@ import { Sidebar } from '@/components/shell/Sidebar';
 import { TitleBar } from '@/components/shell/TitleBar';
 import { ScreenRouter } from '@/components/shell/ScreenRouter';
 import { WelcomeScreen } from '@/screens/WelcomeScreen';
+import { LicenseGate } from '@/components/LicenseGate';
 import { toLocalUrl } from '@/lib/local-url';
 import { useProject } from '@/store/project';
+import { useLicense } from '@/store/license';
 import type { Scene, LinkHotspot, ExternalHotspot, FormHotspot, Project } from '@/types';
+import type { LicenseGateStatus } from '@/types/license';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
@@ -185,7 +188,35 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
 
 export default function App() {
   const { activeScreen, project, clearDirty, loadProjectData, setProjectDir } = useProject();
+  const { status: licenseStatus, initialized: licenseInitialized, initialize: initLicense, setStatus: setLicenseStatus } = useLicense();
   const needsFullHeight = activeScreen === 'scenes' || activeScreen === 'map';
+
+  // true while we haven't loaded the gate status yet
+  const [licenseLoading, setLicenseLoading] = useState(true);
+  // 'none'|'expired'|'invalid' needs the gate; 'readOnly' means user bypassed expired gate
+  const [gateStatus, setGateStatus] = useState<LicenseGateStatus | null>(null);
+
+  useEffect(() => {
+    initLicense().then(() => setLicenseLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After license initialized, decide whether to show gate
+  useEffect(() => {
+    if (!licenseInitialized) return;
+    if (licenseStatus === 'none' || licenseStatus === 'expired' || licenseStatus === 'invalid') {
+      setGateStatus(licenseStatus);
+    } else {
+      setGateStatus(null);
+    }
+  }, [licenseStatus, licenseInitialized]);
+
+  // Listen for background heartbeat degradation
+  useEffect(() => {
+    if (!window.conchitour?.onLicenseStatusChanged) return;
+    return window.conchitour.onLicenseStatusChanged((s) => {
+      setLicenseStatus(s, null);
+    });
+  }, [setLicenseStatus]);
 
   const handleSave = useCallback(async () => {
     try {
@@ -239,12 +270,29 @@ export default function App() {
   }, [handleSave, handleSaveAs, handleNewProject, handleOpenProject]);
 
   // Preview mode: opened as a separate BrowserWindow by main process
+  // (license gate is not shown in preview windows)
   const params = new URLSearchParams(window.location.search);
   const previewPath = params.get('preview');
   if (previewPath) {
     const heading = Number(params.get('heading') ?? 0);
     return <PreviewMode initialSourcePath={previewPath} initialHeading={heading} />;
   }
+
+  // Show gate overlay until license is initialized, then only if needed
+  if (licenseLoading || (!licenseInitialized && !previewPath)) {
+    return <div className="h-screen bg-[#fafaf9]" />;
+  }
+
+  if (gateStatus && gateStatus !== null) {
+    return (
+      <LicenseGate
+        initialStatus={gateStatus}
+        onUnlocked={() => setGateStatus(null)}
+        onReadOnly={() => setGateStatus(null)}
+      />
+    );
+  }
+
   if (activeScreen === 'welcome') {
     return (
       <div className="h-screen flex flex-col">
