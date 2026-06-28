@@ -155,6 +155,29 @@ app.whenReady().then(async () => {
 
   setupAppMenu();
 
+  // One-shot migration: copy user data from the old conchitect-app userData folder
+  // (Electron derives the folder from package.json "name"; renaming it loses the data)
+  try {
+    const oldUserData = path.join(app.getPath('appData'), 'conchitect-app');
+    const newUserData = app.getPath('userData'); // conchitour-app
+    await fs.access(oldUserData); // throws if old folder doesn't exist
+    const newLicense = path.join(newUserData, 'license.json');
+    let needsMigration = false;
+    try { await fs.access(newLicense); } catch { needsMigration = true; }
+    if (needsMigration) {
+      await fs.mkdir(newUserData, { recursive: true });
+      const entries = await fs.readdir(oldUserData);
+      for (const entry of entries) {
+        const src = path.join(oldUserData, entry);
+        const dst = path.join(newUserData, entry);
+        try { await fs.access(dst); } catch {
+          await fs.copyFile(src, dst);
+          console.log(`[migration] conchitect-app → conchitour-app: copied ${entry}`);
+        }
+      }
+    }
+  } catch { /* old folder absent — nothing to migrate */ }
+
   // Check license before showing main window so renderer gets initial status immediately
   initialLicenseStatus = await checkLicenseStatus().catch(() => 'none' as const);
 
