@@ -1,10 +1,13 @@
 import { useState, DragEvent } from 'react';
-import { Upload, Check, X, ArrowRight, Loader2, Image } from 'lucide-react';
+import { Upload, Check, X, ArrowRight, Loader2, Image, Lock } from 'lucide-react';
 import clsx from 'clsx';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { useProject } from '@/store/project';
 import { newScene } from '@/lib/scene-factory';
 import { toLocalUrl } from '@/lib/local-url';
+import { useTrialState } from '@/lib/trial';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import type { UpgradeFeature } from '@/components/UpgradeModal';
 
 export function ImportScreen() {
   const {
@@ -16,11 +19,29 @@ export function ImportScreen() {
     processingMessage,
     setProcessing,
   } = useProject();
+  const trial = useTrialState();
+  const [upgradeFeature, setUpgradeFeature] = useState<UpgradeFeature | null>(null);
+  const [trialToast, setTrialToast] = useState('');
 
   const [isDragging, setIsDragging] = useState(false);
 
   async function handleFiles(filePaths: string[]) {
     if (!filePaths.length || isProcessing) return;
+
+    // Trial: enforce 3-scene cap
+    if (trial) {
+      const slotsLeft = trial.scenesRemaining;
+      if (slotsLeft === 0) {
+        setUpgradeFeature('scenes');
+        return;
+      }
+      if (filePaths.length > slotsLeft) {
+        const rejected = filePaths.length - slotsLeft;
+        filePaths = filePaths.slice(0, slotsLeft);
+        setTrialToast(`Added ${slotsLeft} scene${slotsLeft !== 1 ? 's' : ''}. ${rejected} more rejected — trial allows ${trial.limits.maxScenes} max. Upgrade for unlimited.`);
+        setTimeout(() => setTrialToast(''), 6000);
+      }
+    }
 
     setProcessing(true, 'Reading EXIF...');
     try {
@@ -83,6 +104,34 @@ export function ImportScreen() {
       title="Import"
       subtitle="Drag & drop your 360° equirectangular photos. EXIF GPS is read automatically."
     >
+      {/* Trial scene limit banner */}
+      {trial && (
+        <div className={clsx(
+          'flex items-center gap-3 rounded-xl px-4 py-3 mb-4 text-sm',
+          trial.scenesRemaining === 0
+            ? 'bg-amber-50 border border-amber-200'
+            : 'bg-paper-tinted border border-line-soft'
+        )}>
+          <Lock size={14} className={trial.scenesRemaining === 0 ? 'text-amber-500' : 'text-ink-faded'} />
+          <span className={trial.scenesRemaining === 0 ? 'text-amber-800' : 'text-ink-soft'}>
+            Trial limit: {trial.limits.maxScenes} scenes maximum · {trial.scenesUsed}/{trial.limits.maxScenes} used
+            {trial.scenesRemaining === 0 && ' · '}
+            {trial.scenesRemaining === 0 && (
+              <button onClick={() => setUpgradeFeature('scenes')} className="underline font-medium">
+                Upgrade to add unlimited scenes
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Trial toast */}
+      {trialToast && (
+        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+          {trialToast}
+        </div>
+      )}
+
       {/* Counter */}
       {scenes.length > 0 && (
         <div data-testid="import-counter" className="flex items-center gap-3 mb-4 text-sm text-ink-soft">
@@ -219,6 +268,10 @@ export function ImportScreen() {
             <ArrowRight size={14} />
           </button>
         </div>
+      )}
+
+      {upgradeFeature && (
+        <UpgradeModal feature={upgradeFeature} onClose={() => setUpgradeFeature(null)} />
       )}
     </ScreenShell>
   );

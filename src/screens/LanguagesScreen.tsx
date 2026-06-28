@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { Plus, Trash2, Star } from 'lucide-react';
+import { Plus, Trash2, Star, Lock } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { flagFor } from '@/lib/language-flags';
+import { useTrialState } from '@/lib/trial';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import type { UpgradeFeature } from '@/components/UpgradeModal';
 
 // Common language codes with display names
 const COMMON_LANGS: { code: string; label: string }[] = [
@@ -36,6 +39,8 @@ function langFlag(code: string): string {
 export function LanguagesScreen() {
   const { project, updateLanguages, updateModules } = useProject();
   const { languages, modules } = project;
+  const trial = useTrialState();
+  const [upgradeFeature, setUpgradeFeature] = useState<UpgradeFeature | null>(null);
 
   const [addInput, setAddInput] = useState('');
   const [addError, setAddError] = useState('');
@@ -44,6 +49,11 @@ export function LanguagesScreen() {
     if (!code) { setAddError('Enter a language code (e.g. fr)'); return; }
     if (code.length < 2 || code.length > 5) { setAddError('Code must be 2–5 letters'); return; }
     if (languages.available.includes(code)) { setAddError('Already added'); return; }
+    // Trial: enforce language cap
+    if (trial && languages.available.length >= trial.limits.maxLanguages) {
+      setUpgradeFeature('languages');
+      return;
+    }
     updateLanguages({ available: [...languages.available, code] });
     setAddInput('');
     setAddError('');
@@ -67,6 +77,23 @@ export function LanguagesScreen() {
   return (
     <ScreenShell title="Languages" subtitle="Add interface languages for the compiled tour.">
       <div className="max-w-2xl mx-auto space-y-6">
+
+        {/* Trial language cap banner */}
+        {trial && (
+          <div className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm ${
+            available.length >= trial.limits.maxLanguages
+              ? 'bg-amber-50 border border-amber-200'
+              : 'bg-paper-tinted border border-line-soft'
+          }`}>
+            <Lock size={14} className={available.length >= trial.limits.maxLanguages ? 'text-amber-500' : 'text-ink-faded'} />
+            <span className={available.length >= trial.limits.maxLanguages ? 'text-amber-800' : 'text-ink-soft'}>
+              Trial limit: {trial.limits.maxLanguages} languages · {available.length}/{trial.limits.maxLanguages} used
+              {available.length >= trial.limits.maxLanguages && (
+                <> · <button onClick={() => setUpgradeFeature('languages')} className="underline font-medium">Upgrade to add more</button></>
+              )}
+            </span>
+          </div>
+        )}
 
         {/* ── Active languages ─── */}
         <div>
@@ -145,6 +172,9 @@ export function LanguagesScreen() {
         </div>
 
       </div>
+      {upgradeFeature && (
+        <UpgradeModal feature={upgradeFeature} onClose={() => setUpgradeFeature(null)} />
+      )}
     </ScreenShell>
   );
 }
