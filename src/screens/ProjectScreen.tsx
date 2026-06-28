@@ -1,5 +1,8 @@
+import { Lock } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
+import { useTrialState } from '@/lib/trial';
+import { TRIAL_LIMITS } from '@/types/license';
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -17,6 +20,8 @@ const inputCls =
 export function ProjectScreen() {
   const { project, updateMeta } = useProject();
   const m = project.meta;
+  const trial = useTrialState();
+  const copyrightLocked = trial !== null;
 
   return (
     <ScreenShell title="Project" subtitle="Global metadata: name, creator, copyright, publication URL.">
@@ -49,13 +54,21 @@ export function ProjectScreen() {
           />
         </Field>
 
-        <Field label="Copyright" hint="Shown in the viewer footer.">
-          <input
-            className={inputCls}
-            defaultValue={m.copyright}
-            placeholder="© 2025 Acme Photography"
-            onBlur={(e) => updateMeta({ copyright: e.target.value })}
-          />
+        <Field label="Copyright" hint={copyrightLocked ? undefined : 'Shown in the viewer footer.'}>
+          {copyrightLocked ? (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+              <Lock size={13} className="text-amber-500 flex-shrink-0" />
+              <span className="text-sm text-amber-800">{TRIAL_LIMITS.forcedCopyright}</span>
+              <span className="ml-auto text-[11px] text-amber-600">Trial copyright is fixed — upgrade to set your own</span>
+            </div>
+          ) : (
+            <input
+              className={inputCls}
+              defaultValue={m.copyright}
+              placeholder="© 2025 Acme Photography"
+              onBlur={(e) => updateMeta({ copyright: e.target.value })}
+            />
+          )}
         </Field>
 
         <Field label="Publication URL" hint="Where the compiled tour will be hosted (used in SEO and share cards).">

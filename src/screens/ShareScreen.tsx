@@ -1,6 +1,7 @@
-import { Facebook, Twitter, MessageCircle, Linkedin, Mail, Camera } from 'lucide-react';
+import { Facebook, Twitter, MessageCircle, Linkedin, Mail, Camera, Droplets } from 'lucide-react';
 import { useProject } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
+import { useTrialState } from '@/lib/trial';
 import type { ProjectShare } from '@/types';
 
 const SOCIAL_OPTIONS: {
@@ -22,12 +23,29 @@ export function ShareScreen() {
   const { project, updateShare } = useProject();
   const share = project.share;
   const pubUrl = project.meta.publicationUrl;
+  const trial = useTrialState();
 
   const activeCount = Object.values(share).filter(Boolean).length;
 
   return (
     <ScreenShell title="Share" subtitle="Configure the social sharing bar displayed in the compiled tour.">
       <div className="max-w-2xl mx-auto space-y-6">
+
+        {/* Trial watermark notice */}
+        {trial && (
+          <div className="flex items-start gap-3 rounded-xl px-4 py-3 bg-amber-50 border border-amber-200 text-sm">
+            <Droplets size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <span className="text-amber-800">
+              Trial builds include a <strong>"Made with Conchitour"</strong> watermark and force copyright to <strong>"© Conchitour"</strong>.{' '}
+              <button
+                onClick={() => window.conchitour.openUrl('https://conchitour.com/buy')}
+                className="underline font-medium"
+              >
+                Upgrade to remove it.
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* Social toggles */}
         <div className="space-y-2">
