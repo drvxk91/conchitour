@@ -15,6 +15,8 @@ import {
   deactivateThisMachine,
   getLocalLicense,
 } from './license/gate';
+import { getTrialState, consumeTrialAiCall } from './license/trial';
+import { TRIAL_LIMITS } from '../src/types/license';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -2710,7 +2712,7 @@ function generatePageHtml(project: any, page: any, lang: string, bodyHtml: strin
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function generateTourHtml(project: any, lang: string, startSceneSlug: string | null, tiledSlugs: Set<string>, hasSharePreview = false): string {
+function generateTourHtml(project: any, lang: string, startSceneSlug: string | null, tiledSlugs: Set<string>, hasSharePreview = false, isTrialBuild = false): string {
   const meta      = project.meta     || {};
   const seo       = project.seo      || {};
   const branding  = project.branding || {};
@@ -2738,7 +2740,9 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const canonicalUrl  = publicUrl ? publicUrl + canonicalPath : '';
   const primaryColor: string = branding.primaryColor || '#1a1a1a';
   const accentColor: string  = branding.accentColor  || '#3b82f6';
-  const copyright = xmlEsc(meta.copyright || '');
+  const copyright = isTrialBuild
+    ? xmlEsc(TRIAL_LIMITS.forcedCopyright)
+    : xmlEsc(meta.copyright || '');
   const tourTheme = (branding.tourTheme as { fontFamily?: string; headerBg?: string; panelBg?: string; textColor?: string; radius?: string; fontSize?: number } | undefined) || {};
 
   // Footer page links
@@ -3523,7 +3527,8 @@ ${showMap ? `  <div id="map-panel">
     <div id="strip-scroll">${sceneCardsHtml}</div>
   </div>
   ${cookieHtml}
-  ${copyright ? `<div id="tour-copyright">${xmlEsc(copyright)}</div>` : ''}
+  ${copyright ? `<div id="tour-copyright">${copyright}</div>` : ''}
+  ${isTrialBuild ? `<div id="trial-watermark" style="position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.75);color:white;padding:8px 14px;border-radius:6px;font-family:system-ui,sans-serif;font-size:12px;z-index:99999;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);"><a href="https://conchitour.com" target="_blank" style="color:white;text-decoration:none;">${xmlEsc(TRIAL_LIMITS.watermarkText)}</a></div>` : ''}
   ${tourFooterHtml}
   <div id="ui-toast"></div>
 
@@ -4449,6 +4454,8 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
   const scenes: any[] = project.scenes || [];
   const settings = await readSettings();
   const forceRegenTiles: boolean = (projectData as Record<string, unknown>)?.__forceRegenTiles === true;
+  const localLicense = await getLocalLicense();
+  const isTrialBuild = localLicense?.status === 'trial';
 
   compileRunState = { running: true, log: [], startedAt: Date.now() };
   compileCancelToken = { canceled: false };
@@ -4836,7 +4843,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       await fs.mkdir(langDir, { recursive: true });
 
       // /:lang/index.html — tour entry point for this language
-      const rootHtml = generateTourHtml(project, lang, null, tiledSlugsSet, sharePreviewGenerated);
+      const rootHtml = generateTourHtml(project, lang, null, tiledSlugsSet, sharePreviewGenerated, isTrialBuild);
       await fs.writeFile(path.join(langDir, 'index.html'), rootHtml, 'utf8');
 
       // /:lang/scene/:slug/index.html — per-scene deep-link
@@ -4845,7 +4852,7 @@ ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: str
       for (const scene of scenes) {
         const dir = path.join(sceneLangDir, scene.slug);
         await fs.mkdir(dir, { recursive: true });
-        const sceneHtml = generateTourHtml(project, lang, scene.slug, tiledSlugsSet, sharePreviewGenerated);
+        const sceneHtml = generateTourHtml(project, lang, scene.slug, tiledSlugsSet, sharePreviewGenerated, isTrialBuild);
         await fs.writeFile(path.join(dir, 'index.html'), sceneHtml, 'utf8');
       }
     }
@@ -5049,4 +5056,20 @@ ipcMain.handle('license:deactivate', async () => {
 
 ipcMain.handle('license:get-local', async () => {
   return getLocalLicense();
+});
+
+// ── Trial IPC ─────────────────────────────────────────────────────────────────
+
+ipcMain.handle('trial:get-state', async (_e, sceneCount: number, languageCount: number) => {
+  return getTrialState(sceneCount, languageCount);
+});
+
+ipcMain.handle('trial:consume-ai-call', async () => {
+  try {
+    await consumeTrialAiCall();
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
 });

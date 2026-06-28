@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { LocalLicense, LicenseGateStatus, LicenseActivateResult } from '../src/types/license';
+import type { LocalLicense, LicenseGateStatus, LicenseActivateResult, TrialState } from '../src/types/license';
 
 contextBridge.exposeInMainWorld('conchitour', {
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
@@ -96,6 +96,11 @@ contextBridge.exposeInMainWorld('conchitour', {
     ipcRenderer.on('license:status-changed', handler as Parameters<typeof ipcRenderer.on>[1]);
     return () => ipcRenderer.removeListener('license:status-changed', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
   },
+  // Trial
+  trialGetState: (sceneCount: number, languageCount: number): Promise<TrialState | null> =>
+    ipcRenderer.invoke('trial:get-state', sceneCount, languageCount),
+  trialConsumeAiCall: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('trial:consume-ai-call'),
 });
 
 export interface PhotoExif {
@@ -298,8 +303,11 @@ declare global {
       licenseDeactivate: () => Promise<{ ok: boolean; error?: string }>;
       licenseGetLocal: () => Promise<LocalLicense | null>;
       onLicenseStatusChanged: (cb: (status: LicenseGateStatus) => void) => () => void;
+      // Trial
+      trialGetState: (sceneCount: number, languageCount: number) => Promise<TrialState | null>;
+      trialConsumeAiCall: () => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }
 
-export type { LocalLicense, LicenseGateStatus, LicenseActivateResult };
+export type { LocalLicense, LicenseGateStatus, LicenseActivateResult, TrialState };
