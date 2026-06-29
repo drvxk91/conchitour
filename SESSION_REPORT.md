@@ -1,5 +1,46 @@
 > **Note:** This project was renamed from "Conchitect" to "Conchitour" on 2026-06-27. Sprint names below predate the rename and use the old name for historical accuracy. All current code uses "Conchitour".
 
+# Session Report — Sprint Mobile UI + AI Context Gate
+
+## Summary
+
+| Subtask | Status | Notes | Commit |
+|---------|--------|-------|--------|
+| Mobile bottom panel CSS | DONE | White sheet, drag handle, mini-map area, scene title, full-screen text popup | d45709c |
+| Mobile bottom panel JS | DONE | Drag-to-hide, reveal button, scene title update on nav, mini Leaflet map | d45709c |
+| Full-screen white text popup | DONE | `#text-popup` becomes white full-screen + slide-up animation on mobile | d45709c |
+| Mini-map preview (mobile) | DONE | Non-interactive Leaflet in `#mob-mini-map`, tap opens full map | d45709c |
+| `isContextSufficient` + `withContextGate` | DONE | 40-char threshold on `projectContext`; resolver pattern for UI decoupling | 6194902 |
+| `ContextWizard` component | DONE | 5-question chatbot: place type → audience → tone → features → languages | da4d148 |
+| Wire all 5 AI handlers | DONE | Audit, Content, Branding, Pages, SEO all gate through withContextGate | 5c3970c |
+
+## All Commits This Sprint
+
+| Hash | Message |
+|------|---------|
+| d45709c | feat(compile): mobile bottom panel CSS + JS + mini-map |
+| 6194902 | feat(lib): ai-context-gate — isContextSufficient + withContextGate |
+| da4d148 | feat(ui): ContextWizard 5-question chatbot flow + mount in App |
+| 5c3970c | feat(ai): gate all AI actions behind withContextGate |
+
+## Technical Notes
+
+### Mobile compiled tour — Street View pattern
+The existing `#strip-outer` (scene dock) doubles as the mobile bottom panel. New child elements (`#mob-drag-handle`, `#mob-scene-header`, `#mob-mini-map`) are hidden via `display:none` on desktop and revealed in the `@media(max-width:768px)` block. This avoids duplicating any DOM across breakpoints.
+
+The mini Leaflet map is initialized with all interaction options disabled (`dragging:false`, `scrollWheelZoom:false`, etc.) inside the `${showMap ? ... : ''}` conditional block so it only runs if the project has GPS data. The `onclick="_openMap()"` on the container div intercepts taps to open the full-screen map.
+
+The `#text-popup` CSS is overridden on mobile to `background:#fff; align-items:flex-start; padding:0` which transforms it from a centered dark-backdrop modal to a full-screen white sheet. A `@keyframes _mobSlideUp` slide-up animation is applied via `#text-popup.open #text-popup-inner`.
+
+### AI context gate — decoupled architecture
+`src/lib/ai-context-gate.ts` owns only the logic (threshold check + gate wrapper). The UI (`ContextWizard`) registers itself via `registerContextWizard(fn)` in a `useEffect`. This means the lib has no React import and no UI dependency.
+
+`withContextGate` wraps the action as a closure: if context is sufficient it runs immediately; if not it shows the wizard and runs the action after save. Returning `null` on cancel means callers don't need to detect cancellation explicitly.
+
+The wizard saves directly to `project.aiContext.projectContext` via the Zustand `updateAiContext` action, so after the modal closes and the original AI action runs, the project context is already in the store and will be included in the next AI prompt.
+
+---
+
 # Session Report — Sprints D, E, F, G
 
 ## Summary
