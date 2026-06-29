@@ -3391,6 +3391,13 @@ ${hsPreviewCss}
     #desc-overlay-title{font-size:clamp(22px,6vw,34px);font-weight:800;line-height:1.2;margin-bottom:16px}
     #desc-overlay-body{font-size:clamp(15px,4vw,19px);line-height:1.7;color:rgba(255,255,255,.88)}
 
+    /* ── Mobile-only elements (hidden on desktop) ──────── */
+    #mob-drag-handle{display:none}
+    #mob-scene-header{display:none}
+    #mob-mini-map{display:none}
+    #mob-reveal-btn{display:none;position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:49;background:rgba(0,0,0,.72);color:#fff;border:none;border-radius:20px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 2px 12px rgba(0,0,0,.35);transition:opacity .2s}
+    @keyframes _mobSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+
     /* ── Mobile responsive ──────────────────────────── */
     @media(max-width:768px){
       #tour-hdr{height:50px;padding:0 10px;gap:6px}
@@ -3411,6 +3418,25 @@ ${hsPreviewCss}
       #desc-overlay{display:flex}
       .hdr-btn{min-width:28px;height:28px;font-size:10px;padding:0 6px}
       #lang-sel{height:28px;font-size:12px}
+      /* ── Mobile bottom panel ─────────────────────────── */
+      #strip-outer{background:#fff;border-top-left-radius:16px;border-top-right-radius:16px;box-shadow:0 -4px 24px rgba(0,0,0,.1);flex-direction:column;align-items:stretch;padding:0;height:auto;transition:transform .3s cubic-bezier(.22,1,.36,1)}
+      #strip-outer.mob-hidden{transform:translateY(calc(100% - 44px))}
+      #mob-drag-handle{display:flex;justify-content:center;padding:10px 0 6px;cursor:pointer;touch-action:none}
+      .mob-drag-bar{width:40px;height:4px;background:#d0d0d0;border-radius:2px}
+      #mob-scene-header{display:flex;align-items:flex-start;padding:4px 16px 8px;gap:8px;position:relative}
+      #mob-scene-title-txt{flex:1;font-size:20px;font-weight:700;color:#1a1a1a;line-height:1.2;min-height:24px}
+      #mob-share-btn{width:36px;height:36px;border-radius:50%;border:none;background:rgba(0,0,0,.06);color:#333;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+      #mob-mini-map{display:block;height:80px;margin:0 16px 10px;border-radius:12px;overflow:hidden;cursor:pointer;background:#e8eaed}
+      #strip-scroll{height:80px;padding:4px 8px 10px;border-top:1px solid rgba(0,0,0,.05)}
+      #mob-reveal-btn{display:flex;align-items:center;gap:6px}
+      #mob-reveal-btn.visible{opacity:1;pointer-events:all}
+      /* ── Full-screen white text popup on mobile ──────── */
+      #text-popup{background:#fff;align-items:flex-start;padding:0}
+      #text-popup-inner{max-width:100%;max-height:100vh;border-radius:0;padding:72px 24px 40px}
+      #text-popup-close{position:fixed;top:16px;right:16px;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.08);font-size:20px;z-index:201;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+      #text-popup-title{font-size:34px;font-weight:800;line-height:1.1;margin-bottom:24px;color:var(--tt-text)}
+      #text-popup-body{font-size:17px;line-height:1.7;opacity:1}
+      #text-popup.open #text-popup-inner{animation:_mobSlideUp .3s cubic-bezier(.22,1,.36,1)}
     }
     @media(max-width:480px){
       #hdr-title{display:none}
@@ -3574,8 +3600,15 @@ ${showMap ? `  <div id="map-panel">
   </div>
 
   <div id="strip-outer">
+    <div id="mob-drag-handle"><div class="mob-drag-bar"></div></div>
+    <div id="mob-scene-header">
+      <div id="mob-scene-title-txt"></div>
+      ${hasShare ? `<button id="mob-share-btn" onclick="window._mobileShare&&window._mobileShare()" title="Share">&#x2197;&#xFE0E;</button>` : ''}
+    </div>
+    ${showMap ? `<div id="mob-mini-map" onclick="_openMap()"></div>` : ''}
     <div id="strip-scroll">${sceneCardsHtml}</div>
   </div>
+  <button id="mob-reveal-btn" onclick="_mobShowPanel()" aria-label="Show scene info">&#x25B2; Scene info</button>
   ${cookieHtml}
   ${copyright ? `<div id="tour-copyright">${copyright}</div>` : ''}
   ${isTrialBuild ? `<div id="trial-watermark" style="position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.75);color:white;padding:8px 14px;border-radius:6px;font-family:system-ui,sans-serif;font-size:12px;z-index:99999;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);"><a href="https://conchitour.com" target="_blank" style="color:white;text-decoration:none;">${xmlEsc(TRIAL_LIMITS.watermarkText)}</a></div>` : ''}
@@ -3716,6 +3749,8 @@ ${showMap ? `  <div id="map-panel">
     var dispTitle = _displayTitle(slug);
     if (titleEl) { titleEl.textContent = dispTitle; titleEl.title = dispTitle; }
     document.title = dispTitle ? dispTitle + ' — ' + TOUR.projectTitle : TOUR.projectTitle;
+    var mobTitleEl = document.getElementById('mob-scene-title-txt');
+    if (mobTitleEl) mobTitleEl.textContent = dispTitle;
     document.querySelectorAll('.sc-wrap').forEach(function(el) {
       el.classList.toggle('cur', el.getAttribute('data-slug') === slug);
     });
@@ -3963,6 +3998,40 @@ ${showMap ? `  <div id="map-panel">
     }
   };
 
+  // Mobile bottom panel — drag-to-hide + reveal button (Street View pattern)
+  (function() {
+    if (!window.matchMedia('(max-width:768px)').matches) return;
+    var panel = document.getElementById('strip-outer');
+    var revBtn = document.getElementById('mob-reveal-btn');
+    if (!panel) return;
+    var panelVisible = true;
+
+    function _mobHidePanel() {
+      panelVisible = false;
+      panel.classList.add('mob-hidden');
+      if (revBtn) revBtn.classList.add('visible');
+    }
+    window._mobShowPanel = function() {
+      panelVisible = true;
+      panel.classList.remove('mob-hidden');
+      if (revBtn) revBtn.classList.remove('visible');
+    };
+
+    var handle = document.getElementById('mob-drag-handle');
+    if (handle) {
+      var _tsy = 0;
+      handle.addEventListener('touchstart', function(e) { _tsy = e.touches[0].clientY; }, {passive:true});
+      handle.addEventListener('touchend', function(e) {
+        var dy = e.changedTouches[0].clientY - _tsy;
+        if (dy > 40) _mobHidePanel();
+        else if (dy < -40) window._mobShowPanel();
+      }, {passive:true});
+      handle.addEventListener('click', function() {
+        if (panelVisible) _mobHidePanel(); else window._mobShowPanel();
+      });
+    }
+  })();
+
   // Part 1 + 2: update strip card titles from TOUR localized data and
   // frame thumbnails based on each scene's default view direction.
   (function() {
@@ -4159,6 +4228,34 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
     var trueAz = (((sc ? sc.heading : 0) || 0) + (parseFloat(yaw) || 0) + 720) % 360;
     radarEl.style.transform = 'rotate(' + trueAz.toFixed(1) + 'deg)';
   };
+
+  // Mini-map in mobile bottom panel — non-interactive tile preview
+  (function() {
+    if (!window.matchMedia('(max-width:768px)').matches) return;
+    var miniEl = document.getElementById('mob-mini-map');
+    if (!miniEl) return;
+    setTimeout(function() {
+      var miniMap = L.map('mob-mini-map', {
+        zoomControl:false, attributionControl:false,
+        dragging:false, scrollWheelZoom:false,
+        touchZoom:false, doubleClickZoom:false,
+        boxZoom:false, keyboard:false,
+      });
+      var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
+      L.tileLayer(ts.url, {attribution:ts.attr, maxZoom:ts.maxZoom}).addTo(miniMap);
+      var pts = [];
+      Object.keys(TOUR.scenes).forEach(function(slug) {
+        var sc = TOUR.scenes[slug];
+        if (!sc || !sc.gps) return;
+        L.circleMarker([sc.gps.lat, sc.gps.lng], {
+          radius:5, fillColor:'${accentColor}', fillOpacity:1, color:'#fff', weight:2, interactive:false,
+        }).addTo(miniMap);
+        pts.push([sc.gps.lat, sc.gps.lng]);
+      });
+      if (pts.length === 1) miniMap.setView(pts[0], 13);
+      else if (pts.length > 1) miniMap.fitBounds(pts, {padding:[12,12]});
+    }, 700);
+  })();
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>
   (function(){
