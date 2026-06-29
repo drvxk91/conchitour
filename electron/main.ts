@@ -3400,8 +3400,27 @@ ${hsPreviewCss}
 
     /* ── Mobile responsive ──────────────────────────── */
     @media(max-width:768px){
-      #tour-hdr{height:50px;padding:0 10px;gap:6px}
-      :root{--hdr-h:50px}
+      /* ── Compact black header ─────────────────────────── */
+      #tour-hdr{
+        height:48px!important;padding:0 12px!important;gap:8px!important;
+        background:rgba(0,0,0,.85)!important;
+        backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+      }
+      #tour-hdr *{color:#fff!important}
+      .hdr-sep{background:rgba(255,255,255,.2)!important}
+      .hdr-btn{
+        background:rgba(255,255,255,.1)!important;
+        border-color:rgba(255,255,255,.2)!important;
+        color:#fff!important;
+      }
+      #lang-sel{
+        background:rgba(255,255,255,.1)!important;
+        border-color:rgba(255,255,255,.2)!important;
+        color:#fff!important;
+      }
+      /* Suppress hotspot tooltip on touch — hover never fires anyway */
+      #hs-preview{display:none!important}
+      :root{--hdr-h:48px}
       #hdr-logo-img{height:24px;max-width:100px}
       #hdr-logo-text{font-size:12px;max-width:110px}
       #hdr-title{max-width:35%;font-size:13px}
