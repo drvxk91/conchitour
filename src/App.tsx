@@ -6,6 +6,7 @@ import { ScreenRouter } from '@/components/shell/ScreenRouter';
 import { WelcomeScreen } from '@/screens/WelcomeScreen';
 import { LicenseGate } from '@/components/LicenseGate';
 import { TrialBanner } from '@/components/TrialBanner';
+import { ContextWizardProvider } from '@/components/ContextWizard';
 import { toLocalUrl } from '@/lib/local-url';
 import { useProject } from '@/store/project';
 import { useLicense } from '@/store/license';
@@ -321,6 +322,7 @@ export default function App() {
           <ScreenRouter />
         </main>
       </div>
+      <ContextWizardProvider />
     </div>
   );
 }
