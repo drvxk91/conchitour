@@ -3398,60 +3398,111 @@ ${hsPreviewCss}
     #mob-reveal-btn{display:none;position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:49;background:rgba(0,0,0,.72);color:#fff;border:none;border-radius:20px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 2px 12px rgba(0,0,0,.35);transition:opacity .2s}
     @keyframes _mobSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 
-    /* ── Mobile responsive ──────────────────────────── */
+    /* ── Mobile responsive (Street View pattern) ──── */
     @media(max-width:768px){
-      /* ── Compact black header ─────────────────────────── */
-      #tour-hdr{
-        height:48px!important;padding:0 12px!important;gap:8px!important;
-        background:rgba(0,0,0,.85)!important;
-        backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+      /* ── 1. CSS Grid 3-row layout ─────────────── */
+      body{
+        display:grid!important;
+        grid-template-rows:1fr 80px;
+        height:100vh;height:100dvh;
+        overflow:hidden!important;
+        transition:grid-template-rows .3s ease;
       }
-      #tour-hdr *{color:#fff!important}
-      .hdr-sep{background:rgba(255,255,255,.2)!important}
-      .hdr-btn{
-        background:rgba(255,255,255,.1)!important;
-        border-color:rgba(255,255,255,.2)!important;
-        color:#fff!important;
+      body.has-map{grid-template-rows:1fr 35vh 80px}
+      body.mob-fullscreen.has-map{grid-template-rows:1fr 0 80px}
+
+      /* Panorama — inline grid row 1 */
+      #pano{position:relative!important;inset:auto!important;width:100%!important;height:100%!important;min-height:0}
+
+      /* Map — always visible inline (grid row 2 when has-map) */
+      #map-panel{
+        position:relative!important;inset:auto!important;
+        width:100%!important;height:100%!important;min-height:0;
+        transform:none!important;transition:none!important;
+        z-index:auto;overflow:hidden;
       }
-      #lang-sel{
-        background:rgba(255,255,255,.1)!important;
-        border-color:rgba(255,255,255,.2)!important;
-        color:#fff!important;
+      #map-panel.open{transform:none!important}
+      #map-close{display:none!important}
+      #leaflet-map{min-height:0}
+
+      /* Bottom sheet — inline grid row 3 */
+      #strip-outer{
+        position:relative!important;inset:auto!important;
+        background:#fff!important;
+        border-top-left-radius:16px!important;border-top-right-radius:16px!important;
+        box-shadow:0 -2px 8px rgba(0,0,0,.08)!important;
+        padding:0 18px!important;
+        display:flex!important;align-items:center!important;
+        pointer-events:all!important;
+        transition:none!important;transform:none!important;
       }
-      /* Suppress hotspot tooltip on touch — hover never fires anyway */
-      #hs-preview{display:none!important}
-      :root{--hdr-h:48px}
-      #hdr-logo-img{height:24px;max-width:100px}
-      #hdr-logo-text{font-size:12px;max-width:110px}
-      #hdr-title{max-width:35%;font-size:13px}
-      #map-panel{width:100%}
-      #info-panel{
-        right:0;left:0;top:auto;bottom:0;width:100%;
-        max-height:60vh;border-radius:16px 16px 0 0;
-        box-shadow:0 -4px 32px rgba(0,0,0,.25);
-      }
-      #text-popup-inner{padding:32px 24px 36px;border-radius:16px 16px 0 0;max-height:90vh}
-      #desc-overlay{display:flex}
-      .hdr-btn{min-width:28px;height:28px;font-size:10px;padding:0 6px}
-      /* ── Mobile bottom panel ─────────────────────────── */
-      #strip-outer{background:#fff;border-top-left-radius:16px;border-top-right-radius:16px;box-shadow:0 -4px 24px rgba(0,0,0,.1);flex-direction:column;align-items:stretch;padding:0;height:auto;transition:transform .3s cubic-bezier(.22,1,.36,1)}
-      #strip-outer.mob-hidden{transform:translateY(calc(100% - 44px))}
-      #mob-drag-handle{display:flex;justify-content:center;padding:10px 0 6px;cursor:pointer;touch-action:none}
-      .mob-drag-bar{width:40px;height:4px;background:#d0d0d0;border-radius:2px}
-      #mob-scene-header{display:flex;align-items:flex-start;padding:4px 16px 8px;gap:8px;position:relative}
-      #mob-scene-title-txt{flex:1;font-size:20px;font-weight:700;color:#1a1a1a;line-height:1.2;min-height:24px}
-      #mob-share-btn{width:36px;height:36px;border-radius:50%;border:none;background:rgba(0,0,0,.06);color:#333;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
-      #mob-mini-map{display:block;height:80px;margin:0 16px 10px;border-radius:12px;overflow:hidden;cursor:pointer;background:#e8eaed}
-      /* Hide thumbnail strip — panel shows scene header + mini-map instead */
+      #mob-drag-handle{display:none!important}
+      #mob-mini-map{display:none!important}
       #strip-scroll{display:none!important}
-      #mob-reveal-btn{display:flex;align-items:center;gap:6px}
-      #mob-reveal-btn.visible{opacity:1;pointer-events:all}
-      /* ── Full-screen white text popup on mobile ──────── */
-      #text-popup{background:#fff;align-items:flex-start;padding:0}
-      #text-popup-inner{max-width:100%;max-height:100vh;border-radius:0;padding:72px 24px 40px}
-      #text-popup-close{position:fixed;top:16px;right:16px;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.08);font-size:20px;z-index:201;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
-      #text-popup-title{font-size:34px;font-weight:800;line-height:1.1;margin-bottom:24px;color:var(--tt-text)}
-      #text-popup-body{font-size:17px;line-height:1.7;opacity:1}
+      #mob-reveal-btn{display:none!important}
+      #mob-scene-header{display:flex!important;align-items:center!important;width:100%!important;gap:12px!important;padding:0!important}
+      #mob-scene-title-txt{font-size:17px!important;font-weight:600!important;color:#1a1a1a!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;flex:1!important;min-height:0!important}
+      #mob-share-btn{width:40px!important;height:40px!important;border-radius:50%!important;background:#f2f2f2!important;border:none!important;display:flex!important;align-items:center!important;justify-content:center!important;flex-shrink:0!important;font-size:18px!important;cursor:pointer!important;margin:0!important}
+
+      /* ── 2. Floating pill header ──────────────── */
+      #tour-hdr{
+        position:fixed!important;
+        top:env(safe-area-inset-top,8px)!important;
+        left:8px!important;right:8px!important;
+        height:auto!important;padding:0!important;
+        background:transparent!important;box-shadow:none!important;
+        z-index:1000!important;
+        display:flex!important;align-items:center!important;gap:8px!important;
+        pointer-events:none;
+      }
+      #hdr-logo{
+        flex:1!important;min-width:0!important;max-width:62%!important;
+        background:rgba(0,0,0,.62)!important;
+        backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+        border-radius:999px!important;
+        padding:5px 14px 5px 6px!important;
+        gap:8px!important;pointer-events:all;
+      }
+      #hdr-logo *{color:#fff!important}
+      #hdr-logo-img{width:28px!important;height:28px!important;border-radius:50%!important;object-fit:cover!important;flex-shrink:0!important}
+      #hdr-logo-text{font-size:13px!important;font-weight:500!important;max-width:unset!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      #hdr-title{display:none!important}
+      .hdr-sep{display:none!important}
+      #hdr-actions{display:flex!important;gap:8px!important;align-items:center!important;margin-left:auto!important;pointer-events:all}
+      #hdr-actions .hdr-btn,#hdr-actions a.hdr-btn,#hdr-actions button{
+        width:40px!important;height:40px!important;border-radius:50%!important;
+        background:rgba(0,0,0,.62)!important;
+        backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;
+        color:#fff!important;border:none!important;
+        min-width:0!important;padding:0!important;font-size:16px!important;
+        display:flex!important;align-items:center!important;justify-content:center!important;
+      }
+      #lang-sel{display:none!important}
+      #hs-preview{display:none!important}
+
+      /* ── 3. Collapse / expand FAB ─────────────── */
+      #mob-collapse-toggle{
+        position:fixed!important;right:12px!important;
+        bottom:calc(80px + 12px)!important;
+        width:40px;height:40px;border-radius:50%;
+        background:rgba(0,0,0,.62);color:#fff;border:none;
+        display:none!important;align-items:center;justify-content:center;
+        z-index:500;font-size:13px;cursor:pointer;
+        transition:bottom .3s ease;box-shadow:0 2px 10px rgba(0,0,0,.25);
+      }
+      body.has-map #mob-collapse-toggle{display:flex!important;bottom:calc(35vh + 80px + 12px)!important}
+      body.mob-fullscreen #mob-collapse-toggle{bottom:calc(80px + 12px)!important}
+
+      /* ── 4. Info panel ────────────────────────── */
+      #info-panel{right:0;left:0;top:auto;bottom:0;width:100%;max-height:60vh;border-radius:16px 16px 0 0;box-shadow:0 -4px 32px rgba(0,0,0,.25)}
+      #desc-overlay{display:flex}
+
+      /* ── 5. Full-screen white info popup ──────── */
+      #text-popup{background:#fff!important;align-items:stretch!important;padding:0!important}
+      #text-popup-inner{max-width:100%!important;width:100%!important;min-height:100vh!important;border-radius:0!important;padding:76px 22px 40px!important;overflow-y:auto;max-height:none!important}
+      #text-popup-close{position:fixed!important;top:14px!important;right:14px!important;width:44px!important;height:44px!important;border-radius:50%!important;background:transparent!important;color:#2563eb!important;font-size:22px!important;font-weight:700!important;border:none!important;z-index:10001;display:flex!important;align-items:center!important;justify-content:center!important}
+      #text-popup-title{font-size:36px!important;font-weight:800!important;line-height:1.1!important;letter-spacing:-.5px;margin:0 0 24px!important;color:#1a1a1a!important;text-transform:uppercase}
+      #text-popup-body{font-size:16px!important;line-height:1.6!important;color:#333!important;opacity:1}
       #text-popup.open #text-popup-inner{animation:_mobSlideUp .3s cubic-bezier(.22,1,.36,1)}
     }
     @media(max-width:480px){
@@ -3546,7 +3597,7 @@ ${hsPreviewCss}
     @keyframes _splashZoom{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
   </style>
 </head>
-<body>
+<body${showMap ? ' class="has-map"' : ''}>
   <div id="pano"></div>
 
   <div id="splash">
@@ -3621,10 +3672,10 @@ ${showMap ? `  <div id="map-panel">
       <div id="mob-scene-title-txt"></div>
       ${hasShare ? `<button id="mob-share-btn" onclick="window._mobileShare&&window._mobileShare()" title="Share">&#x2197;&#xFE0E;</button>` : ''}
     </div>
-    ${showMap ? `<div id="mob-mini-map" onclick="_openMap()"></div>` : ''}
     <div id="strip-scroll">${sceneCardsHtml}</div>
   </div>
   <button id="mob-reveal-btn" onclick="_mobShowPanel()" aria-label="Show scene info">&#x25B2; Scene info</button>
+  ${showMap ? `<button id="mob-collapse-toggle" onclick="_mobToggleCollapse()" aria-label="Toggle map">&#x25B2;</button>` : ''}
   ${cookieHtml}
   ${copyright ? `<div id="tour-copyright">${copyright}</div>` : ''}
   ${isTrialBuild ? `<div id="trial-watermark" style="position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.75);color:white;padding:8px 14px;border-radius:6px;font-family:system-ui,sans-serif;font-size:12px;z-index:99999;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);"><a href="https://conchitour.com" target="_blank" style="color:white;text-decoration:none;">${xmlEsc(TRIAL_LIMITS.watermarkText)}</a></div>` : ''}
@@ -4245,50 +4296,23 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
     radarEl.style.transform = 'rotate(' + trueAz.toFixed(1) + 'deg)';
   };
 
-  // Mini-map in mobile bottom panel — non-interactive tile preview
+  // Mobile: auto-init inline map + collapse/expand FAB handler
   (function() {
     if (!window.matchMedia('(max-width:768px)').matches) return;
-    var miniEl = document.getElementById('mob-mini-map');
-    if (!miniEl) return;
-    // Collect GPS points first — hide the container entirely if none exist
-    var pts = [];
-    Object.keys(TOUR.scenes).forEach(function(slug) {
-      var sc = TOUR.scenes[slug];
-      if (sc && sc.gps && typeof sc.gps.lat === 'number' && typeof sc.gps.lng === 'number') {
-        pts.push([sc.gps.lat, sc.gps.lng]);
-      }
-    });
-    if (pts.length === 0) {
-      miniEl.style.display = 'none';
-      return;
-    }
-    // Defer init via rAF inside setTimeout so the container has layout size
+    // Collapse toggle — toggles body.mob-fullscreen, resizes Leaflet
+    window._mobToggleCollapse = function() {
+      document.body.classList.toggle('mob-fullscreen');
+      var btn = document.getElementById('mob-collapse-toggle');
+      var collapsed = document.body.classList.contains('mob-fullscreen');
+      if (btn) btn.innerHTML = collapsed ? '&#x25BC;' : '&#x25B2;';
+      if (_lmap) setTimeout(function() { _lmap.invalidateSize(); }, 350);
+    };
+    // Auto-open the map inline — it's always visible on mobile (grid row 2)
     setTimeout(function() {
-      requestAnimationFrame(function() {
-        var miniMap = L.map('mob-mini-map', {
-          zoomControl:false, attributionControl:false,
-          dragging:false, scrollWheelZoom:false,
-          touchZoom:false, doubleClickZoom:false,
-          boxZoom:false, keyboard:false,
-        });
-        var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
-        L.tileLayer(ts.url, {attribution:ts.attr, maxZoom:ts.maxZoom}).addTo(miniMap);
-        // Re-check pts — may have been collected above
-        var scenePts = [];
-        Object.keys(TOUR.scenes).forEach(function(slug) {
-          var sc = TOUR.scenes[slug];
-          if (!sc || !sc.gps) return;
-          L.circleMarker([sc.gps.lat, sc.gps.lng], {
-            radius:5, fillColor:'${accentColor}', fillOpacity:1, color:'#fff', weight:2, interactive:false,
-          }).addTo(miniMap);
-          scenePts.push([sc.gps.lat, sc.gps.lng]);
-        });
-        if (scenePts.length === 1) miniMap.setView(scenePts[0], 13);
-        else if (scenePts.length > 1) miniMap.fitBounds(scenePts, {padding:[12,12]});
-        // Force Leaflet to recalculate container size after CSS layout settles
-        setTimeout(function() { miniMap.invalidateSize(); }, 150);
-      });
-    }, 400);
+      _openMap();
+      // invalidateSize after Leaflet's own setTimeout(300) has fired
+      setTimeout(function() { if (_lmap) _lmap.invalidateSize(); }, 700);
+    }, 100);
   })();
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>
