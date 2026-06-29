@@ -3061,17 +3061,26 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const faviconExt: string = branding.faviconPath ? path.extname(branding.faviconPath as string) : '';
   const faviconLinkHtml: string = branding.faviconPath ? `  <link rel="icon" href="/assets/favicon${xmlEsc(faviconExt)}">\n` : '';
 
-  // ── Header logo ───────────────────────────────────────────────────────
+  // ── Header logo / author pill ─────────────────────────────────────────
   const logoExt: string = branding.logoPath ? path.extname(branding.logoPath as string) : '';
+  const authorName: string = (branding.authorName as string | undefined) || '';
+  const tourDate: string   = (branding.tourDate   as string | undefined) || '';
+  const pillInitial: string = (authorName || projectTitle || '?').trim().charAt(0).toUpperCase();
   const logoImgHtml: string = branding.logoPath
     ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
-    : '';
+    : `<span id="hdr-logo-img" class="hdr-initial" aria-hidden="true">${xmlEsc(pillInitial)}</span>`;
 
   // ── Header action buttons ─────────────────────────────────────────────
   // Map is shown when scenes have GPS. mapMode config controls appearance only.
   const showMap: boolean = hasMap;
+  const mobView: 'map' | 'strip' | 'pano' = (branding.mobileDefaultView as 'map' | 'strip' | 'pano') || 'map';
+  const bodyClasses: string = [
+    showMap && mobView === 'map' ? 'has-map' : '',
+    mobView === 'strip' ? 'has-strip' : '',
+    mobView === 'pano' ? 'pano-only' : '',
+  ].filter(Boolean).join(' ');
   const mapHdrBtn: string = showMap
-    ? `<button class="hdr-btn" id="map-hdr-btn" onclick="_toggleMap()" title="Map">&#x1F5FA;</button>` : '';
+    ? `<button class="hdr-btn" id="map-hdr-btn" onclick="_toggleMap()" title="Map"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3"/><path d="M9 3v15"/><path d="M15 6v15"/></svg></button>` : '';
   const FLAG_MAP: Record<string, string> = {
     en:'🇬🇧', fr:'🇫🇷', de:'🇩🇪', es:'🇪🇸', it:'🇮🇹',
     pt:'🇵🇹', nl:'🇳🇱', pl:'🇵🇱', ru:'🇷🇺', zh:'🇨🇳',
@@ -3086,14 +3095,45 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
       }).join('') +
       `</select>`
     : '';
-  const shareHdrLinks: string[] = [];
-  if (share.facebook) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'facebook'});window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="Facebook">f</a>`);
-  if (share.twitter)  shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'twitter'});window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener');return false;" title="X">𝕏</a>`);
-  if (share.whatsapp) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'whatsapp'});window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener');return false;" title="WhatsApp">W</a>`);
-  if (share.linkedin) shareHdrLinks.push(`<a class="hdr-btn" href="#" onclick="_track('share_click',{platform:'linkedin'});window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="LinkedIn">in</a>`);
+  // Consolidate header share links into a single button + slide-down popover
+  const shareHdrItems: string[] = [];
+  if (share.facebook) shareHdrItems.push(`<a class="shr-pop-item" href="#" onclick="_track('share_click',{platform:'facebook'});window.open('https://facebook.com/sharer/sharer.php?u='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="Facebook">f</a>`);
+  if (share.twitter)  shareHdrItems.push(`<a class="shr-pop-item" href="#" onclick="_track('share_click',{platform:'twitter'});window.open('https://x.com/intent/tweet?url='+encodeURIComponent(location.href)+'&text='+encodeURIComponent(document.title),'_blank','noopener');return false;" title="X">𝕏</a>`);
+  if (share.whatsapp) shareHdrItems.push(`<a class="shr-pop-item" href="#" onclick="_track('share_click',{platform:'whatsapp'});window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(document.title)+'%20'+encodeURIComponent(location.href),'_blank','noopener');return false;" title="WhatsApp">W</a>`);
+  if (share.linkedin) shareHdrItems.push(`<a class="shr-pop-item" href="#" onclick="_track('share_click',{platform:'linkedin'});window.open('https://linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(location.href),'_blank','noopener');return false;" title="LinkedIn">in</a>`);
+  shareHdrItems.push(`<a class="shr-pop-item" href="#" onclick="_copyTourUrl();return false;" title="Copy link"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></a>`);
   // Note: share.email is intentionally NOT added to the header (it would duplicate the feedbackMailto button).
   // Email sharing is available in the bottom share bar only.
-  const shareHdrHtml: string = shareHdrLinks.join('');
+  const hasHdrShare: boolean = shareHdrItems.length > 1; // always true if any social OR copy-link
+  const shareHdrHtml: string = hasHdrShare
+    ? `<button class="hdr-btn" id="share-hdr-btn" onclick="_toggleShare()" title="Share"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></button>`
+    : '';
+  const sharePopoverHtml: string = hasHdrShare
+    ? `  <div id="share-popover">${shareHdrItems.join('')}</div>\n`
+    : '';
+
+  // ── Mobile ⋮ More popover ─────────────────────────────────────────────
+  const mobMoreItems: string[] = [];
+  mobMoreItems.push(
+    `<button class="mob-more-item" onclick="_toggleInfo();_closeMobMore()">` +
+    `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>` +
+    ` Scene info</button>`
+  );
+  if (project.modules?.vr) {
+    mobMoreItems.push(
+      `<button class="mob-more-item" onclick="if(_krpano)_krpano.call('webvr.enterVR()');_closeMobMore()">` +
+      `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h2l1.5 4H18.5L20 8h2"/><path d="M7 12l-1 4h12l-1-4"/></svg>` +
+      ` VR</button>`
+    );
+  }
+  if (project.modules?.fullscreen !== false) {
+    mobMoreItems.push(
+      `<button class="mob-more-item" onclick="_toggleFs();_closeMobMore()">` +
+      `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>` +
+      ` Fullscreen</button>`
+    );
+  }
+  const mobMorePopoverHtml: string = `  <div id="mob-more-popover">${mobMoreItems.join('')}</div>\n`;
 
   // ── Cookie consent ───────────────────────────────────────────────────
   const modules = project.modules || {};
@@ -3166,6 +3206,8 @@ ${faviconLinkHtml}${description ? `  <meta name="description" content="${descrip
     #hdr-logo{display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0}
     #hdr-logo-img{height:30px;max-width:130px;width:auto;object-fit:contain;display:block}
     #hdr-logo-text{font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+    #hdr-scene-name{font-weight:700}
+    .hdr-author,.hdr-date{font-size:11px;font-weight:400;color:#777}
     .hdr-sep{width:1px;height:22px;background:rgba(0,0,0,.1);flex-shrink:0}
     #hdr-title{
       position:absolute;left:50%;transform:translateX(-50%);
@@ -3182,6 +3224,21 @@ ${faviconLinkHtml}${description ? `  <meta name="description" content="${descrip
       text-decoration:none;transition:background .15s,color .15s;
     }
     .hdr-btn:hover{background:#f2f2f2;color:#111}
+    #share-popover{
+      position:fixed;top:52px;right:8px;z-index:1001;
+      background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.18);
+      padding:8px;display:flex;flex-direction:column;gap:4px;
+      min-width:110px;opacity:0;pointer-events:none;
+      transform:translateY(-6px);transition:opacity .15s,transform .15s;
+    }
+    #share-popover.open{opacity:1;pointer-events:all;transform:translateY(0)}
+    .shr-pop-item{
+      display:flex;align-items:center;justify-content:center;
+      height:36px;border-radius:8px;font-size:13px;font-weight:600;
+      color:#333;text-decoration:none;padding:0 12px;
+      transition:background .12s;
+    }
+    .shr-pop-item:hover{background:#f2f2f2}
     .lang-act{background:${accentColor}!important;color:#fff!important;border-color:${accentColor}!important}
     #lang-sel{
       height:30px;border:1px solid rgba(0,0,0,.14);border-radius:6px;
@@ -3265,23 +3322,23 @@ ${hsPreviewCss}
 
     /* ── Text popup ──────────────────────────────── */
     #text-popup{
-      position:fixed;inset:0;z-index:200;
+      position:fixed;inset:0;z-index:9999;
       background:rgba(0,0,0,.52);
-      display:flex;align-items:center;justify-content:center;padding:40px;
-      opacity:0;pointer-events:none;transition:opacity .2s;
+      display:none;align-items:center;justify-content:center;padding:40px;
     }
-    #text-popup.open{opacity:1;pointer-events:all}
+    #text-popup.open{display:flex}
     #text-popup-inner{
       background:var(--tt-panel-bg);border-radius:var(--radius);
       max-width:680px;width:100%;max-height:80vh;overflow-y:auto;
       padding:48px 52px 52px;position:relative;
     }
     #text-popup-close{
-      position:absolute;top:14px;right:14px;
+      position:fixed;top:14px;right:14px;z-index:10002;
       width:34px;height:34px;border-radius:50%;
       border:none;background:#f0f0f0;cursor:pointer;
-      font-size:16px;display:flex;align-items:center;justify-content:center;
+      font-size:16px;display:none;align-items:center;justify-content:center;
     }
+    #text-popup.open #text-popup-close{display:flex}
     #text-popup-close:hover{background:#e0e0e0}
     #text-popup-title{font-size:clamp(22px,4vw,34px);font-weight:800;color:var(--tt-text);margin-bottom:18px;line-height:1.2}
     #text-popup-body{font-size:var(--tt-font-size);line-height:1.72;color:var(--tt-text);opacity:.8}
@@ -3410,6 +3467,9 @@ ${hsPreviewCss}
       }
       body.has-map{grid-template-rows:1fr 35vh 80px}
       body.mob-fullscreen.has-map{grid-template-rows:1fr 0 80px}
+      body.has-strip{grid-template-rows:1fr 110px 0}
+      body.mob-fullscreen.has-strip{grid-template-rows:1fr 0 0}
+      body.pano-only{grid-template-rows:1fr 0 0}
 
       /* Panorama — inline grid row 1 */
       #pano{position:relative!important;inset:auto!important;width:100%!important;height:100%!important;min-height:0}
@@ -3441,6 +3501,10 @@ ${hsPreviewCss}
       #strip-scroll{display:none!important}
       #mob-reveal-btn{display:none!important}
       #mob-scene-header{display:flex!important;align-items:center!important;width:100%!important;gap:12px!important;padding:0!important}
+      /* has-strip: show horizontal scroll strip instead of bottom title bar */
+      body.has-strip #strip-scroll{display:flex!important;position:relative!important;padding:8px 12px!important;height:110px!important;overflow-x:auto!important;overflow-y:visible!important;align-items:flex-end!important;gap:8px!important;max-width:100%!important}
+      body.has-strip #mob-scene-header{display:none!important}
+      body.has-strip #strip-outer{padding:0!important;align-items:stretch!important}
       #mob-scene-title-txt{font-size:17px!important;font-weight:600!important;color:#1a1a1a!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;flex:1!important;min-height:0!important}
       #mob-share-btn{width:40px!important;height:40px!important;border-radius:50%!important;background:#f2f2f2!important;border:none!important;display:flex!important;align-items:center!important;justify-content:center!important;flex-shrink:0!important;font-size:18px!important;cursor:pointer!important;margin:0!important}
 
@@ -3465,7 +3529,11 @@ ${hsPreviewCss}
       }
       #hdr-logo *{color:#fff!important}
       #hdr-logo-img{width:28px!important;height:28px!important;border-radius:50%!important;object-fit:cover!important;flex-shrink:0!important}
-      #hdr-logo-text{font-size:13px!important;font-weight:500!important;max-width:unset!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      #hdr-logo-img.hdr-initial{display:flex!important;align-items:center!important;justify-content:center!important;background:#555!important;font-size:13px!important;font-weight:700!important;letter-spacing:0!important}
+      #hdr-logo-text{font-size:12px!important;font-weight:400!important;max-width:unset!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;display:flex!important;flex-direction:column!important;line-height:1.25!important}
+      #hdr-scene-name{font-size:13px!important;font-weight:600!important;display:block!important}
+      .hdr-author{opacity:.75!important;font-size:11px!important;display:block!important}
+      .hdr-date{opacity:.6!important}
       #hdr-title{display:none!important}
       .hdr-sep{display:none!important}
       #hdr-actions{display:flex!important;gap:8px!important;align-items:center!important;margin-left:auto!important;pointer-events:all}
@@ -3484,14 +3552,16 @@ ${hsPreviewCss}
       #mob-collapse-toggle{
         position:fixed!important;right:12px!important;
         bottom:calc(80px + 12px)!important;
-        width:40px;height:40px;border-radius:50%;
-        background:rgba(0,0,0,.62);color:#fff;border:none;
-        display:none!important;align-items:center;justify-content:center;
-        z-index:500;font-size:13px;cursor:pointer;
-        transition:bottom .3s ease;box-shadow:0 2px 10px rgba(0,0,0,.25);
+        width:44px!important;height:44px!important;border-radius:50%!important;
+        background:rgba(0,0,0,.75)!important;color:#fff!important;border:none!important;
+        display:none!important;align-items:center!important;justify-content:center!important;
+        z-index:600!important;cursor:pointer!important;
+        transition:transform .3s ease!important;
+        box-shadow:0 2px 10px rgba(0,0,0,.3)!important;
       }
-      body.has-map #mob-collapse-toggle{display:flex!important;bottom:calc(35vh + 80px + 12px)!important}
-      body.mob-fullscreen #mob-collapse-toggle{bottom:calc(80px + 12px)!important}
+      body.has-map #mob-collapse-toggle{display:flex!important}
+      body.has-strip #mob-collapse-toggle{display:flex!important}
+      body.mob-fullscreen #mob-collapse-toggle{transform:rotate(180deg)!important}
 
       /* ── 4. Info panel ────────────────────────── */
       #info-panel{right:0;left:0;top:auto;bottom:0;width:100%;max-height:60vh;border-radius:16px 16px 0 0;box-shadow:0 -4px 32px rgba(0,0,0,.25)}
@@ -3500,10 +3570,39 @@ ${hsPreviewCss}
       /* ── 5. Full-screen white info popup ──────── */
       #text-popup{background:#fff!important;align-items:stretch!important;padding:0!important}
       #text-popup-inner{max-width:100%!important;width:100%!important;min-height:100vh!important;border-radius:0!important;padding:76px 22px 40px!important;overflow-y:auto;max-height:none!important}
-      #text-popup-close{position:fixed!important;top:14px!important;right:14px!important;width:44px!important;height:44px!important;border-radius:50%!important;background:transparent!important;color:#2563eb!important;font-size:22px!important;font-weight:700!important;border:none!important;z-index:10001;display:flex!important;align-items:center!important;justify-content:center!important}
+      #text-popup-close{top:env(safe-area-inset-top,14px)!important;right:14px!important;width:44px!important;height:44px!important;background:rgba(255,255,255,.95)!important;color:#2563eb!important;font-size:22px!important;font-weight:700!important;}
       #text-popup-title{font-size:36px!important;font-weight:800!important;line-height:1.1!important;letter-spacing:-.5px;margin:0 0 24px!important;color:#1a1a1a!important;text-transform:uppercase}
-      #text-popup-body{font-size:16px!important;line-height:1.6!important;color:#333!important;opacity:1}
+      #text-popup-body{font-size:18px!important;line-height:1.65!important;color:#333!important;opacity:1}
       #text-popup.open #text-popup-inner{animation:_mobSlideUp .3s cubic-bezier(.22,1,.36,1)}
+
+      /* ── 6. ⋮ More popover ─────────────────────── */
+      #info-btn,#fs-btn,button[title="VR / Cardboard"],button[title="Contact form"],a[title="Send feedback"]{display:none!important}
+      #mob-more-btn{display:flex!important}
+      #mob-more-popover{
+        position:fixed;top:calc(env(safe-area-inset-top,8px) + 52px);
+        right:8px;z-index:1001;
+        background:rgba(20,20,20,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+        border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.35);
+        padding:6px;display:flex;flex-direction:column;gap:0;
+        min-width:180px;opacity:0;pointer-events:none;
+        transform:translateY(-6px) scale(.96);transition:opacity .15s,transform .15s;
+      }
+      #mob-more-popover.open{opacity:1;pointer-events:all;transform:translateY(0) scale(1)}
+      .mob-more-item{
+        display:flex;align-items:center;gap:10px;
+        height:44px;border-radius:10px;font-size:14px;font-weight:500;
+        color:#fff;background:none;border:none;cursor:pointer;padding:0 14px;
+        text-align:left;width:100%;transition:background .1s;
+      }
+      .mob-more-item:hover,.mob-more-item:active{background:rgba(255,255,255,.12)}
+      .mob-more-item svg{flex-shrink:0;opacity:.75}
+
+      /* ── 7. Header pill meta line ──────────────── */
+      .hdr-meta{display:block!important;font-size:11px!important;opacity:.75!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;line-height:1.2!important;color:#fff!important}
+      .hdr-author,.hdr-date{display:inline!important;font-size:11px!important;opacity:1!important;color:#fff!important}
+
+      /* ── 8. FAB z-index above map ────────────────── */
+      #mob-collapse-toggle{z-index:800!important}
     }
     @media(max-width:480px){
       #hdr-title{display:none}
@@ -3597,7 +3696,7 @@ ${hsPreviewCss}
     @keyframes _splashZoom{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
   </style>
 </head>
-<body${showMap ? ' class="has-map"' : ''}>
+<body${bodyClasses ? ` class="${bodyClasses}"` : ''}>
   <div id="pano"></div>
 
   <div id="splash">
@@ -3618,14 +3717,14 @@ ${hsPreviewCss}
   <header id="tour-hdr">
     <div id="hdr-logo">
       ${logoImgHtml}
-      <span id="hdr-logo-text">${xmlEsc(projectTitle)}</span>
+      <span id="hdr-logo-text"><b id="hdr-scene-name">${xmlEsc(projectTitle)}</b>${(authorName || tourDate) ? `<span class="hdr-meta">${authorName ? `<span class="hdr-author">${xmlEsc(authorName)}</span>` : ''}${(authorName && tourDate) ? ' · ' : ''}${tourDate ? `<span class="hdr-date">${xmlEsc(tourDate)}</span>` : ''}</span>` : ''}</span>
     </div>
     <div id="hdr-title"></div>
     <div id="hdr-actions">
-      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}
+      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}<button class="hdr-btn" id="mob-more-btn" onclick="_toggleMobMore()" title="More" style="display:none">&#x22EE;</button>
     </div>
   </header>
-
+${sharePopoverHtml}${mobMorePopoverHtml}
 ${showMap ? `  <div id="map-panel">
     <button id="map-close" aria-label="Close map">&#x2715;</button>
     <div id="map-toast"></div>
@@ -3640,8 +3739,8 @@ ${showMap ? `  <div id="map-panel">
   </div>
 
   <div id="text-popup" role="dialog" aria-modal="true">
+    <button id="text-popup-close" onclick="closeTextPopup()" aria-label="Close">&#x2715;</button>
     <div id="text-popup-inner">
-      <button id="text-popup-close" onclick="closeTextPopup()" aria-label="Close">&#x2715;</button>
       <h2 id="text-popup-title"></h2>
       <div id="text-popup-body"></div>
     </div>
@@ -3675,7 +3774,7 @@ ${showMap ? `  <div id="map-panel">
     <div id="strip-scroll">${sceneCardsHtml}</div>
   </div>
   <button id="mob-reveal-btn" onclick="_mobShowPanel()" aria-label="Show scene info">&#x25B2; Scene info</button>
-  ${showMap ? `<button id="mob-collapse-toggle" onclick="_mobToggleCollapse()" aria-label="Toggle map">&#x25B2;</button>` : ''}
+  ${(showMap || mobView === 'strip') ? `<button id="mob-collapse-toggle" onclick="_mobToggleCollapse()" aria-label="Toggle panel"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>` : ''}
   ${cookieHtml}
   ${copyright ? `<div id="tour-copyright">${copyright}</div>` : ''}
   ${isTrialBuild ? `<div id="trial-watermark" style="position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.75);color:white;padding:8px 14px;border-radius:6px;font-family:system-ui,sans-serif;font-size:12px;z-index:99999;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);"><a href="https://conchitour.com" target="_blank" style="color:white;text-decoration:none;">${xmlEsc(TRIAL_LIMITS.watermarkText)}</a></div>` : ''}
@@ -3712,10 +3811,21 @@ ${showMap ? `  <div id="map-panel">
   };
   function _setHeaderTitle() {
     var el = document.getElementById('hdr-title');
-    if (!el) return;
-    var t = _curScene ? _displayTitle(_curScene) : '';
-    el.textContent = t;
-    el.title = t;
+    if (el) {
+      var t = _curScene ? _displayTitle(_curScene) : '';
+      el.textContent = t;
+      el.title = t;
+    }
+    // Also update the mobile pill scene name
+    var sn = document.getElementById('hdr-scene-name');
+    if (sn && _curScene) {
+      var idx = window.__scenesIndex && window.__scenesIndex[_curScene];
+      if (idx) {
+        var raw = (idx.title || {});
+        var title = raw[window._curLang] || raw[window.__defaultLang] || Object.values(raw)[0] || _curScene;
+        sn.textContent = title;
+      }
+    }
   }
   var _krpano    = null;
   var _curScene  = '';
@@ -3862,10 +3972,16 @@ ${showMap ? `  <div id="map-panel">
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
+    var mmp = document.getElementById('mob-more-popover');
+    if (mmp && mmp.classList.contains('open')) { mmp.classList.remove('open'); return; }
     var closed = false;
     ['text-popup','video-popup','form-popup'].forEach(function(id) {
       var el = document.getElementById(id);
-      if (el && el.classList.contains('open')) { el.classList.remove('open'); closed = true; }
+      if (el && el.classList.contains('open')) {
+        el.classList.remove('open');
+        if (id === 'text-popup') document.body.style.overflow = '';
+        closed = true;
+      }
     });
     if (!closed) {
       var mp = document.getElementById('map-panel');
@@ -3900,11 +4016,15 @@ ${showMap ? `  <div id="map-panel">
     if (!data) return;
     document.getElementById('text-popup-title').textContent = data.title || '';
     document.getElementById('text-popup-body').innerHTML = data.body || '';
-    document.getElementById('text-popup').classList.add('open');
+    var popup = document.getElementById('text-popup');
+    if (popup) popup.classList.add('open');
+    document.body.style.overflow = 'hidden';
     window._track('info_hotspot_open', {id: id, title: data.title || ''});
   };
   window.closeTextPopup = function() {
-    document.getElementById('text-popup').classList.remove('open');
+    var popup = document.getElementById('text-popup');
+    if (popup) popup.classList.remove('open');
+    document.body.style.overflow = '';
   };
   (document.getElementById('text-popup') || {addEventListener:function(){}}).addEventListener('click', function(e) {
     if (e.target === this) closeTextPopup();
@@ -4027,6 +4147,54 @@ ${showMap ? `  <div id="map-panel">
       document.exitFullscreen && document.exitFullscreen();
     }
   }
+
+  // Share popover toggle
+  window._toggleShare = function() {
+    var p = document.getElementById('share-popover');
+    if (!p) return;
+    p.classList.toggle('open');
+  };
+  window._copyTourUrl = function() {
+    var url = location.href;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(function() { _showToast('Link copied'); });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); _showToast('Link copied'); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+    var p = document.getElementById('share-popover');
+    if (p) p.classList.remove('open');
+  };
+  // Close share popover on outside click
+  document.addEventListener('click', function(e) {
+    var p = document.getElementById('share-popover');
+    var btn = document.getElementById('share-hdr-btn');
+    if (p && p.classList.contains('open') && !p.contains(e.target) && e.target !== btn) {
+      p.classList.remove('open');
+    }
+  });
+
+  // Mobile ⋮ More popover
+  window._toggleMobMore = function() {
+    var p = document.getElementById('mob-more-popover');
+    if (!p) return;
+    p.classList.toggle('open');
+  };
+  window._closeMobMore = function() {
+    var p = document.getElementById('mob-more-popover');
+    if (p) p.classList.remove('open');
+  };
+  document.addEventListener('click', function(e) {
+    var p = document.getElementById('mob-more-popover');
+    var btn = document.getElementById('mob-more-btn');
+    if (p && p.classList.contains('open') && !p.contains(e.target) && e.target !== btn) {
+      p.classList.remove('open');
+    }
+  });
+
   document.addEventListener('fullscreenchange', function() {
     var b = document.getElementById('fs-btn');
     if (b) b.innerHTML = document.fullscreenElement ? '&#x26F7;' : '&#x26F6;';
@@ -4299,20 +4467,27 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
   // Mobile: auto-init inline map + collapse/expand FAB handler
   (function() {
     if (!window.matchMedia('(max-width:768px)').matches) return;
+    var hasMobMap = document.body.classList.contains('has-map');
     // Collapse toggle — toggles body.mob-fullscreen, resizes Leaflet
     window._mobToggleCollapse = function() {
       document.body.classList.toggle('mob-fullscreen');
-      var btn = document.getElementById('mob-collapse-toggle');
-      var collapsed = document.body.classList.contains('mob-fullscreen');
-      if (btn) btn.innerHTML = collapsed ? '&#x25BC;' : '&#x25B2;';
       if (_lmap) setTimeout(function() { _lmap.invalidateSize(); }, 350);
     };
-    // Auto-open the map inline — it's always visible on mobile (grid row 2)
-    setTimeout(function() {
-      _openMap();
-      // invalidateSize after Leaflet's own setTimeout(300) has fired
-      setTimeout(function() { if (_lmap) _lmap.invalidateSize(); }, 700);
-    }, 100);
+    // Tapping the bottom sheet title row (not the share button) also toggles
+    var sceneHdr = document.getElementById('mob-scene-header');
+    if (sceneHdr) {
+      sceneHdr.addEventListener('click', function(e) {
+        if (e.target.closest('button')) return;
+        window._mobToggleCollapse && window._mobToggleCollapse();
+      });
+    }
+    // Auto-open the map inline when has-map (grid row 2)
+    if (hasMobMap) {
+      setTimeout(function() {
+        _openMap();
+        setTimeout(function() { if (_lmap) _lmap.invalidateSize(); }, 700);
+      }, 100);
+    }
   })();
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>
