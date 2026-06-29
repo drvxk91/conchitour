@@ -4250,27 +4250,45 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
     if (!window.matchMedia('(max-width:768px)').matches) return;
     var miniEl = document.getElementById('mob-mini-map');
     if (!miniEl) return;
-    setTimeout(function() {
-      var miniMap = L.map('mob-mini-map', {
-        zoomControl:false, attributionControl:false,
-        dragging:false, scrollWheelZoom:false,
-        touchZoom:false, doubleClickZoom:false,
-        boxZoom:false, keyboard:false,
-      });
-      var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
-      L.tileLayer(ts.url, {attribution:ts.attr, maxZoom:ts.maxZoom}).addTo(miniMap);
-      var pts = [];
-      Object.keys(TOUR.scenes).forEach(function(slug) {
-        var sc = TOUR.scenes[slug];
-        if (!sc || !sc.gps) return;
-        L.circleMarker([sc.gps.lat, sc.gps.lng], {
-          radius:5, fillColor:'${accentColor}', fillOpacity:1, color:'#fff', weight:2, interactive:false,
-        }).addTo(miniMap);
+    // Collect GPS points first — hide the container entirely if none exist
+    var pts = [];
+    Object.keys(TOUR.scenes).forEach(function(slug) {
+      var sc = TOUR.scenes[slug];
+      if (sc && sc.gps && typeof sc.gps.lat === 'number' && typeof sc.gps.lng === 'number') {
         pts.push([sc.gps.lat, sc.gps.lng]);
+      }
+    });
+    if (pts.length === 0) {
+      miniEl.style.display = 'none';
+      return;
+    }
+    // Defer init via rAF inside setTimeout so the container has layout size
+    setTimeout(function() {
+      requestAnimationFrame(function() {
+        var miniMap = L.map('mob-mini-map', {
+          zoomControl:false, attributionControl:false,
+          dragging:false, scrollWheelZoom:false,
+          touchZoom:false, doubleClickZoom:false,
+          boxZoom:false, keyboard:false,
+        });
+        var ts = MAP_TILES[_mapTileStyle] || MAP_TILES.streets;
+        L.tileLayer(ts.url, {attribution:ts.attr, maxZoom:ts.maxZoom}).addTo(miniMap);
+        // Re-check pts — may have been collected above
+        var scenePts = [];
+        Object.keys(TOUR.scenes).forEach(function(slug) {
+          var sc = TOUR.scenes[slug];
+          if (!sc || !sc.gps) return;
+          L.circleMarker([sc.gps.lat, sc.gps.lng], {
+            radius:5, fillColor:'${accentColor}', fillOpacity:1, color:'#fff', weight:2, interactive:false,
+          }).addTo(miniMap);
+          scenePts.push([sc.gps.lat, sc.gps.lng]);
+        });
+        if (scenePts.length === 1) miniMap.setView(scenePts[0], 13);
+        else if (scenePts.length > 1) miniMap.fitBounds(scenePts, {padding:[12,12]});
+        // Force Leaflet to recalculate container size after CSS layout settles
+        setTimeout(function() { miniMap.invalidateSize(); }, 150);
       });
-      if (pts.length === 1) miniMap.setView(pts[0], 13);
-      else if (pts.length > 1) miniMap.fitBounds(pts, {padding:[12,12]});
-    }, 700);
+    }, 400);
   })();
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>
