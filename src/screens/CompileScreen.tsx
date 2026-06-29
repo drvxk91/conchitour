@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
   Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown, Key,
-  ClipboardCheck,
+  ClipboardCheck, Globe, Lock, Wifi, QrCode, Eye, Square, Zap, ArrowRight,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import clsx from 'clsx';
 import { useProject } from '@/store/project';
 import { useLicense } from '@/store/license';
@@ -80,11 +81,33 @@ function LicenseInfoCard({ info, preview = false }: { info: LicenseInfo; preview
   );
 }
 
+function QrModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  useEffect(() => {
+    QRCode.toDataURL(url, { width: 280, margin: 2 }).then(setDataUrl).catch(() => {});
+  }, [url]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl p-6 flex flex-col items-center gap-4 max-w-xs w-full mx-4" onClick={e => e.stopPropagation()}>
+        <p className="text-sm font-semibold text-ink">Scan to open on your phone</p>
+        {dataUrl
+          ? <img src={dataUrl} alt="QR code" className="w-48 h-48 rounded-lg" />
+          : <div className="w-48 h-48 flex items-center justify-center"><Loader2 size={24} className="animate-spin text-ink-faded" /></div>
+        }
+        <p className="text-[11px] text-ink-faded font-mono text-center break-all">{url}</p>
+        <button onClick={onClose} className="btn w-full justify-center">Close</button>
+      </div>
+    </div>
+  );
+}
+
 export function CompileScreen() {
   const { project, setIsCompiling, clearDirty, setActiveScreen } = useProject();
   const { status: appLicenseStatus } = useLicense();
   const trial = useTrialState();
   const licenseExpired = appLicenseStatus === 'expired' || (trial?.isExpired ?? false);
+  const isTrial   = appLicenseStatus === 'trial' && !licenseExpired;
+  const isLicensed = appLicenseStatus === 'valid' && !licenseExpired;
 
   const [settings, setSettings]             = useState<ConchitourSettings | null>(null);
   const [krpanoPathDraft, setKrpanoPathDraft] = useState('');
@@ -99,6 +122,7 @@ export function CompileScreen() {
   const [outputDir, setOutputDir]           = useState('');
   const [log, setLog]                       = useState<LogEntry[]>([]);
   const [running, setRunning]               = useState(false);
+  const [runMode, setRunMode]               = useState<'compile' | 'preview' | null>(null);
   const [result, setResult]                 = useState<CompileResult | null>(null);
   const [copied, setCopied]                 = useState(false);
   const [forceRegenTiles, setForceRegenTiles] = useState(false);
@@ -107,6 +131,9 @@ export function CompileScreen() {
   const completedStepsRef                   = useRef<Set<StepId>>(new Set());
   const logRef                              = useRef<HTMLDivElement>(null);
   const resultRef                           = useRef<HTMLDivElement>(null);
+
+  const [lanUrl, setLanUrl]   = useState<string | null>(null);
+  const [showQr, setShowQr]  = useState(false);
 
   const parsedLicense = useMemo(() => parseLicenseCode(licenseCode), [licenseCode]);
 
@@ -149,7 +176,6 @@ export function CompileScreen() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
-  // Scroll result into view when it appears
   useEffect(() => {
     if (result && resultRef.current) {
       resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -206,8 +232,6 @@ export function CompileScreen() {
     setLicenseResult(null);
     try {
       const res = await window.conchitour.krpanoRegister(settings.krpanoPath, licenseCode);
-      // Always refresh license file status regardless of exit code —
-      // krpanotools may return non-zero even on success ("Code registered.")
       const ls = await window.conchitour.krpanoLicenseStatus(settings.krpanoPath);
       setLicenseStatus(ls);
       const effective = { ...res, ok: res.ok || ls.present };
@@ -229,13 +253,50 @@ export function CompileScreen() {
     if (dir) { setOutputDir(dir); patchSettings({ lastOutputDir: dir }); }
   }, [patchSettings]);
 
-  const handleCompile = useCallback(async () => {
-    if (!outputDir || running) return;
+  const resetRunState = useCallback(() => {
     setLog([]);
     setResult(null);
     setCurrentStep(null);
+    setTileProgress(null);
+    setLanUrl(null);
     completedStepsRef.current = new Set();
+  }, []);
+
+  const fetchLanUrl = useCallback(async () => {
+    const lan = await window.conchitour.previewGetLanUrl();
+    if (lan) setLanUrl(lan);
+  }, []);
+
+  const handlePreview = useCallback(async () => {
+    if (running) return;
+    resetRunState();
     setRunning(true);
+    setRunMode('preview');
+    setIsCompiling(true);
+    try {
+      const saved = await window.conchitour.saveProject(project);
+      if (saved) clearDirty();
+      const res = await window.conchitour.previewStart(project);
+      setResult(res);
+      if (res.ok) await fetchLanUrl();
+    } finally {
+      setRunning(false);
+      setIsCompiling(false);
+    }
+  }, [running, project, setIsCompiling, clearDirty, resetRunState, fetchLanUrl]);
+
+  const handleStopPreview = useCallback(async () => {
+    await window.conchitour.previewStop();
+    setResult(null);
+    setLanUrl(null);
+    setRunMode(null);
+  }, []);
+
+  const handleCompile = useCallback(async () => {
+    if (!outputDir || running) return;
+    resetRunState();
+    setRunning(true);
+    setRunMode('compile');
     setIsCompiling(true);
     try {
       const saved = await window.conchitour.saveProject(project);
@@ -243,11 +304,12 @@ export function CompileScreen() {
       const projectData = forceRegenTiles ? { ...project, __forceRegenTiles: true } : project;
       const res = await window.conchitour.compileRun(projectData, outputDir);
       setResult(res);
+      if (res.ok) await fetchLanUrl();
     } finally {
       setRunning(false);
       setIsCompiling(false);
     }
-  }, [outputDir, running, project, setIsCompiling, forceRegenTiles]);
+  }, [outputDir, running, project, setIsCompiling, forceRegenTiles, clearDirty, resetRunState, fetchLanUrl]);
 
   const handleCancel = useCallback(() => { window.conchitour.compileCancel(); }, []);
 
@@ -261,13 +323,14 @@ export function CompileScreen() {
 
   const sceneCount = project.scenes.length;
   const krpanoOk   = validation?.valid ?? false;
-  const canCompile = outputDir.length > 0 && sceneCount > 0 && !running && !licenseExpired;
+  const canCompile = outputDir.length > 0 && sceneCount > 0 && !running && isLicensed;
+  const canPreview = sceneCount > 0 && !running;
 
   const auditIssues = useMemo(() => runStaticAudit(project), [project]);
   const auditErrors   = auditIssues.filter((i) => i.severity === 'error').length;
   const auditWarnings = auditIssues.filter((i) => i.severity === 'warning').length;
 
-  const checks = [
+  const compilePreflight = [
     { label: sceneCount > 0 ? `${sceneCount} scene${sceneCount !== 1 ? 's' : ''} ready` : 'No scenes — add scenes first', ok: sceneCount > 0 },
     { label: outputDir ? `Output: ${outputDir}` : 'No output folder selected', ok: outputDir.length > 0 },
     {
@@ -289,12 +352,249 @@ export function CompileScreen() {
     );
   }
 
-  return (
-    <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
-      {licenseExpired && (
+  /* ─── Progress + Result — shared by both trial and licensed ─────── */
+  const progressAndResult = (
+    <>
+      {(log.length > 0 || running) && (
+        <section className="space-y-3">
+          <p className="text-sm font-medium text-ink">Progress</p>
+          <div className="rounded-lg border border-line bg-paper space-y-1 p-3">
+            {COMPILE_STEPS.map((step) => {
+              const isDone    = completedStepsRef.current.has(step.id) || (!running && result?.ok);
+              const isCurrent = currentStep === step.id && running;
+              const isWaiting = !isDone && !isCurrent;
+              const showTileProgress = step.id === 'tiles' && isCurrent && tileProgress;
+              return (
+                <div key={step.id} className={clsx('flex flex-col gap-0.5 py-0.5', isWaiting && 'opacity-35')}>
+                  <div className="flex items-center gap-2.5 text-sm">
+                    {isDone
+                      ? <CheckCircle size={13} className="text-emerald-500 shrink-0" />
+                      : isCurrent
+                        ? <Loader2 size={13} className="text-accent animate-spin shrink-0" />
+                        : <Circle size={13} className="text-line-strong shrink-0" />}
+                    <span className={clsx('text-xs', isDone && 'text-ink', isCurrent && 'text-ink font-medium', isWaiting && 'text-ink-soft')}>
+                      {step.label}
+                    </span>
+                    {showTileProgress && (
+                      <span className="ml-auto text-[11px] text-ink-faded font-mono">
+                        {tileProgress.sceneIndex}/{tileProgress.totalScenes} · {tileProgress.percent}%
+                      </span>
+                    )}
+                  </div>
+                  {showTileProgress && (
+                    <div className="ml-[21px] h-1 rounded-full bg-line overflow-hidden">
+                      <div className="h-full bg-accent rounded-full transition-all duration-150" style={{ width: `${tileProgress.percent}%` }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <details className="group">
+            <summary className="flex items-center gap-1.5 text-xs text-ink-faded cursor-pointer select-none hover:text-ink-soft list-none">
+              <ChevronDown size={11} className="transition-transform group-open:rotate-180" />
+              Raw output ({log.length} lines)
+            </summary>
+            <div ref={logRef} className="mt-2 bg-zinc-900 rounded-lg px-4 py-3 space-y-0.5 max-h-48 overflow-y-auto font-mono text-[11px]">
+              {log.map((entry, i) => (
+                <div key={i} className={clsx('flex items-start gap-2', entry.status === 'ok' && 'text-emerald-400', entry.status === 'error' && 'text-red-400', entry.status === 'running' && 'text-yellow-400', entry.status === 'info' && 'text-zinc-400')}>
+                  <span className="select-none shrink-0 w-3 text-center">
+                    {entry.status === 'ok' && '✓'}{entry.status === 'error' && '✗'}{entry.status === 'running' && '●'}{entry.status === 'info' && '·'}
+                  </span>
+                  <span>{entry.msg}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+        </section>
+      )}
+
+      {result && (
+        <section ref={resultRef} className={clsx('rounded-lg border px-4 py-4', result.ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50')}>
+          {result.ok ? (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-emerald-700">
+                  {result.isPreview ? 'Preview running!' : 'Tour compiled successfully!'}
+                </p>
+                {result.fileCount != null && result.sizeBytes != null && (
+                  <p className="text-xs text-emerald-600 mt-0.5">{result.fileCount} files — {(result.sizeBytes / 1048576).toFixed(1)} MB</p>
+                )}
+              </div>
+
+              {/* Local URL */}
+              {result.previewUrl && (
+                <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded-md px-3 py-2">
+                  <Globe size={12} className="text-emerald-500 shrink-0" />
+                  <span className="text-xs text-emerald-700 font-mono flex-1 truncate">{result.previewUrl}</span>
+                  <button onClick={() => window.conchitour.openUrl(result.previewUrl!)} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 shrink-0">
+                    <ExternalLink size={11} />
+                    Open
+                  </button>
+                </div>
+              )}
+
+              {/* LAN URL */}
+              {lanUrl && (
+                <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded-md px-3 py-2">
+                  <Wifi size={12} className="text-emerald-500 shrink-0" />
+                  <span className="text-xs text-emerald-700 font-mono flex-1 truncate">{lanUrl}</span>
+                  <button onClick={() => setShowQr(true)} className="flex items-center gap-1 px-2 py-1 rounded border border-emerald-300 text-emerald-700 text-xs font-medium hover:bg-emerald-100 shrink-0">
+                    <QrCode size={11} />
+                    QR
+                  </button>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 flex-wrap">
+                {result.isPreview ? (
+                  <button onClick={handleStopPreview} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500 text-white text-xs font-medium hover:bg-red-600">
+                    <Square size={11} />
+                    Stop preview
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={() => window.conchitour.openFolder(result.outputDir!)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700">
+                      <ExternalLink size={12} />
+                      Open folder
+                    </button>
+                    <button onClick={handleCopyPath} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-300 text-emerald-700 text-xs font-medium hover:bg-emerald-100">
+                      <Copy size={12} />
+                      {copied ? 'Copied!' : 'Copy path'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {!result.isPreview && (
+                <p className="text-xs text-emerald-600/70 font-mono">
+                  Deploy: cd &quot;{result.outputDir}&quot; &amp;&amp; npm install &amp;&amp; node server.js
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm font-medium text-red-700">
+              {result.error === 'TRIAL_BLOCKED'
+                ? 'Compile to folder requires a license. Use Preview instead.'
+                : `Failed: ${result.error}`}
+            </p>
+          )}
+        </section>
+      )}
+    </>
+  );
+
+  /* ─── Audit banner — shared ────────────────────────────────────── */
+  const auditBanner = auditErrors > 0 ? (
+    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+      <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-red-700">
+          {auditErrors} error{auditErrors !== 1 ? 's' : ''} found — visitors may see problems.
+        </p>
+        <button onClick={() => setActiveScreen('audit')} className="mt-1 text-xs text-red-600 underline">
+          Review in Audit screen
+        </button>
+      </div>
+    </div>
+  ) : auditWarnings > 0 ? (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+      <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-amber-700">
+          {auditWarnings} warning{auditWarnings !== 1 ? 's' : ''} — tour will compile but quality could improve.
+        </p>
+        <button onClick={() => setActiveScreen('audit')} className="mt-1 text-xs text-amber-600 underline">
+          Review suggestions
+        </button>
+      </div>
+    </div>
+  ) : sceneCount > 0 ? (
+    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+      <ClipboardCheck size={15} className="text-green-500 shrink-0" />
+      <p className="text-sm text-green-700 font-medium">Audit passed — ready to go.</p>
+    </div>
+  ) : null;
+
+  /* ─── TRIAL layout ─────────────────────────────────────────────── */
+  if (isTrial) {
+    return (
+      <ScreenShell title="Preview" subtitle="Launch a local server to test your tour in the browser.">
+        {showQr && lanUrl && <QrModal url={lanUrl} onClose={() => setShowQr(false)} />}
+        <div className="grid grid-cols-2 gap-8 max-w-5xl mx-auto">
+
+          {/* LEFT — trial info */}
+          <div className="space-y-6">
+            <section className="rounded-xl border border-accent/30 bg-accent/5 p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Eye size={16} className="text-accent" />
+                <span className="text-sm font-semibold text-ink">Trial — Preview only</span>
+              </div>
+              <ul className="space-y-2 text-sm text-ink-soft">
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-500 shrink-0 mt-0.5" /> Preview opens in your default browser</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-500 shrink-0 mt-0.5" /> Share the LAN URL with a phone or client on the same network</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-emerald-500 shrink-0 mt-0.5" /> QR code for instant mobile testing</li>
+                <li className="flex items-start gap-2"><Lock size={14} className="text-ink-faded shrink-0 mt-0.5" /> <span className="text-ink-faded">Trial watermark visible — license removes it</span></li>
+                <li className="flex items-start gap-2"><Lock size={14} className="text-ink-faded shrink-0 mt-0.5" /> <span className="text-ink-faded">Export to folder requires a license</span></li>
+              </ul>
+            </section>
+
+            <section className="rounded-xl border border-line-soft bg-paper-tinted p-4 space-y-3">
+              <p className="text-sm font-semibold text-ink">Unlock full compile</p>
+              <p className="text-sm text-ink-soft">Purchase a license to export your tour as a static folder you can upload to any host.</p>
+              <button
+                onClick={() => window.conchitour.openUrl('https://conchitour.com')}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:opacity-90"
+              >
+                Get a license
+                <ArrowRight size={14} />
+              </button>
+            </section>
+          </div>
+
+          {/* RIGHT — preview action */}
+          <div className="space-y-6">
+            {sceneCount === 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-2">
+                <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                <p className="text-sm text-amber-700">No scenes yet — add scenes first.</p>
+              </div>
+            )}
+            {auditBanner}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePreview}
+                disabled={!canPreview}
+                className={clsx(
+                  'flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all',
+                  canPreview ? 'bg-accent text-white hover:opacity-90 shadow-sm cursor-pointer' : 'bg-paper-strong text-ink-faded cursor-not-allowed'
+                )}
+              >
+                {running && runMode === 'preview' ? <><Loader2 size={15} className="animate-spin" />Building preview…</> : <><Eye size={15} />Preview tour</>}
+              </button>
+              {running && runMode === 'preview' && (
+                <button onClick={handleCancel} className="btn btn-danger">
+                  <XCircle size={14} />
+                  Cancel
+                </button>
+              )}
+            </div>
+            {progressAndResult}
+          </div>
+
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  /* ─── EXPIRED layout ───────────────────────────────────────────── */
+  if (licenseExpired) {
+    return (
+      <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
         <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 max-w-5xl mx-auto">
           <AlertTriangle size={15} className="text-amber-500 flex-shrink-0" />
-          <p className="text-sm text-amber-800 flex-1">License expired. Compile is disabled until renewal.</p>
+          <p className="text-sm text-amber-800 flex-1">License expired. Compile and Preview are disabled until renewal.</p>
           <button
             onClick={() => window.conchitour.openUrl('https://conchitour.com')}
             className="text-xs font-medium text-amber-700 hover:text-amber-900 underline whitespace-nowrap"
@@ -302,20 +602,24 @@ export function CompileScreen() {
             Renew now
           </button>
         </div>
-      )}
+      </ScreenShell>
+    );
+  }
+
+  /* ─── LICENSED layout ──────────────────────────────────────────── */
+  return (
+    <ScreenShell title="Compile" subtitle="Generate a static folder ready to upload anywhere.">
+      {showQr && lanUrl && <QrModal url={lanUrl} onClose={() => setShowQr(false)} />}
       <div className="grid grid-cols-2 gap-8 max-w-5xl mx-auto">
 
-        {/* ── LEFT: Setup ─────────────────────────────────────────────── */}
+        {/* LEFT: Setup */}
         <div className="space-y-7">
 
-          {/* krpano — installation + license in one card */}
           <section className="rounded-xl border border-line-soft bg-paper-tinted p-4 space-y-3">
             <div className="flex items-center gap-2">
               <Settings size={13} className="text-ink-soft" />
               <span className="text-sm font-medium text-ink">krpano</span>
             </div>
-
-            {/* Path */}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -338,7 +642,6 @@ export function CompileScreen() {
               </div>
             )}
 
-            {/* License — shown once the path is set */}
             {settings?.krpanoPath && licenseStatus !== null && (
               <div className="border-t border-line-soft/60 pt-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -368,7 +671,6 @@ export function CompileScreen() {
                     </div>
                   </>
                 )}
-                {/* Result shown regardless of activated/not — survives status flip */}
                 {licenseResult && (
                   <div className={clsx('rounded-md px-3 py-2 text-xs font-mono whitespace-pre-wrap break-all',
                     licenseResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
@@ -380,7 +682,6 @@ export function CompileScreen() {
             )}
           </section>
 
-          {/* Output folder */}
           <section className="space-y-2">
             <label className="text-sm font-medium text-ink">Output folder</label>
             <div className="flex gap-2">
@@ -394,7 +695,6 @@ export function CompileScreen() {
             </div>
           </section>
 
-          {/* Options */}
           <section className="space-y-2">
             <p className="text-sm font-medium text-ink">Options</p>
             <div className="space-y-2.5">
@@ -433,14 +733,13 @@ export function CompileScreen() {
 
         </div>
 
-        {/* ── RIGHT: Pre-flight + Compile + Progress + Result ──────────── */}
+        {/* RIGHT: Pre-flight + Actions + Progress + Result */}
         <div className="space-y-6">
 
-          {/* Pre-flight */}
           <section className="space-y-2">
             <p className="text-sm font-medium text-ink">Pre-flight</p>
             <ul className="space-y-1.5">
-              {checks.map((c, i) => (
+              {compilePreflight.map((c, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm">
                   {c.ok === null
                     ? <Circle size={14} className="text-line-strong shrink-0 mt-0.5" />
@@ -453,46 +752,10 @@ export function CompileScreen() {
             </ul>
           </section>
 
-          {/* Audit banner */}
-          {auditErrors > 0 ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
-              <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-red-700">
-                  {auditErrors} error{auditErrors !== 1 ? 's' : ''} found — visitors may see problems.
-                </p>
-                <button
-                  onClick={() => setActiveScreen('audit')}
-                  className="mt-1 text-xs text-red-600 underline"
-                >
-                  Review in Audit screen
-                </button>
-              </div>
-            </div>
-          ) : auditWarnings > 0 ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-              <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-amber-700">
-                  {auditWarnings} warning{auditWarnings !== 1 ? 's' : ''} — tour will compile but quality could improve.
-                </p>
-                <button
-                  onClick={() => setActiveScreen('audit')}
-                  className="mt-1 text-xs text-amber-600 underline"
-                >
-                  Review suggestions
-                </button>
-              </div>
-            </div>
-          ) : sceneCount > 0 ? (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
-              <ClipboardCheck size={15} className="text-green-500 shrink-0" />
-              <p className="text-sm text-green-700 font-medium">Audit passed — ready to compile.</p>
-            </div>
-          ) : null}
+          {auditBanner}
 
-          {/* Compile button */}
-          <div className="flex items-center gap-3">
+          {/* Action buttons */}
+          <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={handleCompile}
               disabled={!canCompile}
@@ -501,7 +764,18 @@ export function CompileScreen() {
                 canCompile ? 'bg-accent text-white hover:opacity-90 shadow-sm cursor-pointer' : 'bg-paper-strong text-ink-faded cursor-not-allowed'
               )}
             >
-              {running ? <><Loader2 size={15} className="animate-spin" />Compiling…</> : <><Play size={15} />Compile tour</>}
+              {running && runMode === 'compile' ? <><Loader2 size={15} className="animate-spin" />Compiling…</> : <><Play size={15} />Compile tour</>}
+            </button>
+            <button
+              onClick={handlePreview}
+              disabled={!canPreview}
+              title="Quick local preview — opens in browser, no output folder needed"
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all border',
+                canPreview ? 'border-line-strong text-ink hover:bg-paper-tinted cursor-pointer' : 'border-line text-ink-faded cursor-not-allowed'
+              )}
+            >
+              {running && runMode === 'preview' ? <><Loader2 size={14} className="animate-spin" />Building…</> : <><Zap size={14} />Quick preview</>}
             </button>
             {running && (
               <button onClick={handleCancel} className="btn btn-danger">
@@ -511,103 +785,8 @@ export function CompileScreen() {
             )}
           </div>
 
-          {(log.length > 0 || running) && (
-            <section className="space-y-3">
-              <p className="text-sm font-medium text-ink">Progress</p>
+          {progressAndResult}
 
-              {/* Named steps */}
-              <div className="rounded-lg border border-line bg-paper space-y-1 p-3">
-                {COMPILE_STEPS.map((step) => {
-                  const isDone    = completedStepsRef.current.has(step.id) || (!running && result?.ok);
-                  const isCurrent = currentStep === step.id && running;
-                  const isWaiting = !isDone && !isCurrent;
-                  const showTileProgress = step.id === 'tiles' && isCurrent && tileProgress;
-                  return (
-                    <div key={step.id} className={clsx('flex flex-col gap-0.5 py-0.5', isWaiting && 'opacity-35')}>
-                      <div className="flex items-center gap-2.5 text-sm">
-                        {isDone
-                          ? <CheckCircle size={13} className="text-emerald-500 shrink-0" />
-                          : isCurrent
-                            ? <Loader2 size={13} className="text-accent animate-spin shrink-0" />
-                            : <Circle size={13} className="text-line-strong shrink-0" />}
-                        <span className={clsx('text-xs', isDone && 'text-ink', isCurrent && 'text-ink font-medium', isWaiting && 'text-ink-soft')}>
-                          {step.label}
-                        </span>
-                        {showTileProgress && (
-                          <span className="ml-auto text-[11px] text-ink-faded font-mono">
-                            {tileProgress.sceneIndex}/{tileProgress.totalScenes} · {tileProgress.percent}%
-                          </span>
-                        )}
-                      </div>
-                      {showTileProgress && (
-                        <div className="ml-[21px] h-1 rounded-full bg-line overflow-hidden">
-                          <div className="h-full bg-accent rounded-full transition-all duration-150" style={{ width: `${tileProgress.percent}%` }} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Raw log (collapsible) */}
-              <details className="group">
-                <summary className="flex items-center gap-1.5 text-xs text-ink-faded cursor-pointer select-none hover:text-ink-soft list-none">
-                  <ChevronDown size={11} className="transition-transform group-open:rotate-180" />
-                  Raw output ({log.length} lines)
-                </summary>
-                <div ref={logRef} className="mt-2 bg-zinc-900 rounded-lg px-4 py-3 space-y-0.5 max-h-48 overflow-y-auto font-mono text-[11px]">
-                  {log.map((entry, i) => (
-                    <div key={i} className={clsx('flex items-start gap-2', entry.status === 'ok' && 'text-emerald-400', entry.status === 'error' && 'text-red-400', entry.status === 'running' && 'text-yellow-400', entry.status === 'info' && 'text-zinc-400')}>
-                      <span className="select-none shrink-0 w-3 text-center">
-                        {entry.status === 'ok' && '✓'}{entry.status === 'error' && '✗'}{entry.status === 'running' && '●'}{entry.status === 'info' && '·'}
-                      </span>
-                      <span>{entry.msg}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            </section>
-          )}
-
-          {/* Result banner */}
-          {result && (
-            <section ref={resultRef} className={clsx('rounded-lg border px-4 py-4', result.ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50')}>
-              {result.ok ? (
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-700">Tour compiled successfully!</p>
-                    {result.fileCount != null && result.sizeBytes != null && (
-                      <p className="text-xs text-emerald-600 mt-0.5">{result.fileCount} files — {(result.sizeBytes / 1048576).toFixed(1)} MB</p>
-                    )}
-                  </div>
-                  {result.previewUrl && (
-                    <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded-md px-3 py-2">
-                      <span className="text-xs text-emerald-700 font-mono flex-1 truncate">{result.previewUrl}</span>
-                      <button onClick={() => window.conchitour.openUrl(result.previewUrl!)} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 shrink-0">
-                        <ExternalLink size={11} />
-                        Open
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => window.conchitour.openFolder(result.outputDir!)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700">
-                      <ExternalLink size={12} />
-                      Open folder
-                    </button>
-                    <button onClick={handleCopyPath} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-300 text-emerald-700 text-xs font-medium hover:bg-emerald-100">
-                      <Copy size={12} />
-                      {copied ? 'Copied!' : 'Copy path'}
-                    </button>
-                  </div>
-                  <p className="text-xs text-emerald-600/70 font-mono">
-                    Deploy: cd &quot;{result.outputDir}&quot; &amp;&amp; npm install &amp;&amp; node server.js
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm font-medium text-red-700">Compile failed: {result.error}</p>
-              )}
-            </section>
-          )}
         </div>
 
       </div>
