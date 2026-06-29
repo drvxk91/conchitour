@@ -10,6 +10,7 @@ import { BUILTIN_PAGE_SLUGS } from '@/lib/builtin-pages';
 import { generatePageWithAi } from '@/lib/ai-seo';
 import { resolveAiProvider } from '@/lib/ai-resolve';
 import { consumeTrialAiCall } from '@/lib/trial';
+import { withContextGate } from '@/lib/ai-context-gate';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import type { UpgradeFeature } from '@/components/UpgradeModal';
 
@@ -105,35 +106,37 @@ export function PagesScreen() {
       setAiError('No API key configured — set your key in the AI screen first.');
       return;
     }
-    const trialErr = await consumeTrialAiCall();
-    if (trialErr) { setUpgradeFeature('ai'); return; }
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setAiGenerating(true);
-    setAiError('');
-    setUndoContent(null);
-    setRedoContent(null);
-    const existingContent = selected.content[activeLang] ?? selected.content[defaultLang] ?? '';
-    try {
-      const content = await generatePageWithAi(
-        project,
-        selected.slug,
-        selected.title[activeLang] || selected.title[defaultLang] || selected.slug,
-        activeLang,
-        resolved.provider,
-        resolved.apiKey,
-        existingContent,
-        () => {},
-        controller.signal,
-      );
-      // Save undo snapshot before applying
-      setUndoContent({ pageId: selected.id, lang: activeLang, content: existingContent });
-      updatePage(selected.id, { content: { ...selected.content, [activeLang]: content } });
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setAiError(String(err));
-    } finally {
-      setAiGenerating(false);
-    }
+    await withContextGate(project, async () => {
+      const trialErr = await consumeTrialAiCall();
+      if (trialErr) { setUpgradeFeature('ai'); return; }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setAiGenerating(true);
+      setAiError('');
+      setUndoContent(null);
+      setRedoContent(null);
+      const existingContent = selected.content[activeLang] ?? selected.content[defaultLang] ?? '';
+      try {
+        const content = await generatePageWithAi(
+          project,
+          selected.slug,
+          selected.title[activeLang] || selected.title[defaultLang] || selected.slug,
+          activeLang,
+          resolved.provider,
+          resolved.apiKey,
+          existingContent,
+          () => {},
+          controller.signal,
+        );
+        // Save undo snapshot before applying
+        setUndoContent({ pageId: selected.id, lang: activeLang, content: existingContent });
+        updatePage(selected.id, { content: { ...selected.content, [activeLang]: content } });
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') setAiError(String(err));
+      } finally {
+        setAiGenerating(false);
+      }
+    }, 'pages');
   }
 
   function handleUndoPage() {

@@ -6,6 +6,7 @@ import { toLocalUrl } from '@/lib/local-url';
 import { callAiStreaming } from '@/lib/ai-content';
 import { resolvedModelId, computeAiCost } from '@/lib/ai-tracking';
 import { consumeTrialAiCall } from '@/lib/trial';
+import { withContextGate } from '@/lib/ai-context-gate';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import type { UpgradeFeature } from '@/components/UpgradeModal';
 import type { TourTheme } from '@/types';
@@ -97,6 +98,7 @@ export function BrandingScreen() {
       return;
     }
 
+    await withContextGate(project, async () => {
     const trialErr = await consumeTrialAiCall();
     if (trialErr) { setUpgradeFeature('ai'); return; }
 
@@ -166,6 +168,7 @@ Return ONLY valid JSON (no markdown, no explanation):
       setGenError((err as Error).message || 'Generation failed');
       setGenState('error');
     }
+    }, 'branding');
   }
 
   function patchTheme(patch: Partial<TourTheme>) {

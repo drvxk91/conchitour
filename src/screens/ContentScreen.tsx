@@ -12,6 +12,7 @@ import type { Scene } from '@/types';
 import { GenerateModal } from './content/GenerateModal';
 import { ImportDiffModal } from './content/ImportDiffModal';
 import type { ImportChange, ImportDiffResult } from '../../electron/preload';
+import { withContextGate } from '@/lib/ai-context-gate';
 
 // ── Inline editable cell ──────────────────────────────────────────────────────
 
@@ -343,9 +344,11 @@ export function ContentScreen() {
     showToast('Import undone.');
   }
 
-  function openGenerateModal(sceneId?: string) {
-    setGenScopeSceneId(sceneId ?? null);
-    setShowGenModal(true);
+  async function openGenerateModal(sceneId?: string) {
+    await withContextGate(project, async () => {
+      setGenScopeSceneId(sceneId ?? null);
+      setShowGenModal(true);
+    }, 'generate');
   }
 
   if (project.scenes.length === 0) {

@@ -12,6 +12,7 @@ import { resolveAiProvider } from '@/lib/ai-resolve';
 import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
 import { runSeoAudit } from '@/lib/seo-audit';
 import { consumeTrialAiCall } from '@/lib/trial';
+import { withContextGate } from '@/lib/ai-context-gate';
 import { UpgradeModal } from '@/components/UpgradeModal';
 import type { UpgradeFeature } from '@/components/UpgradeModal';
 import type { AuditIssue, AuditReport, AuditSeverity, AuditCategory } from '@/types';
@@ -197,52 +198,54 @@ export function AuditScreen() {
 
   async function handleRunAi() {
     if (!ai || aiRunning) return;
-    const trialErr = await consumeTrialAiCall();
-    if (trialErr) { setUpgradeFeature('ai'); return; }
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    setAiRunning(true);
-    setAiError('');
-    setAiStatus('');
-    setAiStreamText('');
-    setAiTokensIn(0);
-    setAiTokensOut(0);
-
-    try {
-      const staticIssues = runStaticAudit(project);
-
-      const handleEvent = (ev: AuditStreamEvent) => {
-        if (ev.type === 'status') setAiStatus(ev.message);
-        if (ev.type === 'token') setAiStreamText((t) => t + ev.text);
-      };
-
-      const { issues: aiIssues, tokensIn, tokensOut } = await runAiAuditStreaming(
-        project, { ...ai!, modelId: auditModelId }, handleEvent, ctrl.signal,
-      );
-
-      setAiTokensIn(tokensIn);
-      setAiTokensOut(tokensOut);
-      const costUsd = computeAiCost(auditModelId, tokensIn, tokensOut);
-      recordAiUsage({
-        provider: ai!.provider === 'gpt' ? 'openai' : 'anthropic',
-        modelId: auditModelId,
-        inputTokens: tokensIn,
-        outputTokens: tokensOut,
-        costUsd,
-        operation: 'audit',
-      });
-      setReport(buildReport([...staticIssues, ...aiIssues], true, tokensIn, tokensOut));
-      showToast(`AI audit complete — ${aiIssues.length} suggestion${aiIssues.length !== 1 ? 's' : ''}`);
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        showToast('AI audit cancelled');
-      } else {
-        setAiError(String(err));
-      }
-    } finally {
-      setAiRunning(false);
+    await withContextGate(project, async () => {
+      const trialErr = await consumeTrialAiCall();
+      if (trialErr) { setUpgradeFeature('ai'); return; }
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      setAiRunning(true);
+      setAiError('');
       setAiStatus('');
-    }
+      setAiStreamText('');
+      setAiTokensIn(0);
+      setAiTokensOut(0);
+
+      try {
+        const staticIssues = runStaticAudit(project);
+
+        const handleEvent = (ev: AuditStreamEvent) => {
+          if (ev.type === 'status') setAiStatus(ev.message);
+          if (ev.type === 'token') setAiStreamText((t) => t + ev.text);
+        };
+
+        const { issues: aiIssues, tokensIn, tokensOut } = await runAiAuditStreaming(
+          project, { ...ai!, modelId: auditModelId }, handleEvent, ctrl.signal,
+        );
+
+        setAiTokensIn(tokensIn);
+        setAiTokensOut(tokensOut);
+        const costUsd = computeAiCost(auditModelId, tokensIn, tokensOut);
+        recordAiUsage({
+          provider: ai!.provider === 'gpt' ? 'openai' : 'anthropic',
+          modelId: auditModelId,
+          inputTokens: tokensIn,
+          outputTokens: tokensOut,
+          costUsd,
+          operation: 'audit',
+        });
+        setReport(buildReport([...staticIssues, ...aiIssues], true, tokensIn, tokensOut));
+        showToast(`AI audit complete — ${aiIssues.length} suggestion${aiIssues.length !== 1 ? 's' : ''}`);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          showToast('AI audit cancelled');
+        } else {
+          setAiError(String(err));
+        }
+      } finally {
+        setAiRunning(false);
+        setAiStatus('');
+      }
+    }, 'audit');
   }
 
   function handleDismiss(id: string) {

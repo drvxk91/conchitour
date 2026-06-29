@@ -5,6 +5,7 @@ import { ScreenShell } from '@/components/shell/ScreenShell';
 import { generateSeoWithAi } from '@/lib/ai-seo';
 import { resolveAiProvider } from '@/lib/ai-resolve';
 import { runSeoAudit, type SeoCheck, type SeoCheckStatus } from '@/lib/seo-audit';
+import { withContextGate } from '@/lib/ai-context-gate';
 
 const inputCls =
   'w-full bg-paper-strong border border-line-soft rounded px-3 py-1.5 text-sm text-ink placeholder-ink-faded focus:outline-none focus:border-accent';
@@ -221,46 +222,48 @@ export function SeoScreen() {
     const resolved = resolveAiProvider(project.modules);
     if (!resolved) { setAiError('No API key configured — set it in the AI screen first.'); return; }
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setAiState('running');
-    setAiError('');
-    setUndoSnapshot(null);
-    setRedoSnapshot(null);
+    await withContextGate(project, async () => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setAiState('running');
+      setAiError('');
+      setUndoSnapshot(null);
+      setRedoSnapshot(null);
 
-    try {
-      const result = await generateSeoWithAi(
-        project, resolved.provider, resolved.apiKey,
-        defaultLang, langs, fillMode, genAltTexts,
-        () => {}, controller.signal,
-      );
+      try {
+        const result = await generateSeoWithAi(
+          project, resolved.provider, resolved.apiKey,
+          defaultLang, langs, fillMode, genAltTexts,
+          () => {}, controller.signal,
+        );
 
-      setUndoSnapshot({ ...s });
-      updateSeo({
-        metaTitle:       result.metaTitle,
-        metaDescription: result.metaDescription,
-        keywords:        result.keywords,
-        schemaType:      result.schemaType,
-      });
+        setUndoSnapshot({ ...s });
+        updateSeo({
+          metaTitle:       result.metaTitle,
+          metaDescription: result.metaDescription,
+          keywords:        result.keywords,
+          schemaType:      result.schemaType,
+        });
 
-      if (result.altTexts) {
-        for (const scene of project.scenes) {
-          const newAlt = { ...(scene.altText ?? {}) };
-          let changed = false;
-          for (const lang of langs) {
-            const alt = result.altTexts[lang]?.[scene.slug];
-            if (alt) { newAlt[lang] = alt; changed = true; }
+        if (result.altTexts) {
+          for (const scene of project.scenes) {
+            const newAlt = { ...(scene.altText ?? {}) };
+            let changed = false;
+            for (const lang of langs) {
+              const alt = result.altTexts[lang]?.[scene.slug];
+              if (alt) { newAlt[lang] = alt; changed = true; }
+            }
+            if (changed) updateScene(scene.id, { altText: newAlt });
           }
-          if (changed) updateScene(scene.id, { altText: newAlt });
         }
-      }
 
-      setAiState('done');
-      setTimeout(() => setAiState('idle'), 3000);
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setAiError(String(err));
-      setAiState('idle');
-    }
+        setAiState('done');
+        setTimeout(() => setAiState('idle'), 3000);
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') setAiError(String(err));
+        setAiState('idle');
+      }
+    }, 'seo');
   }
 
   return (
