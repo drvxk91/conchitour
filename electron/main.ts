@@ -3430,13 +3430,9 @@ ${hsPreviewCss}
         max-height:60vh;border-radius:16px 16px 0 0;
         box-shadow:0 -4px 32px rgba(0,0,0,.25);
       }
-      #strip-scroll{height:90px;padding:8px 8px 10px}
-      .sc-img{width:68px}
-      .sc-img img{width:68px;height:42px}
       #text-popup-inner{padding:32px 24px 36px;border-radius:16px 16px 0 0;max-height:90vh}
       #desc-overlay{display:flex}
       .hdr-btn{min-width:28px;height:28px;font-size:10px;padding:0 6px}
-      #lang-sel{height:28px;font-size:12px}
       /* ── Mobile bottom panel ─────────────────────────── */
       #strip-outer{background:#fff;border-top-left-radius:16px;border-top-right-radius:16px;box-shadow:0 -4px 24px rgba(0,0,0,.1);flex-direction:column;align-items:stretch;padding:0;height:auto;transition:transform .3s cubic-bezier(.22,1,.36,1)}
       #strip-outer.mob-hidden{transform:translateY(calc(100% - 44px))}
@@ -3446,7 +3442,8 @@ ${hsPreviewCss}
       #mob-scene-title-txt{flex:1;font-size:20px;font-weight:700;color:#1a1a1a;line-height:1.2;min-height:24px}
       #mob-share-btn{width:36px;height:36px;border-radius:50%;border:none;background:rgba(0,0,0,.06);color:#333;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
       #mob-mini-map{display:block;height:80px;margin:0 16px 10px;border-radius:12px;overflow:hidden;cursor:pointer;background:#e8eaed}
-      #strip-scroll{height:80px;padding:4px 8px 10px;border-top:1px solid rgba(0,0,0,.05)}
+      /* Hide thumbnail strip — panel shows scene header + mini-map instead */
+      #strip-scroll{display:none!important}
       #mob-reveal-btn{display:flex;align-items:center;gap:6px}
       #mob-reveal-btn.visible{opacity:1;pointer-events:all}
       /* ── Full-screen white text popup on mobile ──────── */
