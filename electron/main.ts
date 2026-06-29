@@ -5093,6 +5093,10 @@ async function runCompilePipeline(project: any, outputDir: string, opts: { force
 }
 
 ipcMain.handle('compile:run', async (event, projectData: unknown, outputDir: string) => {
+  const localLicense = await getLocalLicense();
+  if (localLicense?.status === 'trial') {
+    return { ok: false, error: 'TRIAL_BLOCKED' };
+  }
   const project = projectData as any; // eslint-disable-line @typescript-eslint/no-explicit-any
   const forceRegenTiles: boolean = (projectData as Record<string, unknown>)?.__forceRegenTiles === true;
   compileRunState = { running: true, log: [], startedAt: Date.now() };
