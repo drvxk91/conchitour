@@ -3472,130 +3472,86 @@ ${hsPreviewCss}
 
     /* ── Mobile responsive (Street View pattern) ──── */
     @media(max-width:768px){
-      /* ── 1. CSS Grid 3-row layout ─────────────── */
-      body{
-        display:grid!important;
-        grid-template-rows:1fr 80px;
-        height:100vh;height:100dvh;
-        overflow:hidden!important;
-        transition:grid-template-rows .3s ease;
+      /* ── 1. Fixed-position layout (replaces CSS Grid) ── */
+      body{display:block!important;height:100dvh!important;overflow:hidden!important}
+
+      /* Panorama fills screen minus 110px sheet */
+      #pano{
+        position:fixed!important;top:0!important;left:0!important;right:0!important;
+        height:calc(100dvh - 110px)!important;
+        transition:height .3s ease!important;
       }
-      body.has-map{grid-template-rows:1fr 35vh 80px}
-      body.mob-fullscreen.has-map{grid-template-rows:1fr 0 80px}
-      body.has-strip{grid-template-rows:1fr 110px 0}
-      body.mob-fullscreen.has-strip{grid-template-rows:1fr 0 0}
-      body.pano-only{grid-template-rows:1fr 0 0}
+      body.pano-only #pano{height:100dvh!important}
 
-      /* Panorama — inline grid row 1 */
-      #pano{position:relative!important;inset:auto!important;width:100%!important;height:100%!important;min-height:0}
-
-      /* Map — always visible inline (grid row 2 when has-map) */
+      /* Map panel — fixed above sheet, hidden by default */
       #map-panel{
-        position:relative!important;inset:auto!important;
-        width:100%!important;height:100%!important;min-height:0;
-        transform:none!important;transition:none!important;
-        z-index:auto;overflow:hidden;
+        position:fixed!important;
+        left:0!important;right:0!important;bottom:110px!important;top:auto!important;
+        height:0!important;overflow:hidden!important;
+        width:100%!important;z-index:50!important;
+        transform:none!important;
+        transition:height .3s ease!important;
       }
       #map-panel.open{transform:none!important}
       #map-close{display:none!important}
-      #leaflet-map{min-height:0}
+      #leaflet-map{height:100%!important;min-height:0!important}
 
-      /* Bottom sheet — inline grid row 3 */
-      #strip-outer{
-        position:relative!important;inset:auto!important;
-        background:#fff!important;
-        border-top-left-radius:16px!important;border-top-right-radius:16px!important;
-        box-shadow:0 -2px 8px rgba(0,0,0,.08)!important;
-        padding:0 18px!important;
-        display:flex!important;align-items:center!important;
-        pointer-events:all!important;
-        transition:none!important;transform:none!important;
-      }
-      #mob-drag-handle{display:none!important}
-      #mob-mini-map{display:none!important}
-      #strip-scroll{display:none!important}
-      #mob-reveal-btn{display:none!important}
-      #mob-scene-header{display:flex!important;align-items:center!important;width:100%!important;gap:12px!important;padding:0!important}
-      /* has-strip: show horizontal scroll strip instead of bottom title bar */
-      body.has-strip #strip-scroll{display:flex!important;position:relative!important;padding:8px 12px!important;height:110px!important;overflow-x:auto!important;overflow-y:visible!important;align-items:flex-end!important;gap:8px!important;max-width:100%!important}
-      body.has-strip #mob-scene-header{display:none!important}
-      body.has-strip #strip-outer{padding:0!important;align-items:stretch!important}
-      #mob-scene-title-txt{font-size:17px!important;font-weight:600!important;color:#1a1a1a!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;flex:1!important;min-height:0!important}
-      #mob-share-btn{width:40px!important;height:40px!important;border-radius:50%!important;background:#f2f2f2!important;border:none!important;display:flex!important;align-items:center!important;justify-content:center!important;flex-shrink:0!important;font-size:18px!important;cursor:pointer!important;margin:0!important}
+      /* mob-map-open: 50/50 split */
+      body.mob-map-open #pano{height:50dvh!important}
+      body.mob-map-open #map-panel{height:calc(50dvh - 110px)!important}
 
       /* ── 2. Floating pill header ──────────────── */
       #tour-hdr{
         position:fixed!important;
-        top:env(safe-area-inset-top,8px)!important;
-        left:8px!important;right:8px!important;
+        top:env(safe-area-inset-top,12px)!important;
+        left:12px!important;right:12px!important;
         height:auto!important;padding:0!important;
         background:transparent!important;box-shadow:none!important;
         z-index:1000!important;
         display:flex!important;align-items:center!important;gap:8px!important;
-        pointer-events:none;
+        pointer-events:none!important;
       }
+      #tour-hdr>*{pointer-events:all!important}
       #hdr-logo{
-        flex:1!important;min-width:0!important;max-width:62%!important;
-        background:rgba(0,0,0,.62)!important;
-        backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+        flex:1!important;min-width:0!important;
+        background:rgba(26,36,52,.85)!important;
+        backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
         border-radius:999px!important;
-        padding:5px 14px 5px 6px!important;
-        gap:8px!important;pointer-events:all;
+        padding:6px 14px 6px 6px!important;
+        gap:10px!important;
+        display:flex!important;align-items:center!important;
+        max-width:calc(100% - 116px)!important;
       }
       #hdr-logo *{color:#fff!important}
-      #hdr-logo-img{width:28px!important;height:28px!important;border-radius:50%!important;object-fit:cover!important;flex-shrink:0!important}
+      #hdr-logo-img{width:26px!important;height:26px!important;border-radius:50%!important;object-fit:cover!important;flex-shrink:0!important}
       #hdr-logo-img.hdr-initial{display:flex!important;align-items:center!important;justify-content:center!important;background:#555!important;font-size:13px!important;font-weight:700!important;letter-spacing:0!important}
-      #hdr-logo-text{font-size:12px!important;font-weight:400!important;max-width:unset!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;display:flex!important;flex-direction:column!important;line-height:1.25!important}
-      #hdr-scene-name{font-size:13px!important;font-weight:600!important;display:block!important}
-      .hdr-author{opacity:.75!important;font-size:11px!important;display:block!important}
-      .hdr-date{opacity:.6!important}
+      #hdr-logo-text{font-size:14px!important;font-weight:600!important;line-height:1.2!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-width:0!important}
+      .hdr-date{opacity:.7!important;font-weight:400!important;font-size:13px!important}
       #hdr-title{display:none!important}
       .hdr-sep{display:none!important}
-      #hdr-actions{display:flex!important;gap:8px!important;align-items:center!important;margin-left:auto!important;pointer-events:all}
-      #hdr-actions .hdr-btn,#hdr-actions a.hdr-btn,#hdr-actions button{
-        width:40px!important;height:40px!important;border-radius:50%!important;
-        background:rgba(0,0,0,.62)!important;
-        backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;
+      #hdr-actions{display:flex!important;gap:8px!important;align-items:center!important;flex-shrink:0!important}
+      /* Hide ALL header buttons on mobile by default */
+      #hdr-actions .hdr-btn,#hdr-actions a.hdr-btn{display:none!important}
+      /* Show only ⋮ and X on mobile */
+      #mob-more-btn,#mob-close-btn{
+        display:flex!important;
+        width:44px!important;height:44px!important;border-radius:50%!important;
+        background:rgba(26,36,52,.85)!important;
+        backdrop-filter:blur(8px)!important;-webkit-backdrop-filter:blur(8px)!important;
         color:#fff!important;border:none!important;
-        min-width:0!important;padding:0!important;font-size:16px!important;
-        display:flex!important;align-items:center!important;justify-content:center!important;
+        align-items:center!important;justify-content:center!important;
+        cursor:pointer!important;padding:0!important;font-size:16px!important;
+        box-shadow:0 2px 8px rgba(0,0,0,.2)!important;
+        min-width:0!important;
       }
       #lang-sel{display:none!important}
       #hs-preview{display:none!important}
 
-      /* ── 3. Collapse / expand FAB ─────────────── */
-      #mob-collapse-toggle{
-        position:fixed!important;right:12px!important;
-        bottom:calc(80px + 12px)!important;
-        width:44px!important;height:44px!important;border-radius:50%!important;
-        background:rgba(0,0,0,.75)!important;color:#fff!important;border:none!important;
-        display:none!important;align-items:center!important;justify-content:center!important;
-        z-index:600!important;cursor:pointer!important;
-        transition:transform .3s ease!important;
-        box-shadow:0 2px 10px rgba(0,0,0,.3)!important;
-      }
-      body.has-map #mob-collapse-toggle{display:flex!important}
-      body.has-strip #mob-collapse-toggle{display:flex!important}
-      body.mob-fullscreen #mob-collapse-toggle{transform:rotate(180deg)!important}
-
-      /* ── 4. Info panel ────────────────────────── */
-      #info-panel{right:0;left:0;top:auto;bottom:0;width:100%;max-height:60vh;border-radius:16px 16px 0 0;box-shadow:0 -4px 32px rgba(0,0,0,.25)}
-      #desc-overlay{display:flex}
-
-      /* ── 5. Full-screen white info popup ──────── */
-      #text-popup{background:#fff!important;align-items:stretch!important;padding:0!important}
-      #text-popup-inner{max-width:100%!important;width:100%!important;min-height:100vh!important;border-radius:0!important;padding:76px 22px 40px!important;overflow-y:auto;max-height:none!important}
-      #text-popup-close{top:env(safe-area-inset-top,14px)!important;right:14px!important;width:44px!important;height:44px!important;background:rgba(255,255,255,.95)!important;color:#2563eb!important;font-size:22px!important;font-weight:700!important;}
-      #text-popup-title{font-size:36px!important;font-weight:800!important;line-height:1.1!important;letter-spacing:-.5px;margin:0 0 24px!important;color:#1a1a1a!important;text-transform:uppercase}
-      #text-popup-body{font-size:18px!important;line-height:1.65!important;color:#333!important;opacity:1}
-      #text-popup.open #text-popup-inner{animation:_mobSlideUp .3s cubic-bezier(.22,1,.36,1)}
-
-      /* ── 6. ⋮ More popover ─────────────────────── */
+      /* ── 3. ⋮ More popover ─────────────────────── */
       #info-btn,#fs-btn,button[title="VR / Cardboard"],button[title="Contact form"],a[title="Send feedback"]{display:none!important}
-      #mob-more-btn{display:flex!important}
       #mob-more-popover{
-        position:fixed;top:calc(env(safe-area-inset-top,8px) + 52px);
-        right:8px;z-index:1001;
+        position:fixed;top:calc(env(safe-area-inset-top,12px) + 56px);
+        right:12px;z-index:1001;
         background:rgba(20,20,20,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
         border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.35);
         padding:6px;display:flex;flex-direction:column;gap:0;
@@ -3612,12 +3568,78 @@ ${hsPreviewCss}
       .mob-more-item:hover,.mob-more-item:active{background:rgba(255,255,255,.12)}
       .mob-more-item svg{flex-shrink:0;opacity:.75}
 
-      /* ── 7. Header pill meta line ──────────────── */
-      .hdr-meta{display:block!important;font-size:11px!important;opacity:.75!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;line-height:1.2!important;color:#fff!important}
-      .hdr-author,.hdr-date{display:inline!important;font-size:11px!important;opacity:1!important;color:#fff!important}
+      /* ── 4. Collapse/expand FAB ── */
+      #mob-pano-toggle{
+        position:fixed!important;right:16px!important;bottom:126px!important;
+        width:52px!important;height:52px!important;border-radius:50%!important;
+        background:rgba(26,36,52,.85)!important;
+        backdrop-filter:blur(8px)!important;-webkit-backdrop-filter:blur(8px)!important;
+        color:#fff!important;border:none!important;cursor:pointer!important;
+        display:none!important;
+        align-items:center!important;justify-content:center!important;
+        z-index:600!important;
+        box-shadow:0 2px 10px rgba(0,0,0,.3)!important;
+        transition:bottom .3s ease!important;
+      }
+      body.has-map #mob-pano-toggle{display:flex!important}
+      body.mob-map-open #mob-pano-toggle{bottom:calc(50dvh + 16px)!important}
+      /* Old FAB — hidden */
+      #mob-collapse-toggle{display:none!important}
 
-      /* ── 8. FAB z-index above map ────────────────── */
-      #mob-collapse-toggle{z-index:800!important}
+      /* ── 5. Bottom sheet ── */
+      #mob-sheet{
+        position:fixed!important;left:0!important;right:0!important;bottom:0!important;
+        height:110px!important;background:#fff!important;
+        border-radius:24px 24px 0 0!important;
+        box-shadow:0 -2px 16px rgba(0,0,0,.1)!important;
+        z-index:100!important;
+        display:flex!important;flex-direction:column!important;
+        padding:10px 20px 20px!important;
+      }
+      body.pano-only #mob-sheet{display:none!important}
+      #mob-sheet-handle{
+        width:36px!important;height:4px!important;background:#d0d0d0!important;
+        border-radius:2px!important;margin:0 auto 10px!important;flex-shrink:0!important;
+      }
+      #mob-sheet-content{display:flex!important;align-items:center!important;gap:12px!important;flex:1!important;min-height:0!important}
+      #mob-sheet-text{flex:1!important;min-width:0!important}
+      #mob-scene-title{
+        font-size:18px!important;font-weight:700!important;color:#1a1a1a!important;
+        margin:0 0 2px!important;line-height:1.2!important;
+        white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+        display:block!important;
+      }
+      #mob-scene-cat{
+        font-size:13px!important;color:#6b6b6b!important;margin:0!important;
+        white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+        display:block!important;
+      }
+      #mob-sheet-share{
+        width:44px!important;height:44px!important;flex-shrink:0!important;
+        border-radius:50%!important;background:#f0f0f0!important;
+        border:none!important;cursor:pointer!important;
+        display:flex!important;align-items:center!important;justify-content:center!important;
+        color:#1a1a1a!important;font-size:18px!important;
+      }
+
+      /* Old strip-outer — hidden on mobile (replaced by mob-sheet) */
+      #strip-outer{display:none!important}
+      #mob-reveal-btn{display:none!important}
+
+      /* Share popover repositioned above sheet when triggered from mobile */
+      #share-popover{top:auto!important;bottom:126px!important;right:16px!important}
+
+      /* ── 6. Info panel ────────────────────────── */
+      #info-panel{right:0;left:0;top:auto;bottom:0;width:100%;max-height:60vh;border-radius:16px 16px 0 0;box-shadow:0 -4px 32px rgba(0,0,0,.25)}
+      #desc-overlay{display:flex}
+
+      /* ── 7. Full-screen text popup ──────── */
+      #text-popup{background:#fff!important;align-items:stretch!important;padding:0!important}
+      #text-popup-inner{max-width:100%!important;width:100%!important;min-height:100vh!important;border-radius:0!important;padding:76px 22px 40px!important;overflow-y:auto;max-height:none!important}
+      #text-popup-close{top:env(safe-area-inset-top,14px)!important;right:14px!important;width:44px!important;height:44px!important;background:rgba(255,255,255,.95)!important;color:#2563eb!important;font-size:22px!important;font-weight:700!important;}
+      #text-popup-title{font-size:36px!important;font-weight:800!important;line-height:1.1!important;letter-spacing:-.5px;margin:0 0 24px!important;color:#1a1a1a!important;text-transform:uppercase}
+      #text-popup-body{font-size:18px!important;line-height:1.65!important;color:#333!important;opacity:1}
+      #text-popup.open #text-popup-inner{animation:_mobSlideUp .3s cubic-bezier(.22,1,.36,1)}
     }
     @media(max-width:480px){
       #hdr-title{display:none}
@@ -3789,7 +3811,18 @@ ${showMap ? `  <div id="map-panel">
     <div id="strip-scroll">${sceneCardsHtml}</div>
   </div>
   <button id="mob-reveal-btn" onclick="_mobShowPanel()" aria-label="Show scene info">&#x25B2; Scene info</button>
-  ${(showMap || mobView === 'strip') ? `<button id="mob-collapse-toggle" onclick="_mobToggleCollapse()" aria-label="Toggle panel"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>` : ''}
+  ${(showMap || mobView === 'strip') ? `<button id="mob-collapse-toggle" onclick="_mobToggleCollapse()" aria-label="Toggle panel" style="display:none"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>` : ''}
+  ${showMap ? `<button id="mob-pano-toggle" onclick="_togglePanoMap()" aria-label="Toggle map"><svg id="mob-toggle-icon-collapse" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><svg id="mob-toggle-icon-expand" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" hidden><polyline points="6 15 12 9 18 15"/></svg></button>` : ''}
+  <div id="mob-sheet">
+    <div id="mob-sheet-handle"></div>
+    <div id="mob-sheet-content">
+      <div id="mob-sheet-text">
+        <span id="mob-scene-title">${xmlEsc(initialSheetTitle)}</span>
+        <span id="mob-scene-cat">${xmlEsc(initialSheetCat)}</span>
+      </div>
+      ${hasHdrShare ? `<button id="mob-sheet-share" onclick="window._mobileShare&&window._mobileShare()" aria-label="Share">&#x2197;&#xFE0E;</button>` : ''}
+    </div>
+  </div>
   ${cookieHtml}
   ${copyright ? `<div id="tour-copyright">${copyright}</div>` : ''}
   ${isTrialBuild ? `<div id="trial-watermark" style="position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.75);color:white;padding:8px 14px;border-radius:6px;font-family:system-ui,sans-serif;font-size:12px;z-index:99999;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);"><a href="https://conchitour.com" target="_blank" style="color:white;text-decoration:none;">${xmlEsc(TRIAL_LIMITS.watermarkText)}</a></div>` : ''}
@@ -4487,30 +4520,27 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
     radarEl.style.transform = 'rotate(' + trueAz.toFixed(1) + 'deg)';
   };
 
-  // Mobile: auto-init inline map + collapse/expand FAB handler
+  // Mobile: toggle between pano-fullscreen and 50/50 pano+map
+  window._togglePanoMap = function() {
+    var openingMap = !document.body.classList.contains('mob-map-open');
+    document.body.classList.toggle('mob-map-open');
+    var colIcon = document.getElementById('mob-toggle-icon-collapse');
+    var expIcon = document.getElementById('mob-toggle-icon-expand');
+    if (colIcon) colIcon.hidden = openingMap;
+    if (expIcon) expIcon.hidden = !openingMap;
+    if (openingMap && window._openMap) {
+      _openMap();
+      setTimeout(function() { if (_lmap) _lmap.invalidateSize(); }, 350);
+    }
+  };
+  // Mobile: init (map starts hidden — opened lazily on first FAB tap)
   (function() {
     if (!window.matchMedia('(max-width:768px)').matches) return;
-    var hasMobMap = document.body.classList.contains('has-map');
-    // Collapse toggle — toggles body.mob-fullscreen, resizes Leaflet
+    // Legacy collapse toggle kept for has-strip mode (strip uses old strip-outer)
     window._mobToggleCollapse = function() {
       document.body.classList.toggle('mob-fullscreen');
       if (_lmap) setTimeout(function() { _lmap.invalidateSize(); }, 350);
     };
-    // Tapping the bottom sheet title row (not the share button) also toggles
-    var sceneHdr = document.getElementById('mob-scene-header');
-    if (sceneHdr) {
-      sceneHdr.addEventListener('click', function(e) {
-        if (e.target.closest('button')) return;
-        window._mobToggleCollapse && window._mobToggleCollapse();
-      });
-    }
-    // Auto-open the map inline when has-map (grid row 2)
-    if (hasMobMap) {
-      setTimeout(function() {
-        _openMap();
-        setTimeout(function() { if (_lmap) _lmap.invalidateSize(); }, 700);
-      }, 100);
-    }
   })();
   </script>\n` : ''}  <script src="/krpano/krpano.js"></script>
   <script>
