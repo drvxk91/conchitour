@@ -3063,12 +3063,27 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
 
   // ── Header logo / author pill ─────────────────────────────────────────
   const logoExt: string = branding.logoPath ? path.extname(branding.logoPath as string) : '';
-  const authorName: string = (branding.authorName as string | undefined) || '';
-  const tourDate: string   = (branding.tourDate   as string | undefined) || '';
-  const pillInitial: string = (authorName || projectTitle || '?').trim().charAt(0).toUpperCase();
-  const logoImgHtml: string = branding.logoPath
-    ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
-    : `<span id="hdr-logo-img" class="hdr-initial" aria-hidden="true">${xmlEsc(pillInitial)}</span>`;
+  const authorName: string   = (branding.authorName   as string | undefined) || '';
+  const tourDate: string     = (branding.tourDate     as string | undefined) || '';
+  const authorAvatar: string = (branding.authorAvatar as string | undefined) || '';
+  const pillInitial: string  = (authorName || projectTitle || '?').trim().charAt(0).toUpperCase();
+  // authorAvatar (data URL) > logoPath file > initial letter
+  const logoImgHtml: string = authorAvatar
+    ? `<img id="hdr-logo-img" src="${authorAvatar}" alt="">`
+    : branding.logoPath
+      ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
+      : `<span id="hdr-logo-img" class="hdr-initial" aria-hidden="true">${xmlEsc(pillInitial)}</span>`;
+  // Compute initial sheet title/category from start scene
+  const initialSheetTitle: string = startScene
+    ? (loc(startScene.title as Record<string, string>, lang) || loc(startScene.title as Record<string, string>, defaultLang) || (Object.values((startScene.title as Record<string, string>) || {})[0] || ''))
+    : '';
+  const initialSheetCat: string = (() => {
+    if (!startScene) return '';
+    const catId: string | undefined = ((startScene as any).categoryIds || [])[0];
+    if (!catId) return '';
+    const cat = ((project as any).categories || []).find((c: any) => c.id === catId);
+    return cat ? (loc(cat.name, lang) || loc(cat.name, defaultLang) || (Object.values((cat.name as Record<string, string>) || {})[0] || '')) : '';
+  })();
 
   // ── Header action buttons ─────────────────────────────────────────────
   // Map is shown when scenes have GPS. mapMode config controls appearance only.
@@ -3717,11 +3732,11 @@ ${hsPreviewCss}
   <header id="tour-hdr">
     <div id="hdr-logo">
       ${logoImgHtml}
-      <span id="hdr-logo-text"><b id="hdr-scene-name">${xmlEsc(projectTitle)}</b>${(authorName || tourDate) ? `<span class="hdr-meta">${authorName ? `<span class="hdr-author">${xmlEsc(authorName)}</span>` : ''}${(authorName && tourDate) ? ' · ' : ''}${tourDate ? `<span class="hdr-date">${xmlEsc(tourDate)}</span>` : ''}</span>` : ''}</span>
+      <span id="hdr-logo-text">${xmlEsc(authorName || projectTitle)}${tourDate ? `<span class="hdr-date"> · ${xmlEsc(tourDate)}</span>` : ''}</span>
     </div>
     <div id="hdr-title"></div>
     <div id="hdr-actions">
-      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}<button class="hdr-btn" id="mob-more-btn" onclick="_toggleMobMore()" title="More" style="display:none">&#x22EE;</button>
+      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}<button class="hdr-btn" id="mob-more-btn" onclick="_toggleMobMore()" title="More" style="display:none">&#x22EE;</button><button id="mob-close-btn" onclick="window.opener?window.close():history.length>1?history.back():null" aria-label="Close tour" style="display:none">&#x2715;</button>
     </div>
   </header>
 ${sharePopoverHtml}${mobMorePopoverHtml}
@@ -3816,15 +3831,23 @@ ${showMap ? `  <div id="map-panel">
       el.textContent = t;
       el.title = t;
     }
-    // Also update the mobile pill scene name
-    var sn = document.getElementById('hdr-scene-name');
-    if (sn && _curScene) {
+    if (!_curScene) return;
+    var scene = TOUR.scenes && TOUR.scenes[_curScene];
+    // Update mobile sheet scene title
+    var st = document.getElementById('mob-scene-title');
+    if (st) {
       var idx = window.__scenesIndex && window.__scenesIndex[_curScene];
       if (idx) {
-        var raw = (idx.title || {});
-        var title = raw[window._curLang] || raw[window.__defaultLang] || Object.values(raw)[0] || _curScene;
-        sn.textContent = title;
+        var raw = idx.title || {};
+        st.textContent = raw[window._curLang] || raw[window.__defaultLang] || Object.values(raw)[0] || _curScene;
       }
+    }
+    // Update mobile sheet category
+    var sc = document.getElementById('mob-scene-cat');
+    if (sc && scene) {
+      var catId = scene.categoryIds && scene.categoryIds[0];
+      var cat = catId && TOUR.categories && TOUR.categories[catId];
+      sc.textContent = cat ? (cat.name || '') : '';
     }
   }
   var _krpano    = null;
