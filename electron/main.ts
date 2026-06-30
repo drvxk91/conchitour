@@ -3499,6 +3499,8 @@ ${hsPreviewCss}
       /* mob-map-open: 50/50 split (pano 50dvh top, map fills gap above sheet) */
       body.mob-map-open #pano{height:50dvh!important}
       body.mob-map-open #map-panel{height:calc(50dvh - 88px)!important}
+      /* body bg white in map mode so rounded corners of mob-sheet don't show blue gap */
+      body.mob-map-open{background:#fff!important}
 
       /* ── 2. Floating pill header ──────────────── */
       #tour-hdr{
