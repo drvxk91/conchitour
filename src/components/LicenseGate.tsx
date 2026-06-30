@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Key, Clock, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Key, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useLicense } from '@/store/license';
 import type { LicenseGateStatus } from '@/types/license';
@@ -56,21 +56,6 @@ export function LicenseGate({ initialStatus, onUnlocked, onReadOnly }: Props) {
     }
   }
 
-  async function handleStartTrial() {
-    setLoading(true);
-    try {
-      const result = await window.conchitour.licenseStartTrial();
-      if (result.ok && result.license) {
-        setStatus('trial', result.license);
-        onUnlocked();
-      }
-    } catch {
-      setError('Could not start trial. Try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const isExpired = initialStatus === 'expired';
   const isInvalid = initialStatus === 'invalid';
   const isNone = initialStatus === 'none';
@@ -97,7 +82,7 @@ export function LicenseGate({ initialStatus, onUnlocked, onReadOnly }: Props) {
               ? 'Your Conchitour license has expired. Renew to restore all features.'
               : isInvalid
               ? "This machine doesn't match the one your license was activated on. Re-enter your key to continue."
-              : 'Activate your license or start a free 14-day trial to get started.'}
+              : 'Enter your license key below. Need to try Conchitour first? Request a free trial key — we\'ll email it to you instantly.'}
           </p>
         </div>
 
@@ -171,18 +156,19 @@ export function LicenseGate({ initialStatus, onUnlocked, onReadOnly }: Props) {
               <div className="flex-1 h-px bg-line" />
             </div>
             <button
-              onClick={handleStartTrial}
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg text-sm font-medium border border-line text-ink hover:bg-paper-tinted disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={() => window.conchitour.openUrl('https://conchitour.com/trial')}
+              className="w-full py-2.5 rounded-lg text-sm font-medium border border-line text-ink hover:bg-paper-tinted flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />}
-              Start 14-day free trial
+              Get a free trial key <ExternalLink size={13} />
             </button>
+            <p className="text-center text-[11px] text-ink-faded/70">
+              Fill in your details on conchitour.com — we'll email your trial key instantly.
+            </p>
             <button
-              onClick={() => window.conchitour.openUrl('https://conchitour.com')}
+              onClick={() => window.conchitour.openUrl('https://conchitour.com/buy')}
               className="w-full py-2 text-xs text-ink-faded hover:text-ink transition-colors flex items-center justify-center gap-1.5"
             >
-              Buy a license at conchitour.com <ExternalLink size={11} />
+              Buy a full license at conchitour.com <ExternalLink size={11} />
             </button>
           </div>
         )}
