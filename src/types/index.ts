@@ -164,6 +164,14 @@ export interface ProjectBranding {
   hotspotSizePx?: number;
   /** Tour viewer UI theming (fonts, colors, radius, font size) */
   tourTheme?: TourTheme;
+  /** Default mobile layout: map band visible (map), scene strip visible (strip), or panorama only (pano) */
+  mobileDefaultView?: 'map' | 'strip' | 'pano';
+  /** Name shown in the mobile header pill (e.g. "Matthias Conche") */
+  authorName?: string;
+  /** Tour date shown after the author name in the pill (e.g. "Jan. 2022") */
+  tourDate?: string;
+  /** Author portrait shown in the mobile pill — stored as data URL (no compile-time copy needed) */
+  authorAvatar?: string;
 }
 
 export interface ProjectShare {

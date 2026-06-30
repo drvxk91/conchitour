@@ -51,6 +51,41 @@ function FileField({ label, hint, value, accept, onPick, onClear }: {
   );
 }
 
+function AvatarPicker({ value, onPick, onClear }: { value?: string; onPick: (dataUrl: string) => void; onClear: () => void }) {
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') onPick(reader.result); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+  return (
+    <div className="flex items-center gap-4">
+      <button
+        type="button"
+        className="w-14 h-14 rounded-full border-2 border-dashed border-line-strong flex items-center justify-center cursor-pointer hover:border-accent bg-paper-tinted flex-shrink-0 overflow-hidden transition-colors p-0"
+        onClick={() => avatarInputRef.current?.click()}
+        title="Click to pick avatar"
+      >
+        {value
+          ? <img src={value} alt="" className="w-full h-full object-cover" />
+          : <Upload size={18} className="text-ink-faded" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-ink-faded">PNG, JPG or WebP. Stored as data URL.</p>
+        {value && (
+          <button type="button" onClick={onClear} className="mt-1 text-[11px] text-red-500 hover:underline flex items-center gap-1">
+            <X size={11} /> Remove
+          </button>
+        )}
+      </div>
+      <input ref={avatarInputRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="sr-only" onChange={handleFile} />
+    </div>
+  );
+}
+
 function ColorField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div className="space-y-1">
@@ -414,6 +449,45 @@ Return ONLY valid JSON (no markdown, no explanation):
                   <span className="text-sm font-mono text-ink w-10 text-right flex-shrink-0">{theme.fontSize ?? 15}px</span>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Mobile default view */}
+          {/* Mobile header pill: author + date */}
+          <div className="border-t border-line pt-6 space-y-4">
+            <ColTitle>Mobile header pill</ColTitle>
+            <p className="text-xs text-ink-soft">Displayed in the floating pill at the top of the screen on phones.</p>
+            <div className="space-y-1">
+              <FieldLabel>Author avatar</FieldLabel>
+              <AvatarPicker value={b.authorAvatar} onPick={(url) => updateBranding({ authorAvatar: url })} onClear={() => updateBranding({ authorAvatar: undefined })} />
+            </div>
+            <div className="space-y-1">
+              <FieldLabel>Author name</FieldLabel>
+              <input className={inputCls} value={b.authorName || ''} onChange={(e) => updateBranding({ authorName: e.target.value || undefined })} placeholder="e.g. Matthias Conche" />
+            </div>
+            <div className="space-y-1">
+              <FieldLabel>Tour date</FieldLabel>
+              <input className={inputCls} value={b.tourDate || ''} onChange={(e) => updateBranding({ tourDate: e.target.value || undefined })} placeholder="e.g. Jan. 2022" />
+            </div>
+          </div>
+
+          <div className="border-t border-line pt-6 space-y-3">
+            <ColTitle>Mobile default view</ColTitle>
+            <p className="text-xs text-ink-soft">Controls which panel is shown first when a visitor opens the tour on a phone.</p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { id: 'map',   label: 'Map',   desc: 'Map band above scene strip' },
+                { id: 'strip', label: 'Strip',  desc: 'Scene thumbnail strip only' },
+                { id: 'pano',  label: 'Pano',   desc: 'Panorama only, no panel' },
+              ] as { id: 'map' | 'strip' | 'pano'; label: string; desc: string }[]).map(({ id, label, desc }) => {
+                const active = (b.mobileDefaultView ?? 'map') === id;
+                return (
+                  <button key={id} onClick={() => updateBranding({ mobileDefaultView: id })} title={desc}
+                    className={`py-2 px-1 rounded-lg border text-center transition-colors ${active ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-line-soft bg-paper-tinted hover:border-line-strong'}`}>
+                    <span className={`text-[11px] font-medium block ${active ? 'text-accent' : 'text-ink-soft'}`}>{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
