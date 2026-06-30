@@ -2954,6 +2954,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     hotspotForms,
     hotspotExternalUrls,
     hotspotSizePx: branding.hotspotSizePx || 32,
+    panelAnimation: branding.panelAnimation || 'slide',
   }).replace(/<\//g, '<\\/');
 
   const hasMap = scenes.some((s: any) => s.geo?.lat != null && s.geo?.lng != null);
@@ -3339,9 +3340,21 @@ ${hsPreviewCss}
     #text-popup{
       position:fixed;inset:0;z-index:9999;
       background:rgba(0,0,0,.52);
-      display:none;align-items:center;justify-content:center;padding:40px;
+      display:flex;align-items:center;justify-content:center;padding:40px;
+      opacity:0;visibility:hidden;pointer-events:none;
+      transition:opacity .28s ease,visibility .28s ease;
     }
-    #text-popup.open{display:flex}
+    #text-popup.open{opacity:1;visibility:visible;pointer-events:auto}
+    #text-popup.tp-closing{opacity:0;visibility:hidden;pointer-events:none}
+    /* inner card animations — desktop (data-anim attribute set by JS from TOUR.panelAnimation) */
+    #text-popup[data-anim="slide"].open #text-popup-inner{animation:_tpFadeSlideIn .32s cubic-bezier(.22,1,.36,1) both}
+    #text-popup[data-anim="slide"].tp-closing #text-popup-inner{animation:_tpFadeSlideOut .22s ease-in both}
+    #text-popup[data-anim="fade"].open #text-popup-inner{animation:_tpFadeIn .3s ease both}
+    #text-popup[data-anim="fade"].tp-closing #text-popup-inner{animation:_tpFadeOut .22s ease-in both}
+    #text-popup[data-anim="zoom"].open #text-popup-inner{animation:_tpZoomIn .32s cubic-bezier(.22,1,.36,1) both}
+    #text-popup[data-anim="zoom"].tp-closing #text-popup-inner{animation:_tpZoomOut .22s ease-in both}
+    #text-popup[data-anim="flip"].open #text-popup-inner{animation:_tpFlipIn .38s cubic-bezier(.22,1,.36,1) both}
+    #text-popup[data-anim="flip"].tp-closing #text-popup-inner{animation:_tpFlipOut .24s ease-in both}
     #text-popup-inner{
       background:var(--tt-panel-bg);border-radius:var(--radius);
       max-width:680px;width:100%;max-height:80vh;overflow-y:auto;
@@ -3469,6 +3482,15 @@ ${hsPreviewCss}
     #mob-mini-map{display:none}
     #mob-reveal-btn{display:none;position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:49;background:rgba(0,0,0,.72);color:#fff;border:none;border-radius:20px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 2px 12px rgba(0,0,0,.35);transition:opacity .2s}
     @keyframes _mobSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    @keyframes _mobSlideDown{from{transform:translateY(0)}to{transform:translateY(100%)}}
+    @keyframes _tpFadeSlideIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+    @keyframes _tpFadeSlideOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(14px)}}
+    @keyframes _tpFadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes _tpFadeOut{from{opacity:1}to{opacity:0}}
+    @keyframes _tpZoomIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+    @keyframes _tpZoomOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92)}}
+    @keyframes _tpFlipIn{from{opacity:0;transform:perspective(800px) rotateX(-10deg)}to{opacity:1;transform:perspective(800px) rotateX(0)}}
+    @keyframes _tpFlipOut{from{opacity:1;transform:perspective(800px) rotateX(0)}to{opacity:0;transform:perspective(800px) rotateX(-10deg)}}
 
     /* ── Mobile responsive (Street View pattern) ──── */
     @media(max-width:768px){
@@ -3483,10 +3505,10 @@ ${hsPreviewCss}
       }
       body.pano-only #pano{height:100dvh!important}
 
-      /* Map panel — sits above the sheet (Leaflet must not have bottom:0 or tiles break) */
+      /* Map panel — extends to bottom of screen so it goes under mob-sheet (z-index 200) */
       #map-panel{
         position:fixed!important;
-        left:0!important;right:0!important;bottom:88px!important;top:auto!important;
+        left:0!important;right:0!important;bottom:0!important;top:auto!important;
         height:0!important;overflow:hidden!important;
         width:100%!important;z-index:50!important;
         transform:none!important;
@@ -3496,11 +3518,9 @@ ${hsPreviewCss}
       #map-close{display:none!important}
       #leaflet-map{height:100%!important;min-height:0!important}
 
-      /* mob-map-open: 50/50 split (pano 50dvh top, map fills gap above sheet) */
+      /* mob-map-open: 50/50 split (pano 50dvh top, map extends to bottom under mob-sheet) */
       body.mob-map-open #pano{height:50dvh!important}
-      body.mob-map-open #map-panel{height:calc(50dvh - 88px)!important}
-      /* body bg white in map mode so rounded corners of mob-sheet don't show blue gap */
-      body.mob-map-open{background:#fff!important}
+      body.mob-map-open #map-panel{height:50dvh!important}
 
       /* ── 2. Floating pill header ──────────────── */
       #tour-hdr{
@@ -3641,7 +3661,15 @@ ${hsPreviewCss}
       #text-popup-close{top:env(safe-area-inset-top,14px)!important;right:14px!important;width:44px!important;height:44px!important;background:rgba(255,255,255,.95)!important;color:#2563eb!important;font-size:22px!important;font-weight:700!important;}
       #text-popup-title{font-size:36px!important;font-weight:800!important;line-height:1.1!important;letter-spacing:-.5px;margin:0 0 24px!important;color:#1a1a1a!important;text-transform:uppercase}
       #text-popup-body{font-size:18px!important;line-height:1.65!important;color:#333!important;opacity:1}
-      #text-popup.open #text-popup-inner{animation:_mobSlideUp .3s cubic-bezier(.22,1,.36,1)}
+      /* Mobile: full-screen panel animations override desktop ones */
+      #text-popup[data-anim="slide"].open #text-popup-inner{animation:_mobSlideUp .38s cubic-bezier(.22,1,.36,1) both!important}
+      #text-popup[data-anim="slide"].tp-closing #text-popup-inner{animation:_mobSlideDown .26s cubic-bezier(.55,0,.1,1) both!important}
+      #text-popup[data-anim="fade"].open #text-popup-inner{animation:_tpFadeIn .3s ease both!important}
+      #text-popup[data-anim="fade"].tp-closing #text-popup-inner{animation:_tpFadeOut .22s ease-in both!important}
+      #text-popup[data-anim="zoom"].open #text-popup-inner{animation:_tpZoomIn .32s cubic-bezier(.22,1,.36,1) both!important}
+      #text-popup[data-anim="zoom"].tp-closing #text-popup-inner{animation:_tpZoomOut .22s ease-in both!important}
+      #text-popup[data-anim="flip"].open #text-popup-inner{animation:_tpFlipIn .38s cubic-bezier(.22,1,.36,1) both!important}
+      #text-popup[data-anim="flip"].tp-closing #text-popup-inner{animation:_tpFlipOut .24s ease-in both!important}
     }
     @media(max-width:480px){
       #hdr-title{display:none}
@@ -4075,14 +4103,28 @@ ${showMap ? `  <div id="map-panel">
     document.getElementById('text-popup-title').textContent = data.title || '';
     document.getElementById('text-popup-body').innerHTML = data.body || '';
     var popup = document.getElementById('text-popup');
-    if (popup) popup.classList.add('open');
+    if (popup) {
+      popup.setAttribute('data-anim', TOUR.panelAnimation || 'slide');
+      popup.classList.remove('tp-closing');
+      popup.classList.add('open');
+    }
     document.body.style.overflow = 'hidden';
     window._track('info_hotspot_open', {id: id, title: data.title || ''});
   };
   window.closeTextPopup = function() {
     var popup = document.getElementById('text-popup');
-    if (popup) popup.classList.remove('open');
-    document.body.style.overflow = '';
+    if (!popup) return;
+    var anim = TOUR.panelAnimation || 'slide';
+    if (anim === 'none') {
+      popup.classList.remove('open');
+      document.body.style.overflow = '';
+    } else {
+      popup.classList.add('tp-closing');
+      setTimeout(function() {
+        popup.classList.remove('open','tp-closing');
+        document.body.style.overflow = '';
+      }, 280);
+    }
   };
   // Mobile bottom-sheet chevron → open scene title+description in white full-screen popup
   window._openSceneDetail = function() {
@@ -4094,7 +4136,11 @@ ${showMap ? `  <div id="map-panel">
     if (titleEl) titleEl.textContent = title;
     if (bodyEl) bodyEl.innerHTML = desc ? '<p>' + String(desc).replace(/\\n\\n/g, '<\/p><p>').replace(/\\n/g, '<br>') + '<\/p>' : '';
     var popup = document.getElementById('text-popup');
-    if (popup) popup.classList.add('open');
+    if (popup) {
+      popup.setAttribute('data-anim', TOUR.panelAnimation || 'slide');
+      popup.classList.remove('tp-closing');
+      popup.classList.add('open');
+    }
     document.body.style.overflow = 'hidden';
     window._track && window._track('scene_detail_open', {scene: _curScene});
   };

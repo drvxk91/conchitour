@@ -490,6 +490,28 @@ Return ONLY valid JSON (no markdown, no explanation):
               })}
             </div>
           </div>
+
+          <div className="border-t border-line pt-6 space-y-3">
+            <ColTitle>Scene detail animation</ColTitle>
+            <p className="text-xs text-ink-soft">Animation when opening and closing the scene description panel on mobile.</p>
+            <div className="grid grid-cols-5 gap-2">
+              {([
+                { id: 'slide', label: 'Slide', desc: 'Slides up from the bottom' },
+                { id: 'fade',  label: 'Fade',  desc: 'Cross-fade' },
+                { id: 'zoom',  label: 'Zoom',  desc: 'Scale from center' },
+                { id: 'flip',  label: 'Flip',  desc: '3D perspective tilt' },
+                { id: 'none',  label: 'None',  desc: 'No animation' },
+              ] as { id: 'slide'|'fade'|'zoom'|'flip'|'none'; label: string; desc: string }[]).map(({ id, label, desc }) => {
+                const active = (b.panelAnimation ?? 'slide') === id;
+                return (
+                  <button key={id} onClick={() => updateBranding({ panelAnimation: id })} title={desc}
+                    className={`py-2 px-1 rounded-lg border text-center transition-colors ${active ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-line-soft bg-paper-tinted hover:border-line-strong'}`}>
+                    <span className={`text-[11px] font-medium block ${active ? 'text-accent' : 'text-ink-soft'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
       </div>
