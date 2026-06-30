@@ -85,14 +85,19 @@ export async function activateLicense(key: string): Promise<LicenseActivateResul
     return { ok: false, error: (code && errorMap[code]) ?? msg ?? 'Activation failed.' };
   }
 
+  const plan = (result['plan'] as string | undefined) ?? 'standard';
+  const isTrial = plan === 'trial';
+  const now = Date.now();
   const license: LocalLicense = {
     key,
     fingerprint: fp,
     email: (result['email'] as string) ?? '',
-    activatedAt: (result['activatedAt'] as number) ?? Date.now(),
+    activatedAt: (result['activatedAt'] as number) ?? now,
     expiresAt: (result['expiresAt'] as number | null) ?? null,
-    validatedAt: Date.now(),
-    status: 'active',
+    validatedAt: now,
+    plan,
+    status: isTrial ? 'trial' : 'active',
+    ...(isTrial ? { trialStartedAt: now } : {}),
   };
   await saveLicense(license);
   return { ok: true, license };

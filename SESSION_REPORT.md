@@ -21,14 +21,13 @@
 |------|--------|
 | `electron/main.ts` | 6 targeted edits — all scoped to `generateTourHtml()` |
 
-## Planned Commits (run manually — bash workspace unavailable this session)
+## Commits
 
-```
-git add electron/main.ts
-git commit -m "fix(mobile): raise FAB z-index to 800 to clear map grid row"
-git commit -m "fix(mobile): wrap hdr-author + hdr-date in .hdr-meta for single-line layout"
-git commit -m "feat(mobile): add ⋮ More popover with Info / VR / Fullscreen actions"
-```
+| Hash | Message |
+|------|---------|
+| b60df01 | fix+feat(mobile): FAB z-index 800 + .hdr-meta layout + ⋮ More popover |
+
+> All changes landed in one commit (staged together). `npm run typecheck` → 0 errors.
 
 ## Technical Notes
 

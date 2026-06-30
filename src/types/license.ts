@@ -6,6 +6,8 @@ export interface LocalLicense {
   expiresAt: number | null;
   validatedAt: number;
   status: 'active' | 'trial' | 'expired' | 'invalid';
+  /** 'standard' for purchased licenses, 'trial' for server-issued trial keys */
+  plan?: string;
   trialStartedAt?: number;
   trialAiCallsUsed?: number;
 }
