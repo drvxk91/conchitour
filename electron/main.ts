@@ -3119,7 +3119,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   shareHdrItems.push(`<a class="shr-pop-item" href="#" onclick="_copyTourUrl();return false;" title="Copy link"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></a>`);
   // Note: share.email is intentionally NOT added to the header (it would duplicate the feedbackMailto button).
   // Email sharing is available in the bottom share bar only.
-  const hasHdrShare: boolean = shareHdrItems.length > 1; // always true if any social OR copy-link
+  const hasHdrShare: boolean = shareHdrItems.length > 0; // true whenever any share item exists
   const shareHdrHtml: string = hasHdrShare
     ? `<button class="hdr-btn" id="share-hdr-btn" onclick="_toggleShare()" title="Share"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></button>`
     : '';
@@ -3475,18 +3475,18 @@ ${hsPreviewCss}
       /* ── 1. Fixed-position layout (replaces CSS Grid) ── */
       body{display:block!important;height:100dvh!important;overflow:hidden!important}
 
-      /* Panorama fills screen minus 110px sheet */
+      /* Panorama fills full screen — mob-sheet overlays on top */
       #pano{
         position:fixed!important;top:0!important;left:0!important;right:0!important;
-        height:calc(100dvh - 110px)!important;
+        height:100dvh!important;
         transition:height .3s ease!important;
       }
       body.pano-only #pano{height:100dvh!important}
 
-      /* Map panel — fixed above sheet, hidden by default */
+      /* Map panel — sits above the sheet (Leaflet must not have bottom:0 or tiles break) */
       #map-panel{
         position:fixed!important;
-        left:0!important;right:0!important;bottom:110px!important;top:auto!important;
+        left:0!important;right:0!important;bottom:88px!important;top:auto!important;
         height:0!important;overflow:hidden!important;
         width:100%!important;z-index:50!important;
         transform:none!important;
@@ -3496,9 +3496,9 @@ ${hsPreviewCss}
       #map-close{display:none!important}
       #leaflet-map{height:100%!important;min-height:0!important}
 
-      /* mob-map-open: 50/50 split */
+      /* mob-map-open: 50/50 split (pano 50dvh top, map fills gap above sheet) */
       body.mob-map-open #pano{height:50dvh!important}
-      body.mob-map-open #map-panel{height:calc(50dvh - 110px)!important}
+      body.mob-map-open #map-panel{height:calc(50dvh - 88px)!important}
 
       /* ── 2. Floating pill header ──────────────── */
       #tour-hdr{
@@ -3570,7 +3570,7 @@ ${hsPreviewCss}
 
       /* ── 4. Collapse/expand FAB ── */
       #mob-pano-toggle{
-        position:fixed!important;right:16px!important;bottom:126px!important;
+        position:fixed!important;right:16px!important;bottom:104px!important;
         width:52px!important;height:52px!important;border-radius:50%!important;
         background:rgba(26,36,52,.85)!important;
         backdrop-filter:blur(8px)!important;-webkit-backdrop-filter:blur(8px)!important;
@@ -3586,25 +3586,25 @@ ${hsPreviewCss}
       /* Old FAB — hidden */
       #mob-collapse-toggle{display:none!important}
 
-      /* ── 5. Bottom sheet ── */
+      /* ── 5. Bottom sheet — overlays pano/map via z-index:200 ── */
       #mob-sheet{
         position:fixed!important;left:0!important;right:0!important;bottom:0!important;
-        height:110px!important;background:#fff!important;
+        height:88px!important;background:#fff!important;
         border-radius:24px 24px 0 0!important;
         box-shadow:0 -2px 16px rgba(0,0,0,.1)!important;
-        z-index:100!important;
+        z-index:200!important;
         display:flex!important;flex-direction:column!important;
-        padding:10px 20px 20px!important;
+        padding:8px 16px 16px!important;
       }
       body.pano-only #mob-sheet{display:none!important}
       #mob-sheet-handle{
         width:36px!important;height:4px!important;background:#d0d0d0!important;
-        border-radius:2px!important;margin:0 auto 10px!important;flex-shrink:0!important;
+        border-radius:2px!important;margin:0 auto 6px!important;flex-shrink:0!important;
       }
       #mob-sheet-content{display:flex!important;align-items:center!important;gap:12px!important;flex:1!important;min-height:0!important}
       #mob-sheet-text{flex:1!important;min-width:0!important}
       #mob-scene-title{
-        font-size:18px!important;font-weight:700!important;color:#1a1a1a!important;
+        font-size:16px!important;font-weight:700!important;color:#1a1a1a!important;
         margin:0 0 2px!important;line-height:1.2!important;
         white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
         display:block!important;
@@ -3614,7 +3614,7 @@ ${hsPreviewCss}
         white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
         display:block!important;
       }
-      #mob-sheet-share{
+      #mob-sheet-detail{
         width:44px!important;height:44px!important;flex-shrink:0!important;
         border-radius:50%!important;background:#f0f0f0!important;
         border:none!important;cursor:pointer!important;
@@ -3627,7 +3627,7 @@ ${hsPreviewCss}
       #mob-reveal-btn{display:none!important}
 
       /* Share popover repositioned above sheet when triggered from mobile */
-      #share-popover{top:auto!important;bottom:126px!important;right:16px!important}
+      #share-popover{top:auto!important;bottom:104px!important;right:16px!important}
 
       /* ── 6. Info panel ────────────────────────── */
       #info-panel{right:0;left:0;top:auto;bottom:0;width:100%;max-height:60vh;border-radius:16px 16px 0 0;box-shadow:0 -4px 32px rgba(0,0,0,.25)}
@@ -3758,7 +3758,7 @@ ${hsPreviewCss}
     </div>
     <div id="hdr-title"></div>
     <div id="hdr-actions">
-      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}<button class="hdr-btn" id="mob-more-btn" onclick="_toggleMobMore()" title="More" style="display:none">&#x22EE;</button><button id="mob-close-btn" onclick="window.opener?window.close():history.length>1?history.back():null" aria-label="Close tour" style="display:none">&#x2715;</button>
+      ${mapHdrBtn}${langHdrBtns}${shareHdrHtml}<button class="hdr-btn" id="info-btn" onclick="_toggleInfo()" title="Scene info">&#x2139;</button>${(modules.feedbackMailto as string | undefined)?.trim() ? ((modules as any).formsEnabled ? `<button class="hdr-btn" onclick="showFormHs('__contact__')" title="Contact form">&#x2709;</button>` : `<a class="hdr-btn" href="mailto:${xmlEsc((modules.feedbackMailto as string).trim())}" title="Send feedback">&#x2709;</a>`) : ''}${modules.vr ? `<button class="hdr-btn" onclick="if(_krpano)_krpano.call('webvr.enterVR()')" title="VR / Cardboard">VR</button>` : ''}${modules.fullscreen !== false ? `<button class="hdr-btn" onclick="_toggleFs()" id="fs-btn" title="Fullscreen">&#x26F6;</button>` : ''}<button class="hdr-btn" id="mob-more-btn" onclick="_toggleMobMore()" title="More" style="display:none">&#x22EE;</button><button id="mob-close-btn" onclick="_mobileShare()" aria-label="Share" style="display:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></button>
     </div>
   </header>
 ${sharePopoverHtml}${mobMorePopoverHtml}
@@ -3820,7 +3820,7 @@ ${showMap ? `  <div id="map-panel">
         <span id="mob-scene-title">${xmlEsc(initialSheetTitle)}</span>
         <span id="mob-scene-cat">${xmlEsc(initialSheetCat)}</span>
       </div>
-      ${hasHdrShare ? `<button id="mob-sheet-share" onclick="window._mobileShare&&window._mobileShare()" aria-label="Share">&#x2197;&#xFE0E;</button>` : ''}
+      <button id="mob-sheet-detail" onclick="_openSceneDetail()" aria-label="Scene info"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
     </div>
   </div>
   ${cookieHtml}
@@ -4082,6 +4082,20 @@ ${showMap ? `  <div id="map-panel">
     if (popup) popup.classList.remove('open');
     document.body.style.overflow = '';
   };
+  // Mobile bottom-sheet chevron → open scene title+description in white full-screen popup
+  window._openSceneDetail = function() {
+    var title = (typeof _displayTitle === 'function') ? (_displayTitle(_curScene) || _curScene || '') : (_curScene || '');
+    var scene = _curScene ? TOUR.scenes[_curScene] : null;
+    var desc = scene ? (scene.description || '') : '';
+    var titleEl = document.getElementById('text-popup-title');
+    var bodyEl = document.getElementById('text-popup-body');
+    if (titleEl) titleEl.textContent = title;
+    if (bodyEl) bodyEl.innerHTML = desc ? '<p>' + String(desc).replace(/\\n\\n/g, '<\/p><p>').replace(/\\n/g, '<br>') + '<\/p>' : '';
+    var popup = document.getElementById('text-popup');
+    if (popup) popup.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    window._track && window._track('scene_detail_open', {scene: _curScene});
+  };
   (document.getElementById('text-popup') || {addEventListener:function(){}}).addEventListener('click', function(e) {
     if (e.target === this) closeTextPopup();
   });
@@ -4274,21 +4288,18 @@ ${showMap ? `  <div id="map-panel">
     document.body.style.overflow = '';
   };
 
-  // Mobile Web Share API
+  // Mobile Web Share API — native share on real mobile, popover fallback on desktop/devtools
   window._mobileShare = function() {
     var scene = _curScene ? TOUR.scenes[_curScene] : null;
     if (navigator.share) {
       navigator.share({
-        title: (scene ? scene.title : TOUR.projectTitle) || TOUR.projectTitle,
-        text: scene ? scene.description || TOUR.projectTitle : TOUR.projectTitle,
+        title: (scene ? (_displayTitle(_curScene) || TOUR.projectTitle) : TOUR.projectTitle) || TOUR.projectTitle,
         url: window.location.href,
-      }).catch(function(){});
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href).then(function() {
-        var t = document.getElementById('ui-toast');
-        if (t) { t.textContent = 'Link copied!'; t.classList.add('visible'); setTimeout(function(){ t.classList.remove('visible'); }, 2000); }
-      });
+      }).catch(function(){ window._toggleShare && window._toggleShare(); });
+      return;
     }
+    // Fallback: open the share popover (FB, WhatsApp, copy link, etc.)
+    window._toggleShare && window._toggleShare();
   };
 
   // Mobile bottom panel — drag-to-hide + reveal button (Street View pattern)
