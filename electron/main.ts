@@ -4210,6 +4210,8 @@ ${showMap ? `  <div id="map-panel">
     if (!p) return;
     p.classList.toggle('open');
   };
+  // Mobile share — wires sheet/strip share button to the share popover
+  window._mobileShare = function() { window._toggleShare && window._toggleShare(); };
   window._copyTourUrl = function() {
     var url = location.href;
     if (navigator.clipboard) {
