@@ -3062,18 +3062,13 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const faviconExt: string = branding.faviconPath ? path.extname(branding.faviconPath as string) : '';
   const faviconLinkHtml: string = branding.faviconPath ? `  <link rel="icon" href="/assets/favicon${xmlEsc(faviconExt)}">\n` : '';
 
-  // ── Header logo / author pill ─────────────────────────────────────────
+  // ── Header logo / tour title pill ────────────────────────────────────
   const logoExt: string = branding.logoPath ? path.extname(branding.logoPath as string) : '';
-  const authorName: string   = (branding.authorName   as string | undefined) || '';
-  const tourDate: string     = (branding.tourDate     as string | undefined) || '';
-  const authorAvatar: string = (branding.authorAvatar as string | undefined) || '';
-  const pillInitial: string  = (authorName || projectTitle || '?').trim().charAt(0).toUpperCase();
-  // authorAvatar (data URL) > logoPath file > initial letter
-  const logoImgHtml: string = authorAvatar
-    ? `<img id="hdr-logo-img" src="${authorAvatar}" alt="">`
-    : branding.logoPath
-      ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
-      : `<span id="hdr-logo-img" class="hdr-initial" aria-hidden="true">${xmlEsc(pillInitial)}</span>`;
+  const pillInitial: string  = (projectTitle || '?').trim().charAt(0).toUpperCase();
+  // logoPath file > initial letter from tour title
+  const logoImgHtml: string = branding.logoPath
+    ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
+    : `<span id="hdr-logo-img" class="hdr-initial" aria-hidden="true">${xmlEsc(pillInitial)}</span>`;
   // Compute initial sheet title/category from start scene
   const initialSheetTitle: string = startScene
     ? (loc(startScene.title as Record<string, string>, lang) || loc(startScene.title as Record<string, string>, defaultLang) || (Object.values((startScene.title as Record<string, string>) || {})[0] || ''))
@@ -3545,10 +3540,9 @@ ${hsPreviewCss}
         max-width:calc(100% - 116px)!important;
       }
       #hdr-logo *{color:#fff!important}
-      #hdr-logo-img{width:26px!important;height:26px!important;border-radius:50%!important;object-fit:cover!important;flex-shrink:0!important}
-      #hdr-logo-img.hdr-initial{display:flex!important;align-items:center!important;justify-content:center!important;background:#555!important;font-size:13px!important;font-weight:700!important;letter-spacing:0!important}
+      #hdr-logo-img{height:22px!important;width:auto!important;max-width:80px!important;border-radius:4px!important;object-fit:contain!important;flex-shrink:0!important}
+      #hdr-logo-img.hdr-initial{display:flex!important;align-items:center!important;justify-content:center!important;width:26px!important;height:26px!important;border-radius:6px!important;background:#555!important;font-size:13px!important;font-weight:700!important;letter-spacing:0!important}
       #hdr-logo-text{font-size:14px!important;font-weight:600!important;line-height:1.2!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-width:0!important}
-      .hdr-date{opacity:.7!important;font-weight:400!important;font-size:13px!important}
       #hdr-title{display:none!important}
       .hdr-sep{display:none!important}
       #hdr-actions{display:flex!important;gap:8px!important;align-items:center!important;flex-shrink:0!important}
@@ -3784,7 +3778,7 @@ ${hsPreviewCss}
   <header id="tour-hdr">
     <div id="hdr-logo">
       ${logoImgHtml}
-      <span id="hdr-logo-text">${xmlEsc(authorName || projectTitle)}${tourDate ? `<span class="hdr-date"> · ${xmlEsc(tourDate)}</span>` : ''}</span>
+      <span id="hdr-logo-text">${xmlEsc(projectTitle)}</span>
     </div>
     <div id="hdr-title"></div>
     <div id="hdr-actions">
