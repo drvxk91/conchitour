@@ -22,6 +22,11 @@ export function TitleBar() {
       </div>
 
       <div className="flex items-center gap-1.5 ml-1">
+        <svg width="16" height="16" viewBox="0 0 512 512" fill="none" aria-hidden="true" className="flex-shrink-0">
+          <path d="M256 256 Q256 112 368 112 Q480 112 480 256 Q480 420 312 440 Q112 460 72 280 Q32 96 240 32 Q424 -24 464 128" stroke="#4B9FE1" strokeWidth="18" fill="none" strokeLinecap="round"/>
+          <path d="M256 256 Q256 176 320 176 Q392 176 392 256 Q392 344 296 352 Q184 360 172 272 Q160 176 248 148" stroke="#D4A574" strokeWidth="12" fill="none" strokeLinecap="round"/>
+          <circle cx="256" cy="256" r="16" fill="#4B9FE1"/>
+        </svg>
         <span className="text-xs font-semibold text-ink tracking-tight">Conchitour</span>
         {(folderName || projectName) && (
           <>
