@@ -15,9 +15,12 @@ jobs:
       - run: npx electron-builder --win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Rename installer
+        run: Get-ChildItem "release\*.exe" | Rename-Item -NewName "Conchitour-Setup.exe"
+        shell: powershell
       - uses: softprops/action-gh-release@v2
         with:
-          files: release/Conchitour Setup*.exe
+          files: release/Conchitour-Setup.exe
           token: ${{ secrets.GITHUB_TOKEN }}
 
   build-mac:
@@ -30,7 +33,9 @@ jobs:
       - run: npx electron-builder --mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Rename DMG
+        run: mv release/*.dmg release/Conchitour.dmg
       - uses: softprops/action-gh-release@v2
         with:
-          files: release/*.dmg
+          files: release/Conchitour.dmg
           token: ${{ secrets.GITHUB_TOKEN }}
