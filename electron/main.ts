@@ -2094,16 +2094,26 @@ ipcMain.handle('capture-scene-thumbnail', async (_e, slug: string, rect: { x: nu
 function setupAppMenu() {
   const sendAction = (action: string) => sendToRenderer(`menu:${action}`);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
+    // ── File ──────────────────────────────────────────────────────────────────
     {
       label: 'File',
       submenu: [
-        { label: 'New Project…',  accelerator: 'CmdOrCtrl+N', click: () => sendAction('new-project') },
-        { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: () => sendAction('open-project') },
+        { label: 'New Project…',     accelerator: 'CmdOrCtrl+N',       click: () => sendAction('new-project') },
+        { label: 'Open Project…',    accelerator: 'CmdOrCtrl+O',       click: () => sendAction('open-project') },
         { type: 'separator' },
-        { label: 'Save',          accelerator: 'CmdOrCtrl+S',       click: () => sendAction('save') },
-        { label: 'Save As…',      accelerator: 'CmdOrCtrl+Shift+S', click: () => sendAction('save-as') },
+        { label: 'Save',             accelerator: 'CmdOrCtrl+S',       click: () => sendAction('save') },
+        { label: 'Save As…',         accelerator: 'CmdOrCtrl+Shift+S', click: () => sendAction('save-as') },
+        { type: 'separator' },
+        { label: 'Import Photos…',   accelerator: 'CmdOrCtrl+I',       click: () => sendAction('navigate-import') },
+        { label: 'Close Project',    accelerator: 'CmdOrCtrl+Shift+W', click: () => sendAction('close-project') },
+        ...(process.platform === 'darwin' ? [
+          { type: 'separator' as const },
+          { role: 'quit' as const },
+        ] : []),
       ],
     },
+
+    // ── Edit ──────────────────────────────────────────────────────────────────
     {
       label: 'Edit',
       submenu: [
@@ -2114,6 +2124,83 @@ function setupAppMenu() {
         { role: 'copy' as const },
         { role: 'paste' as const },
         { role: 'selectAll' as const },
+        { type: 'separator' as const },
+        { label: 'Find Scene…',      accelerator: 'CmdOrCtrl+F',       click: () => sendAction('find-scene') },
+        { label: 'Duplicate Scene',  accelerator: 'CmdOrCtrl+D',       click: () => sendAction('duplicate-scene') },
+        { type: 'separator' as const },
+        { label: 'Rename Scene…',    accelerator: 'F2',                 click: () => sendAction('rename-scene') },
+        { label: 'Delete Scene',     accelerator: 'CmdOrCtrl+Backspace', click: () => sendAction('delete-scene') },
+      ],
+    },
+
+    // ── View ──────────────────────────────────────────────────────────────────
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Import',           accelerator: 'CmdOrCtrl+1', click: () => sendAction('navigate-import') },
+        { label: 'Scenes',           accelerator: 'CmdOrCtrl+2', click: () => sendAction('navigate-scenes') },
+        { label: 'Map',              accelerator: 'CmdOrCtrl+3', click: () => sendAction('navigate-map') },
+        { label: 'Categories',       accelerator: 'CmdOrCtrl+4', click: () => sendAction('navigate-categories') },
+        { label: 'Content',          accelerator: 'CmdOrCtrl+5', click: () => sendAction('navigate-content') },
+        { label: 'Project Info',     accelerator: 'CmdOrCtrl+6', click: () => sendAction('navigate-project') },
+        { label: 'SEO',              accelerator: 'CmdOrCtrl+7', click: () => sendAction('navigate-seo') },
+        { label: 'Languages',        accelerator: 'CmdOrCtrl+8', click: () => sendAction('navigate-languages') },
+        { label: 'Pages',            accelerator: 'CmdOrCtrl+9', click: () => sendAction('navigate-pages') },
+        { label: 'Branding',         accelerator: 'CmdOrCtrl+0', click: () => sendAction('navigate-branding') },
+        { type: 'separator' },
+        { label: 'Share',            accelerator: 'CmdOrCtrl+Shift+H', click: () => sendAction('navigate-share') },
+        { label: 'Modules',          accelerator: 'CmdOrCtrl+Shift+M', click: () => sendAction('navigate-modules') },
+        { label: 'Analytics',        accelerator: 'CmdOrCtrl+Shift+G', click: () => sendAction('navigate-analytics') },
+        { label: 'Audit',            accelerator: 'CmdOrCtrl+Shift+U', click: () => sendAction('navigate-audit') },
+        { label: 'Compile',          accelerator: 'CmdOrCtrl+Shift+B', click: () => sendAction('navigate-compile') },
+        { type: 'separator' },
+        { label: 'Zoom In',          accelerator: 'CmdOrCtrl+Plus',    role: 'zoomIn' as const },
+        { label: 'Zoom Out',         accelerator: 'CmdOrCtrl+-',       role: 'zoomOut' as const },
+        { label: 'Reset Zoom',       accelerator: 'CmdOrCtrl+0',       role: 'resetZoom' as const },
+        { type: 'separator' },
+        { role: 'reload' as const },
+        ...(isDev ? [{ role: 'toggleDevTools' as const }] : []),
+      ],
+    },
+
+    // ── Build ─────────────────────────────────────────────────────────────────
+    {
+      label: 'Build',
+      submenu: [
+        { label: 'Run Audit',        accelerator: 'CmdOrCtrl+Shift+U', click: () => sendAction('navigate-audit') },
+        { label: 'Compile Tour',     accelerator: 'CmdOrCtrl+Shift+B', click: () => sendAction('navigate-compile') },
+        { label: 'Quick Preview',    accelerator: 'CmdOrCtrl+Shift+P', click: () => sendAction('quick-preview') },
+        { type: 'separator' },
+        { label: 'Open Output Folder', accelerator: 'CmdOrCtrl+Shift+E', click: () => sendAction('open-output-folder') },
+      ],
+    },
+
+    // ── Window ────────────────────────────────────────────────────────────────
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' as const },
+        { role: 'zoom' as const },
+        ...(process.platform === 'darwin' ? [
+          { type: 'separator' as const },
+          { role: 'front' as const },
+        ] : [
+          { role: 'close' as const },
+        ]),
+      ],
+    },
+
+    // ── Help ──────────────────────────────────────────────────────────────────
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Documentation',   click: () => shell.openExternal('https://conchitour.com/docs') },
+        { label: 'Release Notes',   click: () => shell.openExternal('https://conchitour.com/changelog') },
+        { type: 'separator' },
+        { label: 'Report a Bug',    click: () => shell.openExternal('mailto:help@conchitour.com?subject=Bug%20Report') },
+        { label: 'Contact Support', click: () => shell.openExternal('mailto:help@conchitour.com') },
+        { type: 'separator' },
+        { label: `About Conchitour v${app.getVersion()}`, click: () => sendAction('about') },
       ],
     },
   ]));

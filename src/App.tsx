@@ -189,7 +189,7 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
 }
 
 export default function App() {
-  const { activeScreen, project, clearDirty, loadProjectData, setProjectDir } = useProject();
+  const { activeScreen, setActiveScreen, project, clearDirty, loadProjectData, setProjectDir } = useProject();
   const { status: licenseStatus, initialized: licenseInitialized, initialize: initLicense, setStatus: setLicenseStatus } = useLicense();
   const needsFullHeight = activeScreen === 'scenes' || activeScreen === 'map';
 
@@ -259,17 +259,59 @@ export default function App() {
     loadProjectData(result.project as Project, result.projectDir);
   }, [loadProjectData]);
 
-  // Ctrl+S / menu actions (guard: Conchitour may be undefined if preload failed)
+  // Menu actions (guard: Conchitour may be undefined if preload failed)
   useEffect(() => {
     if (!window.conchitour?.onMenuAction) return;
+
+    const nav = (screen: Parameters<typeof setActiveScreen>[0]) => () => setActiveScreen(screen);
+
     const unsubs = [
-      window.conchitour.onMenuAction('save',         handleSave),
-      window.conchitour.onMenuAction('save-as',      handleSaveAs),
-      window.conchitour.onMenuAction('new-project',  handleNewProject),
-      window.conchitour.onMenuAction('open-project', handleOpenProject),
+      // File
+      window.conchitour.onMenuAction('save',              handleSave),
+      window.conchitour.onMenuAction('save-as',           handleSaveAs),
+      window.conchitour.onMenuAction('new-project',       handleNewProject),
+      window.conchitour.onMenuAction('open-project',      handleOpenProject),
+      window.conchitour.onMenuAction('close-project',     handleNewProject), // reuse: returns to welcome
+
+      // Navigate — View menu shortcuts Cmd+1…0
+      window.conchitour.onMenuAction('navigate-import',    nav('import')),
+      window.conchitour.onMenuAction('navigate-scenes',    nav('scenes')),
+      window.conchitour.onMenuAction('navigate-map',       nav('map')),
+      window.conchitour.onMenuAction('navigate-categories',nav('categories')),
+      window.conchitour.onMenuAction('navigate-content',   nav('content')),
+      window.conchitour.onMenuAction('navigate-project',   nav('project')),
+      window.conchitour.onMenuAction('navigate-seo',       nav('seo')),
+      window.conchitour.onMenuAction('navigate-languages', nav('languages')),
+      window.conchitour.onMenuAction('navigate-pages',     nav('pages')),
+      window.conchitour.onMenuAction('navigate-branding',  nav('branding')),
+      window.conchitour.onMenuAction('navigate-share',     nav('share')),
+      window.conchitour.onMenuAction('navigate-modules',   nav('modules')),
+      window.conchitour.onMenuAction('navigate-analytics', nav('analytics')),
+      window.conchitour.onMenuAction('navigate-audit',     nav('audit')),
+      window.conchitour.onMenuAction('navigate-compile',   nav('compile')),
+
+      // Build
+      window.conchitour.onMenuAction('quick-preview',      () => {
+        // Navigate to Compile screen which hosts the preview server controls
+        setActiveScreen('compile');
+        // Give the screen a tick to mount, then trigger preview
+        setTimeout(() => window.dispatchEvent(new CustomEvent('menu:quick-preview')), 150);
+      }),
+      window.conchitour.onMenuAction('open-output-folder', () => {
+        window.dispatchEvent(new CustomEvent('menu:open-output-folder'));
+      }),
+
+      // Edit — scene operations forwarded as CustomEvents for ScenesScreen
+      window.conchitour.onMenuAction('find-scene',      () => window.dispatchEvent(new CustomEvent('menu:find-scene'))),
+      window.conchitour.onMenuAction('duplicate-scene', () => window.dispatchEvent(new CustomEvent('menu:duplicate-scene'))),
+      window.conchitour.onMenuAction('rename-scene',    () => window.dispatchEvent(new CustomEvent('menu:rename-scene'))),
+      window.conchitour.onMenuAction('delete-scene',    () => window.dispatchEvent(new CustomEvent('menu:delete-scene'))),
+
+      // Help
+      window.conchitour.onMenuAction('about', () => window.dispatchEvent(new CustomEvent('menu:about'))),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [handleSave, handleSaveAs, handleNewProject, handleOpenProject]);
+  }, [handleSave, handleSaveAs, handleNewProject, handleOpenProject, setActiveScreen]);
 
   // Preview mode: opened as a separate BrowserWindow by main process
   // (license gate is not shown in preview windows)
