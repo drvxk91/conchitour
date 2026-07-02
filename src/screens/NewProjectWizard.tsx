@@ -362,12 +362,13 @@ function StepQ5({
 
 interface Props {
   onClose: () => void;
+  initialStep?: WizardStep;
 }
 
-export function NewProjectWizard({ onClose }: Props) {
+export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props) {
   const { loadProjectData, setActiveScreen } = useProject();
 
-  const [step, setStep] = useState<WizardStep>('mode-select');
+  const [step, setStep] = useState<WizardStep>(initialStep);
 
   // Quick mode
   const [quickName, setQuickName] = useState('My Tour');
@@ -484,7 +485,7 @@ export function NewProjectWizard({ onClose }: Props) {
         );
 
         setSummary({
-          projectName: parsed.projectName ?? loc.split(',')[0].trim() || 'My Tour',
+          projectName: parsed.projectName ?? (loc.split(',')[0].trim() || 'My Tour'),
           defaultLang,
           extraLanguages: (parsed.extraLanguages ?? []).filter((l) => l !== defaultLang).slice(0, 4),
           tone,
@@ -609,6 +610,8 @@ export function NewProjectWizard({ onClose }: Props) {
   }, [summary, apiKey, apiProvider, loadProjectData, setActiveScreen, onClose]);
 
   const goBack = useCallback(() => {
+    // If wizard started at api-key (no mode-select), back = close modal
+    if (step === 'api-key' && initialStep === 'api-key') { onClose(); return; }
     const prev: Partial<Record<WizardStep, WizardStep>> = {
       'quick-name': 'mode-select',
       'api-key':    'mode-select',
@@ -789,6 +792,16 @@ export function NewProjectWizard({ onClose }: Props) {
                 {keyTestState === 'ok' && (
                   <p className="text-xs text-emerald-400">Connected ✓</p>
                 )}
+                <button
+                  onClick={() => window.conchitour.openUrl(
+                    apiProvider === 'claude'
+                      ? 'https://console.anthropic.com/settings/keys'
+                      : 'https://platform.openai.com/api-keys'
+                  )}
+                  className="text-xs text-ink-faded hover:text-accent transition-colors underline underline-offset-2"
+                >
+                  {apiProvider === 'claude' ? 'Get your Anthropic key →' : 'Get your OpenAI key →'}
+                </button>
               </div>
             </div>
           )}

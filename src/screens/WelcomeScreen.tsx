@@ -37,7 +37,7 @@ export function WelcomeScreen() {
 
   return (
     <div className="h-full flex flex-col items-center justify-center bg-paper-soft select-none">
-      {showWizard && <NewProjectWizard onClose={() => setShowWizard(false)} />}
+      {showWizard && <NewProjectWizard onClose={() => setShowWizard(false)} initialStep="api-key" />}
       <div className="mb-12 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-ink-base">Conchitour</h1>
         <p className="text-sm text-ink-soft mt-1">Architect your virtual tours.</p>
@@ -72,37 +72,36 @@ export function WelcomeScreen() {
           </button>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex gap-4">
+        <div className="flex gap-4">
+          {/* New project — two sub-options in one card */}
+          <div className="w-44 rounded-xl border border-line bg-paper p-5 flex flex-col gap-3">
+            <div className="text-xs text-ink-faded font-medium">New project</div>
             <button
               onClick={openNaming}
-              className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
+              className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-paper-strong hover:border-ink-soft text-sm font-medium text-ink-base transition-all"
             >
-              <Plus size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
-              <div className="text-center">
-                <div className="text-sm font-medium text-ink-base">New project</div>
-                <div className="text-xs text-ink-faded mt-0.5">Start from scratch</div>
-              </div>
+              <Plus size={14} className="text-ink-soft group-hover:text-ink-base transition-colors shrink-0" />
+              Quick start
             </button>
-
             <button
-              onClick={handleOpen}
-              className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
+              onClick={() => { setShowWizard(true); }}
+              className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent text-sm font-medium text-accent transition-all"
             >
-              <FolderOpen size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
-              <div className="text-center">
-                <div className="text-sm font-medium text-ink-base">Open project</div>
-                <div className="text-xs text-ink-faded mt-0.5">Load a .conchitour file</div>
-              </div>
+              <Sparkles size={14} className="shrink-0" />
+              AI setup
             </button>
           </div>
 
+          {/* Open project */}
           <button
-            onClick={() => setShowWizard(true)}
-            className="group flex items-center gap-2 px-5 py-2.5 rounded-full border border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent text-accent transition-all text-sm font-medium"
+            onClick={handleOpen}
+            className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
           >
-            <Sparkles size={14} />
-            New project with AI setup
+            <FolderOpen size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
+            <div className="text-center">
+              <div className="text-sm font-medium text-ink-base">Open project</div>
+              <div className="text-xs text-ink-faded mt-0.5">Load a .conchitour file</div>
+            </div>
           </button>
         </div>
       )}
