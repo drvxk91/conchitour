@@ -1,12 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
-import { ArrowRight, FolderOpen, Plus } from 'lucide-react';
+import { ArrowRight, FolderOpen, Plus, Sparkles } from 'lucide-react';
 import { useProject } from '@/store/project';
+import { NewProjectWizard } from '@/screens/NewProjectWizard';
 import type { Project } from '@/types';
 
 export function WelcomeScreen() {
   const { loadProjectData, setProjectDir, clearDirty, setActiveScreen } = useProject();
   const [naming, setNaming] = useState(false);
   const [nameValue, setNameValue] = useState('My Tour');
+  const [showWizard, setShowWizard] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const openNaming = useCallback(() => {
@@ -35,6 +37,7 @@ export function WelcomeScreen() {
 
   return (
     <div className="h-full flex flex-col items-center justify-center bg-paper-soft select-none">
+      {showWizard && <NewProjectWizard onClose={() => setShowWizard(false)} />}
       <div className="mb-12 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-ink-base">Conchitour</h1>
         <p className="text-sm text-ink-soft mt-1">Architect your virtual tours.</p>
@@ -69,27 +72,37 @@ export function WelcomeScreen() {
           </button>
         </div>
       ) : (
-        <div className="flex gap-4">
-          <button
-            onClick={openNaming}
-            className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
-          >
-            <Plus size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
-            <div className="text-center">
-              <div className="text-sm font-medium text-ink-base">New project</div>
-              <div className="text-xs text-ink-faded mt-0.5">Start from scratch</div>
-            </div>
-          </button>
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex gap-4">
+            <button
+              onClick={openNaming}
+              className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
+            >
+              <Plus size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
+              <div className="text-center">
+                <div className="text-sm font-medium text-ink-base">New project</div>
+                <div className="text-xs text-ink-faded mt-0.5">Start from scratch</div>
+              </div>
+            </button>
+
+            <button
+              onClick={handleOpen}
+              className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
+            >
+              <FolderOpen size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
+              <div className="text-center">
+                <div className="text-sm font-medium text-ink-base">Open project</div>
+                <div className="text-xs text-ink-faded mt-0.5">Load a .conchitour file</div>
+              </div>
+            </button>
+          </div>
 
           <button
-            onClick={handleOpen}
-            className="group flex flex-col items-center gap-3 w-44 py-8 px-6 rounded-xl border border-line bg-paper hover:border-ink-soft hover:shadow-sm transition-all"
+            onClick={() => setShowWizard(true)}
+            className="group flex items-center gap-2 px-5 py-2.5 rounded-full border border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent text-accent transition-all text-sm font-medium"
           >
-            <FolderOpen size={28} className="text-ink-soft group-hover:text-ink-base transition-colors" />
-            <div className="text-center">
-              <div className="text-sm font-medium text-ink-base">Open project</div>
-              <div className="text-xs text-ink-faded mt-0.5">Load a .conchitour file</div>
-            </div>
+            <Sparkles size={14} />
+            New project with AI setup
           </button>
         </div>
       )}

@@ -106,6 +106,16 @@ contextBridge.exposeInMainWorld('conchitour', {
     ipcRenderer.invoke('trial:get-state', sceneCount, languageCount),
   trialConsumeAiCall: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('trial:consume-ai-call'),
+  // Wizard mobile server
+  wizardStartServer: (): Promise<{ port: number; lanUrl: string | null }> =>
+    ipcRenderer.invoke('wizard:start-server'),
+  wizardStopServer: (): Promise<void> =>
+    ipcRenderer.invoke('wizard:stop-server'),
+  onWizardMobileAnswers: (cb: (answers: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown) => cb(data);
+    ipcRenderer.on('wizard:mobile-answers', handler as Parameters<typeof ipcRenderer.on>[1]);
+    return () => ipcRenderer.removeListener('wizard:mobile-answers', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
+  },
 });
 
 export interface PhotoExif {
@@ -316,6 +326,10 @@ declare global {
       // Trial
       trialGetState: (sceneCount: number, languageCount: number) => Promise<TrialState | null>;
       trialConsumeAiCall: () => Promise<{ ok: boolean; error?: string }>;
+      // Wizard mobile server
+      wizardStartServer: () => Promise<{ port: number; lanUrl: string | null }>;
+      wizardStopServer: () => Promise<void>;
+      onWizardMobileAnswers: (cb: (answers: unknown) => void) => () => void;
     };
   }
 }

@@ -85,4 +85,12 @@ contextBridge.exposeInMainWorld('conchitour', {
     // Trial
     trialGetState: (sceneCount, languageCount) => ipcRenderer.invoke('trial:get-state', sceneCount, languageCount),
     trialConsumeAiCall: () => ipcRenderer.invoke('trial:consume-ai-call'),
+    // Wizard mobile server
+    wizardStartServer: () => ipcRenderer.invoke('wizard:start-server'),
+    wizardStopServer: () => ipcRenderer.invoke('wizard:stop-server'),
+    onWizardMobileAnswers: (cb) => {
+        const handler = (_event, data) => cb(data);
+        ipcRenderer.on('wizard:mobile-answers', handler);
+        return () => ipcRenderer.removeListener('wizard:mobile-answers', handler);
+    },
 });

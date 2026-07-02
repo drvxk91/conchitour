@@ -5706,6 +5706,237 @@ ipcMain.handle('license:get-local', async () => {
   return getLocalLicense();
 });
 
+// ── Wizard mobile server ──────────────────────────────────────────────────────
+let wizardServer: import('http').Server | null = null;
+let wizardServerPort = 0;
+
+const WIZARD_MOBILE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Conchitour Setup</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e8e8e4;min-height:100dvh;padding:20px 16px 48px}
+.logo{font-size:14px;font-weight:700;color:#185FA5;letter-spacing:.3px;margin-bottom:28px}
+.progress{display:flex;gap:5px;margin-bottom:32px}
+.dot{height:3px;flex:1;border-radius:2px;background:#222;transition:background .3s}
+.dot.active{background:#185FA5}
+.dot.done{background:#1D9E75}
+h2{font-size:22px;font-weight:700;line-height:1.3;margin-bottom:6px}
+.sub{font-size:14px;color:#777;margin-bottom:22px;line-height:1.5}
+input[type=text]{width:100%;padding:14px 16px;border-radius:12px;border:1.5px solid #222;background:#141414;color:#e8e8e4;font-size:16px;outline:none;transition:border .2s;-webkit-appearance:none}
+input[type=text]:focus{border-color:#185FA5}
+.chip-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
+.chip{padding:10px 16px;border-radius:100px;border:1.5px solid #222;background:#141414;color:#999;font-size:14px;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent;user-select:none}
+.chip.sel{border-color:#185FA5;background:#185FA520;color:#e8e8e4}
+.tone-card{padding:16px;border-radius:14px;border:1.5px solid #222;background:#141414;margin-bottom:10px;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.tone-card.sel{border-color:#185FA5;background:#185FA510}
+.tone-title{font-weight:600;font-size:15px;margin-bottom:4px}
+.tone-ex{font-size:12px;color:#555;font-style:italic}
+.color-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+input[type=color]{width:44px;height:44px;border-radius:10px;border:none;cursor:pointer;padding:0;background:none;-webkit-appearance:none;appearance:none}
+.hex-in{flex:1;padding:12px 14px;border-radius:10px;border:1.5px solid #222;background:#141414;color:#e8e8e4;font-size:15px;font-family:monospace;outline:none}
+.hex-in:focus{border-color:#185FA5}
+.auto-btn{width:100%;padding:13px;border-radius:10px;border:1.5px solid #222;background:#141414;color:#999;font-size:14px;cursor:pointer;margin-bottom:8px;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.auto-lbl{font-size:12px;color:#555;margin-bottom:4px;min-height:16px}
+.btn{width:100%;padding:16px;border-radius:14px;background:#185FA5;color:#fff;font-size:16px;font-weight:600;border:none;cursor:pointer;margin-top:24px;-webkit-tap-highlight-color:transparent;transition:opacity .15s}
+.btn:disabled{opacity:.45}
+.step{display:none}
+.step.active{display:block}
+.done{text-align:center;padding:70px 0}
+.done-icon{font-size:56px;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div class="logo">✦ Conchitour</div>
+<div class="progress"><div class="dot" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div><div class="dot" id="d5"></div></div>
+
+<div class="step active" id="s1">
+<h2>What place are you touring?</h2>
+<p class="sub">Name, city, or description of the venue.</p>
+<input type="text" id="loc" placeholder="e.g. Château de Versailles, France" autocomplete="off"/>
+<button class="btn" id="n1" disabled>Continue →</button>
+</div>
+
+<div class="step" id="s2">
+<h2>Who's visiting?</h2>
+<p class="sub">Select all that apply.</p>
+<div class="chip-grid" id="aud-chips">
+<div class="chip" data-v="international_tourists">🌍 International tourists</div>
+<div class="chip" data-v="local_customers">🛒 Local customers</div>
+<div class="chip" data-v="property_buyers">🏠 Property buyers</div>
+<div class="chip" data-v="students">🎓 Students</div>
+<div class="chip" data-v="general_public">👥 General public</div>
+</div>
+<button class="btn" id="n2">Continue →</button>
+</div>
+
+<div class="step" id="s3">
+<h2>Editorial tone</h2>
+<p class="sub">How should content feel?</p>
+<div class="tone-card" data-v="factual"><div class="tone-title">📚 Informative</div><div class="tone-ex">"Built in 1682, the château counts 2,300 rooms…"</div></div>
+<div class="tone-card" data-v="storytelling"><div class="tone-title">🌊 Immersive</div><div class="tone-ex">"Imagine walking these royal corridors…"</div></div>
+<div class="tone-card" data-v="marketing"><div class="tone-title">💼 Commercial</div><div class="tone-ex">"Discover our park-view suites, perfect for…"</div></div>
+<div class="tone-card" data-v="poetic"><div class="tone-title">✨ Luxury</div><div class="tone-ex">"An exceptional experience at the heart of unique heritage."</div></div>
+<button class="btn" id="n3" disabled>Continue →</button>
+</div>
+
+<div class="step" id="s4">
+<h2>Types of spaces</h2>
+<p class="sub">Select all spaces you'll photograph.</p>
+<div class="chip-grid" id="cat-chips"></div>
+<button class="btn" id="n4">Continue →</button>
+</div>
+
+<div class="step" id="s5">
+<h2>Accent color</h2>
+<p class="sub">Primary color for hotspots and UI.</p>
+<div class="color-row">
+<input type="color" id="cswatch" value="#185FA5">
+<input type="text" class="hex-in" id="chex" value="#185FA5" maxlength="7"/>
+</div>
+<button class="auto-btn" id="auto-c">✦ Let AI suggest a color</button>
+<div class="auto-lbl" id="auto-lbl"></div>
+<button class="btn" id="n5">Finish &amp; send →</button>
+</div>
+
+<div class="step done" id="sdone">
+<div class="done-icon">✓</div>
+<h2>Setup sent!</h2>
+<p class="sub" style="margin-top:10px">Return to your computer.<br>The configuration has been applied.</p>
+</div>
+
+<script>
+const S={loc:'',aud:[],tone:'',cats:[],color:'#185FA5',vtype:''};
+const CATS={hotel:['Rooms','Restaurant','Spa','Exterior','Meeting rooms'],museum:['Permanent galleries','Temporary exhibitions','Common areas'],realEstate:['Living areas','Bedrooms','Exterior','Garden'],restaurant:['Dining room','Bar','Kitchen','Terrace'],heritage:['Main halls','Gardens','Courtyards','Exhibition spaces']};
+const AUTO_COLORS={hotel:'#185FA5',museum:'#8B1A1A',realEstate:'#1D7A4A',restaurant:'#BA4A00',heritage:'#8B6914'};
+
+function show(id){
+  document.querySelectorAll('.step').forEach(el=>el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const n=parseInt(id.replace('s',''))||0;
+  for(let i=1;i<=5;i++){
+    const d=document.getElementById('d'+i);
+    if(i<n)d.className='dot done';else if(i===n)d.className='dot active';else d.className='dot';
+  }
+}
+
+// Q1
+const loc=document.getElementById('loc');
+loc.addEventListener('input',()=>{S.loc=loc.value.trim();document.getElementById('n1').disabled=!S.loc;});
+loc.addEventListener('keydown',e=>{if(e.key==='Enter'&&S.loc)show('s2');});
+document.getElementById('n1').addEventListener('click',()=>show('s2'));
+
+// Q2
+document.querySelectorAll('#aud-chips .chip').forEach(c=>{
+  c.addEventListener('click',()=>{
+    c.classList.toggle('sel');
+    const v=c.dataset.v;
+    S.aud=c.classList.contains('sel')?[...S.aud,v]:S.aud.filter(x=>x!==v);
+  });
+});
+document.getElementById('n2').addEventListener('click',()=>show('s3'));
+
+// Q3
+document.querySelectorAll('.tone-card').forEach(c=>{
+  c.addEventListener('click',()=>{
+    document.querySelectorAll('.tone-card').forEach(x=>x.classList.remove('sel'));
+    c.classList.add('sel');S.tone=c.dataset.v;
+    document.getElementById('n3').disabled=false;
+  });
+});
+document.getElementById('n3').addEventListener('click',()=>{
+  const l=S.loc.toLowerCase();
+  if(/hotel|resort|inn|lodge/i.test(l))S.vtype='hotel';
+  else if(/museum|gallery|musée|galerie/i.test(l))S.vtype='museum';
+  else if(/apartment|villa|house|flat|immo/i.test(l))S.vtype='realEstate';
+  else if(/restaurant|bistro|café|cafe|brasserie/i.test(l))S.vtype='restaurant';
+  else if(/château|castle|cathedral|monument|palace|palais|abbey|abbaye/i.test(l))S.vtype='heritage';
+  else S.vtype='';
+  const cats=CATS[S.vtype];
+  if(cats){
+    const g=document.getElementById('cat-chips');g.innerHTML='';
+    cats.forEach(cat=>{const el=document.createElement('div');el.className='chip';el.textContent=cat;el.dataset.v=cat;el.addEventListener('click',()=>{el.classList.toggle('sel');S.cats=el.classList.contains('sel')?[...S.cats,cat]:S.cats.filter(x=>x!==cat);});g.appendChild(el);});
+    show('s4');
+  }else{show('s5');}
+});
+
+// Q4
+document.getElementById('n4').addEventListener('click',()=>show('s5'));
+
+// Q5
+const cswatch=document.getElementById('cswatch');
+const chex=document.getElementById('chex');
+cswatch.addEventListener('input',()=>{chex.value=cswatch.value;S.color=cswatch.value;});
+chex.addEventListener('input',()=>{const v=chex.value;if(/^#[0-9a-fA-F]{6}$/.test(v)){cswatch.value=v;S.color=v;}});
+document.getElementById('auto-c').addEventListener('click',()=>{
+  const c=AUTO_COLORS[S.vtype]||'#185FA5';
+  cswatch.value=c;chex.value=c;S.color=c;
+  document.getElementById('auto-lbl').textContent='✓ Color matched to venue type';
+});
+document.getElementById('n5').addEventListener('click',async()=>{
+  const btn=document.getElementById('n5');
+  btn.disabled=true;btn.textContent='Sending…';
+  try{
+    await fetch('/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(S)});
+    show('sdone');
+    document.querySelector('.progress').style.display='none';
+  }catch{btn.disabled=false;btn.textContent='Retry →';}
+});
+
+show('s1');
+setTimeout(()=>loc.focus(),100);
+</script>
+</body>
+</html>`;
+
+ipcMain.handle('wizard:start-server', async () => {
+  if (wizardServer) { wizardServer.close(); wizardServer = null; }
+
+  wizardServer = http.createServer((req, res) => {
+    if (req.method === 'GET' && (req.url === '/' || req.url === '')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(WIZARD_MOBILE_HTML);
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/finish') {
+      let body = '';
+      req.on('data', chunk => { body += String(chunk); });
+      req.on('end', () => {
+        try {
+          const answers = JSON.parse(body);
+          sendToRenderer('wizard:mobile-answers', answers);
+        } catch { /* malformed */ }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+    res.writeHead(404).end();
+  });
+
+  return new Promise<{ port: number; lanUrl: string | null }>((resolve) => {
+    wizardServer!.listen(0, '0.0.0.0', () => {
+      wizardServerPort = (wizardServer!.address() as { port: number }).port;
+      const ifaces = os.networkInterfaces();
+      let lanUrl: string | null = null;
+      for (const iface of Object.values(ifaces).flat()) {
+        if (iface && iface.family === 'IPv4' && !iface.internal) {
+          lanUrl = `http://${iface.address}:${wizardServerPort}/`;
+          break;
+        }
+      }
+      resolve({ port: wizardServerPort, lanUrl });
+    });
+  });
+});
+
+ipcMain.handle('wizard:stop-server', () => {
+  if (wizardServer) { wizardServer.close(); wizardServer = null; wizardServerPort = 0; }
+});
+
 // ── Trial IPC ─────────────────────────────────────────────────────────────────
 
 ipcMain.handle('trial:get-state', async (_e, sceneCount: number, languageCount: number) => {
