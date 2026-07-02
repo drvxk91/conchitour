@@ -17,7 +17,8 @@ import type { Project, Category } from '@/types';
 
 type WizardStep =
   | 'mode-select' | 'quick-name' | 'api-key' | 'routing'
-  | 'venue' | 'analyzing' | 'project-type' | 'audience' | 'spaces' | 'capture' | 'tone' | 'extras'
+  | 'venue' | 'analyzing'
+  | 'project-type' | 'client-type' | 'goal' | 'audience' | 'spaces' | 'capture' | 'tone' | 'extras'
   | 'generating' | 'summary' | 'qr-waiting';
 
 interface DynamicOption {
@@ -42,6 +43,7 @@ interface SummaryCat {
   slug: string;
   name: string;
   color: string;
+  icon?: string;
 }
 
 interface WizardSummary {
@@ -59,50 +61,44 @@ interface WizardSummary {
 const COLOR_PALETTE = ['#185FA5', '#8B5CF6', '#1D9E75', '#BA7517', '#0EA5E9', '#F59E0B', '#EF4444', '#EC4899'];
 function pickColor(i: number) { return COLOR_PALETTE[i % COLOR_PALETTE.length]; }
 
-/** Comprehensive fallback venue types — AI generates contextual ones, these are the safety net */
+/** Wrap an emoji in a minimal SVG for Category.iconSvg */
+function emojiToIconSvg(emoji: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><text y="26" font-size="26">${emoji}</text></svg>`;
+}
+
+/** 27 fallback venue types — AI generates contextual ones; these are the safety net */
 const FALLBACK_TYPE_OPTIONS: DynamicOption[] = [
-  // Hospitality
-  { key: 'hotel',       label: 'Hotel / Resort',       icon: '🏨', example: 'Rooms, restaurant, spa, pool…' },
-  { key: 'bnb',         label: 'B&B / Guesthouse',     icon: '🛏️', example: 'Cozy rooms, shared spaces…' },
-  { key: 'villa',       label: 'Villa / Holiday home',  icon: '🏖️', example: 'Private rental, luxury stay…' },
-  // Real estate
-  { key: 'apartment',   label: 'Apartment / Flat',      icon: '🏢', example: 'For sale or rent listing…' },
-  { key: 'house',       label: 'House / Property',      icon: '🏡', example: 'Single-family home for sale…' },
-  { key: 'real-estate', label: 'Real estate agency',    icon: '🔑', example: 'Multiple properties showcase…' },
-  // Food & Beverage
-  { key: 'restaurant',  label: 'Restaurant',            icon: '🍽️', example: 'Dining room, bar, terrace…' },
-  { key: 'bar',         label: 'Bar / Nightclub',       icon: '🍸', example: 'Ambiance, dance floor, VIP…' },
-  { key: 'cafe',        label: 'Café / Bakery',         icon: '☕', example: 'Counter, seating, kitchen…' },
-  // Retail & Commerce
-  { key: 'shop',        label: 'Shop / Boutique',       icon: '🛍️', example: 'Clothing, accessories, showroom…' },
-  { key: 'mall',        label: 'Shopping center',       icon: '🏬', example: 'Galleries, food court, parking…' },
-  { key: 'showroom',    label: 'Showroom',              icon: '✨', example: 'Furniture, design, luxury goods…' },
-  { key: 'car-dealer',  label: 'Car dealership',        icon: '🚗', example: 'Exhibition floor, models display…' },
-  // Business & Professional
-  { key: 'office',      label: 'Office / Coworking',    icon: '💼', example: 'Open space, meeting rooms…' },
-  { key: 'corporate',   label: 'Corporate HQ',          icon: '🏛️', example: 'Reception, floors, facilities…' },
-  { key: 'industrial',  label: 'Factory / Industrial',  icon: '🏭', example: 'Production lines, warehouses…' },
-  // Cultural & Education
-  { key: 'museum',      label: 'Museum / Gallery',      icon: '🖼️', example: 'Exhibitions, collections, garden…' },
-  { key: 'school',      label: 'School / University',   icon: '🎓', example: 'Classrooms, campus, labs…' },
-  { key: 'library',     label: 'Library',               icon: '📚', example: 'Reading rooms, archives…' },
-  // Tourism & Heritage
-  { key: 'heritage',    label: 'Heritage site',         icon: '🏰', example: 'Château, castle, monument…' },
-  { key: 'attraction',  label: 'Tourist attraction',    icon: '🗺️', example: 'Park, landmark, theme…' },
-  // Health & Wellness
-  { key: 'spa',         label: 'Spa / Wellness',        icon: '💆', example: 'Treatment rooms, pool, sauna…' },
-  { key: 'gym',         label: 'Gym / Sports',          icon: '🏋️', example: 'Equipment, studios, pool…' },
-  { key: 'clinic',      label: 'Clinic / Hospital',     icon: '🏥', example: 'Consultation rooms, ward…' },
-  // Events & Public
-  { key: 'venue',       label: 'Event venue',           icon: '🎪', example: 'Main hall, garden, catering…' },
-  { key: 'government',  label: 'Public / Government',   icon: '🏛️', example: 'City hall, public spaces…' },
-  { key: 'sports',      label: 'Stadium / Arena',       icon: '🏟️', example: 'Stands, field, facilities…' },
+  { key: 'hotel',       label: 'Hotel / Resort',        icon: '🏨', example: 'Rooms, restaurant, spa, pool…' },
+  { key: 'bnb',         label: 'B&B / Guesthouse',      icon: '🛏️', example: 'Cozy rooms, shared spaces…' },
+  { key: 'villa',       label: 'Villa / Holiday home',   icon: '🏖️', example: 'Private rental, luxury stay…' },
+  { key: 'apartment',   label: 'Apartment / Flat',       icon: '🏢', example: 'For sale or rent listing…' },
+  { key: 'house',       label: 'House / Property',       icon: '🏡', example: 'Single-family home for sale…' },
+  { key: 'real-estate', label: 'Real estate agency',     icon: '🔑', example: 'Multiple properties showcase…' },
+  { key: 'restaurant',  label: 'Restaurant',             icon: '🍽️', example: 'Dining room, bar, terrace…' },
+  { key: 'bar',         label: 'Bar / Nightclub',        icon: '🍸', example: 'Ambiance, dance floor, VIP…' },
+  { key: 'cafe',        label: 'Café / Bakery',          icon: '☕', example: 'Counter, seating, kitchen…' },
+  { key: 'shop',        label: 'Shop / Boutique',        icon: '🛍️', example: 'Clothing, accessories…' },
+  { key: 'mall',        label: 'Shopping center',        icon: '🏬', example: 'Galleries, food court, parking…' },
+  { key: 'showroom',    label: 'Showroom',               icon: '✨', example: 'Furniture, design, luxury goods…' },
+  { key: 'car-dealer',  label: 'Car dealership',         icon: '🚗', example: 'Exhibition floor, models display…' },
+  { key: 'office',      label: 'Office / Coworking',     icon: '💼', example: 'Open space, meeting rooms…' },
+  { key: 'corporate',   label: 'Corporate HQ',           icon: '🏛️', example: 'Reception, floors, facilities…' },
+  { key: 'industrial',  label: 'Factory / Industrial',   icon: '🏭', example: 'Production lines, warehouses…' },
+  { key: 'museum',      label: 'Museum / Gallery',       icon: '🖼️', example: 'Exhibitions, collections, garden…' },
+  { key: 'school',      label: 'School / University',    icon: '🎓', example: 'Classrooms, campus, labs…' },
+  { key: 'library',     label: 'Library',                icon: '📚', example: 'Reading rooms, archives…' },
+  { key: 'heritage',    label: 'Heritage site',          icon: '🏰', example: 'Château, castle, monument…' },
+  { key: 'attraction',  label: 'Tourist attraction',     icon: '🗺️', example: 'Park, landmark, theme…' },
+  { key: 'spa',         label: 'Spa / Wellness',         icon: '💆', example: 'Treatment rooms, pool, sauna…' },
+  { key: 'gym',         label: 'Gym / Sports',           icon: '🏋️', example: 'Equipment, studios, pool…' },
+  { key: 'clinic',      label: 'Clinic / Hospital',      icon: '🏥', example: 'Consultation rooms, ward…' },
+  { key: 'venue',       label: 'Event venue',            icon: '🎪', example: 'Main hall, garden, catering…' },
+  { key: 'government',  label: 'Public / Government',    icon: '🏛️', example: 'City hall, public spaces…' },
+  { key: 'sports',      label: 'Stadium / Arena',        icon: '🏟️', example: 'Stands, field, facilities…' },
 ];
 
 const FALLBACK_ANALYSIS: VenueAnalysis = {
-  location: '',
-  detectedLang: 'en',
-  venueSummary: '',
+  location: '', detectedLang: 'en', venueSummary: '',
   typeOptions: FALLBACK_TYPE_OPTIONS.slice(0, 8),
   audienceOptions: [
     { key: 'tourists',  label: 'International tourists', icon: '✈️' },
@@ -115,33 +111,57 @@ const FALLBACK_ANALYSIS: VenueAnalysis = {
     { key: 'partners',  label: 'Business partners',      icon: '🤝' },
   ],
   spaceOptions: [
-    { key: 'main-area', label: 'Main Area',      color: '#185FA5' },
-    { key: 'entrance',  label: 'Entrance',        color: '#BA7517' },
-    { key: 'garden',    label: 'Garden / Outdoor', color: '#1D9E75' },
-    { key: 'lounge',    label: 'Lounge',          color: '#8B5CF6' },
-    { key: 'terrace',   label: 'Terrace',         color: '#F59E0B' },
+    { key: 'main-area', label: 'Main Area',        icon: '🏠', color: '#185FA5' },
+    { key: 'entrance',  label: 'Entrance',         icon: '🚪', color: '#BA7517' },
+    { key: 'garden',    label: 'Garden / Outdoor', icon: '🌿', color: '#1D9E75' },
+    { key: 'lounge',    label: 'Lounge',           icon: '🛋️', color: '#8B5CF6' },
+    { key: 'terrace',   label: 'Terrace',          icon: '☀️', color: '#F59E0B' },
   ],
   accentColorSuggestion: '#1D9E75',
 };
 
-/** Capture equipment chips — fixed, not AI-generated */
+/** Who commissioned the tour */
+const CLIENT_TYPES: DynamicOption[] = [
+  { key: 'individual',  label: 'Private individual',      icon: '👤', example: 'Homeowner, private seller, collector' },
+  { key: 'sme',         label: 'Small business',          icon: '🏪', example: 'Restaurant, boutique, artisan, studio' },
+  { key: 'hotel',       label: 'Hotel / Hospitality',     icon: '🏨', example: 'Hotel chain, resort, B&B group' },
+  { key: 'real-estate', label: 'Real estate agency',      icon: '🔑', example: 'Agency, developer, property promoter' },
+  { key: 'tourism',     label: 'Tourism & culture',       icon: '🗺️', example: 'Museum, tourism board, heritage org' },
+  { key: 'corporate',   label: 'Corporate enterprise',    icon: '🏢', example: 'Headquarters, campus, multi-site group' },
+  { key: 'public',      label: 'Public institution',      icon: '🏛️', example: 'Government, school, hospital' },
+  { key: 'events',      label: 'Events & venues',         icon: '🎪', example: 'Wedding venue, conference center' },
+];
+
+/** What the virtual tour should achieve */
+const TOUR_GOALS: DynamicOption[] = [
+  { key: 'drive-traffic',  label: 'Drive tourism & visits',       icon: '📍', example: 'Attract visitors, boost footfall' },
+  { key: 'convert',        label: 'Generate bookings & sales',    icon: '💰', example: 'Reservations, purchases, leads' },
+  { key: 'showcase-b2b',   label: 'Attract events & partners',    icon: '🤝', example: 'B2B showcase, venue hire enquiries' },
+  { key: 'remote-preview', label: 'Remote preview',               icon: '🌍', example: 'Real estate, relocation, pre-arrival' },
+  { key: 'storytelling',   label: 'Brand & heritage storytelling',icon: '✨', example: 'Prestige, emotional connection, values' },
+  { key: 'education',      label: 'Education & training',         icon: '🎓', example: 'Staff onboarding, visitor education' },
+  { key: 'documentation',  label: 'Documentation & compliance',   icon: '📋', example: 'As-built record, insurance, audit' },
+  { key: 'press-pr',       label: 'Press & media kit',            icon: '📰', example: 'Journalist preview, editorial use' },
+];
+
+/** Capture equipment */
 const CAPTURE_EQUIP: DynamicOption[] = [
-  { key: 'smartphone',   label: 'Smartphone',          icon: '📱', example: 'iOS / Android' },
-  { key: 'action-cam',   label: 'Action cam',          icon: '🎬', example: 'GoPro, DJI Action…' },
-  { key: 'dslr',         label: 'DSLR / Mirrorless',   icon: '📷', example: 'With fisheye or standard lens' },
-  { key: '360-consumer', label: '360° Camera',         icon: '🔵', example: 'Ricoh Theta, Insta360, GoPro Max' },
-  { key: '360-pro',      label: 'Pro 360° rig',        icon: '⚡', example: 'Matterport, custom multi-cam' },
-  { key: 'drone',        label: 'Drone',               icon: '🚁', example: 'Aerial footage / outdoor' },
-  { key: 'video',        label: 'Video camera',        icon: '🎥', example: 'Cinema, broadcast…' },
+  { key: 'smartphone',   label: 'Smartphone',        icon: '📱', example: 'iOS / Android' },
+  { key: 'action-cam',   label: 'Action cam',        icon: '🎬', example: 'GoPro, DJI Action…' },
+  { key: 'dslr',         label: 'DSLR / Mirrorless', icon: '📷', example: 'With fisheye or standard lens' },
+  { key: '360-consumer', label: '360° Camera',       icon: '🔵', example: 'Ricoh Theta, Insta360, GoPro Max' },
+  { key: '360-pro',      label: 'Pro 360° rig',      icon: '⚡', example: 'Matterport, custom multi-cam' },
+  { key: 'drone',        label: 'Drone',             icon: '🚁', example: 'Aerial / exterior footage' },
+  { key: 'video',        label: 'Video camera',      icon: '🎥', example: 'Cinema, broadcast…' },
 ];
 
 const CAPTURE_SETTING: DynamicOption[] = [
-  { key: 'indoor',    label: 'Indoor only',      icon: '🏠', example: 'Inside a building' },
-  { key: 'outdoor',   label: 'Outdoor only',     icon: '🌿', example: 'Exterior, garden, landscape' },
-  { key: 'mixed',     label: 'Both indoor & outdoor', icon: '🔄' },
+  { key: 'indoor',  label: 'Indoor only',          icon: '🏠', example: 'Inside a building' },
+  { key: 'outdoor', label: 'Outdoor only',          icon: '🌿', example: 'Exterior, garden, landscape' },
+  { key: 'mixed',   label: 'Both indoor & outdoor', icon: '🔄' },
 ];
 
-/** Tone inspiration starters — clickable pre-fills */
+/** Tone inspiration starters */
 const TONE_STARTERS = [
   'Warm and welcoming, like a knowledgeable local guide sharing their favourite spots.',
   'Prestigious and sophisticated, highlighting exceptional craftsmanship and exclusivity.',
@@ -179,7 +199,7 @@ VENUE: "${venue}"
 Return ONLY valid JSON (no markdown fences):
 {
   "location": "<city/place name extracted>",
-  "detectedLang": "<BCP47: Paris→fr, Tokyo→ja, Madrid→es, Berlin→de, Rome→it, London/NY→en>",
+  "detectedLang": "<BCP47: Dubai/Abu Dhabi→ar, Paris→fr, Tokyo→ja, Madrid→es, Berlin→de, Rome→it, London/NY→en>",
   "venueSummary": "<1-2 sentence description>",
   "typeOptions": [
     {"key": "slug", "label": "Name", "icon": "emoji", "example": "Short description"}
@@ -188,44 +208,44 @@ Return ONLY valid JSON (no markdown fences):
     {"key": "slug", "label": "Name", "icon": "emoji"}
   ],
   "spaceOptions": [
-    {"key": "slug", "label": "Area name", "color": "#hexcolor", "example": "What visitors see here"}
+    {"key": "slug", "label": "Area name", "icon": "emoji", "color": "#hexcolor", "example": "What visitors see here"}
   ],
   "accentColorSuggestion": "#hexcolor"
 }
 
 Rules:
-- typeOptions: 4-6 options SPECIFIC to this location — do not be generic (Hossegor→surf school/villa/adventure sports/seafood restaurant/beach bar; Paris→boutique hotel/museum/gastronomy restaurant/coworking/luxury retail; Bali→resort/wellness retreat/temple tour/surf camp)
+- typeOptions: 4-6 options SPECIFIC to this location (Dubai hotel→luxury suites/rooftop bar/infinity pool/spa/ballroom; Dubai mall→flagship store/food court/entertainment zone/luxury brand; Paris museum→permanent collection/temporary exhibition/sculpture garden; Tokyo restaurant→sushi counter/private dining/sake bar)
 - audienceOptions: 4-6 realistic visitor profiles for THIS venue
-- spaceOptions: 5-8 actual physical areas visitors would tour — match the real venue (a surf school has wave pool, board room, changing room, bar; a car dealership has showroom floor, test drive area, lounge, workshop)
-- accentColorSuggestion: a color matching the venue's identity (ocean→#0EA5E9, forest→#1D9E75, luxury/gold→#BA7517, museum/purple→#8B5CF6)`;
+- spaceOptions: 5-8 actual physical areas at this specific venue — match the real place. Each space MUST have an emoji icon that fits it (pool→🏊, lobby→🛋️, restaurant→🍽️, terrace→☀️, gym→🏋️, spa→💆, suite→🛏️, garden→🌿)
+- accentColorSuggestion: match the venue identity (ocean/pool→#0EA5E9, desert/gold→#BA7517, forest/eco→#1D9E75, luxury/purple→#8B5CF6)`;
 }
 
 function buildFinalPrompt(
-  venue: string,
-  analysis: VenueAnalysis | null,
+  venue: string, analysis: VenueAnalysis | null,
   projectType: string[], projectTypeFree: string,
+  clientType: string[], clientTypeFree: string,
+  goal: string[], goalFree: string,
   audience: string[], audienceFree: string,
   spaces: string[], spacesFree: string,
   captureEquip: string[], captureSetting: string[],
   toneText: string,
   extras: string,
 ): string {
-  const typeLabels = projectType.join(', ') + (projectTypeFree ? ` + "${projectTypeFree}"` : '');
-  const audLabels  = audience.join(', ')    + (audienceFree   ? ` + "${audienceFree}"` : '');
-  const spaceLabels = spaces.join(', ')    + (spacesFree      ? ` + "${spacesFree}"` : '');
-  const equipLabels = captureEquip.join(', ');
-  const settingLabels = captureSetting.join(', ');
+  const resolve = (keys: string[], opts: DynamicOption[]) =>
+    keys.map((k) => opts.find((o) => o.key === k)?.label ?? k).join(', ');
 
   return `Configure a virtual tour project based on these answers:
 
 VENUE: "${venue}"
-${analysis ? `CONTEXT: "${analysis.venueSummary}"\n` : ''}PROJECT TYPE: ${typeLabels || 'General'}
-AUDIENCE: ${audLabels || 'General public'}
-SPACES / AREAS: ${spaceLabels || 'To be defined'}
-PHOTO EQUIPMENT: ${equipLabels || 'Not specified'}
-SHOOT SETTING: ${settingLabels || 'Not specified'}
-EDITORIAL TONE / VOICE: "${toneText || 'Professional and welcoming'}"
-ADDITIONAL NOTES: ${extras || 'None'}
+${analysis ? `VENUE CONTEXT: "${analysis.venueSummary}"\n` : ''}VENUE TYPE: ${resolve(projectType, analysis?.typeOptions ?? []) + (projectTypeFree ? ` + "${projectTypeFree}"` : '') || 'General'}
+CLIENT: ${resolve(clientType, CLIENT_TYPES) + (clientTypeFree ? ` + "${clientTypeFree}"` : '') || 'Not specified'}
+TOUR OBJECTIVE: ${resolve(goal, TOUR_GOALS) + (goalFree ? ` + "${goalFree}"` : '') || 'Not specified'}
+AUDIENCE: ${resolve(audience, analysis?.audienceOptions ?? []) + (audienceFree ? ` + "${audienceFree}"` : '') || 'General public'}
+SPACES: ${resolve(spaces, analysis?.spaceOptions ?? []) + (spacesFree ? ` + "${spacesFree}"` : '') || 'To be defined'}
+EQUIPMENT: ${resolve(captureEquip, CAPTURE_EQUIP) || 'Not specified'}
+SETTING: ${resolve(captureSetting, CAPTURE_SETTING) || 'Not specified'}
+EDITORIAL VOICE: "${toneText || 'Professional and welcoming'}"
+EXTRA NOTES: ${extras || 'None'}
 
 Return ONLY valid JSON (no markdown fences):
 {
@@ -233,15 +253,15 @@ Return ONLY valid JSON (no markdown fences):
   "defaultLang": "<BCP47 of venue's primary language>",
   "extraLanguages": ["<code>"],
   "aiTone": "<one of: marketing | factual | storytelling | poetic | educational>",
-  "contextPrompt": "<3-4 sentences starting 'You are writing for...' — highly specific AI instruction for content generation, incorporating the editorial tone described above>"
+  "contextPrompt": "<3-4 sentences starting 'You are writing for...' — specific AI instruction incorporating the client type, tour objective, and editorial voice described above>"
 }
 
 Rules:
-- projectName: concise, reflects the venue (not generic like 'My Tour')
-- defaultLang: match venue country
-- extraLanguages: include 'en' unless it's defaultLang; add 'zh'/'ja' for Asian tourism, 'de' for German market; max 4 extra
-- aiTone: best match to the user's described tone (marketing=persuasive/commercial, factual=informative/precise, storytelling=immersive/narrative, poetic=lyrical/luxury, educational=pedagogic/accessible)
-- contextPrompt: weave in the actual tone description the user gave, not generic instructions`;
+- projectName: concise, reflects the actual venue (not generic)
+- defaultLang: match venue country (Dubai→ar, Paris→fr, Tokyo→ja)
+- extraLanguages: include 'en' unless defaultLang; consider audience (Chinese tourists→zh, German market→de, luxury/international→fr); max 4 extra
+- aiTone: best fit for the described editorial voice (marketing=persuasive, factual=informative/precise, storytelling=immersive, poetic=lyrical/luxury, educational=pedagogic)
+- contextPrompt: weave in the actual objectives and tone — make it genuinely useful for AI content generation`;
 }
 
 // ─── Speech recognition ───────────────────────────────────────────────────────
@@ -282,10 +302,7 @@ function MicButton({ onTranscript, lang = 'en-US' }: { onTranscript: (text: stri
   };
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      title={listening ? 'Stop dictation' : 'Dictate answer'}
+    <button type="button" onClick={toggle} title={listening ? 'Stop dictation' : 'Dictate answer'}
       className={clsx(
         'flex items-center justify-center w-9 h-9 rounded-lg border shrink-0 transition-all',
         listening
@@ -310,25 +327,17 @@ interface ChipsInputProps {
   speechLang?: string;
 }
 
-function DynamicChipsInput({
-  options, selected, onToggle, freeText, onFreeTextChange, placeholder, speechLang = 'en-US',
-}: ChipsInputProps) {
+function DynamicChipsInput({ options, selected, onToggle, freeText, onFreeTextChange, placeholder, speechLang = 'en-US' }: ChipsInputProps) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {options.map((opt) => {
           const sel = selected.includes(opt.key);
           return (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => onToggle(opt.key)}
-              title={opt.example}
+            <button key={opt.key} type="button" onClick={() => onToggle(opt.key)} title={opt.example}
               className={clsx(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all',
-                sel
-                  ? 'border-accent bg-accent/10 text-accent'
-                  : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft hover:text-ink-base',
+                sel ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft hover:text-ink-base',
               )}
               style={sel && opt.color ? { borderColor: opt.color, backgroundColor: opt.color + '22', color: opt.color } : undefined}
             >
@@ -340,11 +349,7 @@ function DynamicChipsInput({
         })}
       </div>
       <div className="flex gap-2">
-        <input
-          type="text"
-          value={freeText}
-          onChange={(e) => onFreeTextChange(e.target.value)}
-          placeholder={placeholder}
+        <input type="text" value={freeText} onChange={(e) => onFreeTextChange(e.target.value)} placeholder={placeholder}
           className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent"
         />
         <MicButton onTranscript={(text) => onFreeTextChange((freeText ? freeText + ' ' : '') + text)} lang={speechLang} />
@@ -355,7 +360,9 @@ function DynamicChipsInput({
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
-const PROGRESS_STEPS: WizardStep[] = ['venue', 'project-type', 'audience', 'spaces', 'capture', 'tone', 'extras'];
+const PROGRESS_STEPS: WizardStep[] = [
+  'venue', 'project-type', 'client-type', 'goal', 'audience', 'spaces', 'capture', 'tone', 'extras',
+];
 
 function ProgressBar({ step }: { step: WizardStep }) {
   const idx = PROGRESS_STEPS.indexOf(step);
@@ -390,33 +397,41 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   const [keyTestState, setKeyTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [keyTestError, setKeyTestError] = useState('');
 
-  // Step 1: venue
+  // Step 1 — venue
   const [venue, setVenue] = useState('');
 
   // AI analysis
   const [analysis, setAnalysis] = useState<VenueAnalysis | null>(null);
   const [analysisError, setAnalysisError] = useState('');
 
-  // Step 2: project type
+  // Step 2 — project type
   const [projectType, setProjectType] = useState<string[]>([]);
   const [projectTypeFree, setProjectTypeFree] = useState('');
 
-  // Step 3: audience
+  // Step 3 — client type
+  const [clientType, setClientType] = useState<string[]>([]);
+  const [clientTypeFree, setClientTypeFree] = useState('');
+
+  // Step 4 — goal
+  const [goal, setGoal] = useState<string[]>([]);
+  const [goalFree, setGoalFree] = useState('');
+
+  // Step 5 — audience
   const [audience, setAudience] = useState<string[]>([]);
   const [audienceFree, setAudienceFree] = useState('');
 
-  // Step 4: spaces
+  // Step 6 — spaces
   const [spaces, setSpaces] = useState<string[]>([]);
   const [spacesFree, setSpacesFree] = useState('');
 
-  // Step 5: capture
+  // Step 7 — capture
   const [captureEquip, setCaptureEquip] = useState<string[]>([]);
   const [captureSetting, setCaptureSetting] = useState<string[]>([]);
 
-  // Step 6: tone (free text)
+  // Step 8 — tone
   const [toneText, setToneText] = useState('');
 
-  // Step 7: extras
+  // Step 9 — extras
   const [extras, setExtras] = useState('');
 
   // Color
@@ -440,12 +455,12 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   const speechLang = analysis ? analysis.detectedLang + '-' + analysis.detectedLang.toUpperCase() : 'en-US';
   const currentAnalysis = analysis ?? FALLBACK_ANALYSIS;
 
+  // ─── Effects ─────────────────────────────────────────────────────────────────
+
   // Animated dots
   useEffect(() => {
     if (step !== 'analyzing' && step !== 'generating') return;
-    const interval = setInterval(() => {
-      setGeneratingDots((d) => (d.length >= 3 ? '' : d + '.'));
-    }, 400);
+    const interval = setInterval(() => setGeneratingDots((d) => (d.length >= 3 ? '' : d + '.')), 400);
     return () => clearInterval(interval);
   }, [step]);
 
@@ -460,13 +475,13 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       .then(({ text }) => {
         const parsed = parseJsonFromText(text);
         const result: VenueAnalysis = {
-          location:             (parsed['location'] as string)              ?? venue.split(',')[0].trim(),
-          detectedLang:         (parsed['detectedLang'] as string)          ?? 'en',
-          venueSummary:         (parsed['venueSummary'] as string)          ?? '',
-          typeOptions:          (parsed['typeOptions'] as DynamicOption[])  ?? FALLBACK_ANALYSIS.typeOptions,
-          audienceOptions:      (parsed['audienceOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.audienceOptions,
-          spaceOptions:         (parsed['spaceOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.spaceOptions,
-          accentColorSuggestion:(parsed['accentColorSuggestion'] as string) ?? '#1D9E75',
+          location:              (parsed['location'] as string)              ?? venue.split(',')[0].trim(),
+          detectedLang:          (parsed['detectedLang'] as string)          ?? 'en',
+          venueSummary:          (parsed['venueSummary'] as string)          ?? '',
+          typeOptions:           (parsed['typeOptions'] as DynamicOption[])  ?? FALLBACK_ANALYSIS.typeOptions,
+          audienceOptions:       (parsed['audienceOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.audienceOptions,
+          spaceOptions:          (parsed['spaceOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.spaceOptions,
+          accentColorSuggestion: (parsed['accentColorSuggestion'] as string) ?? '#1D9E75',
         };
         setAnalysis(result);
         setColor(result.accentColorSuggestion);
@@ -515,21 +530,14 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
     abortRef.current = ctrl;
     setError('');
 
-    const resolveLabels = (keys: string[], opts: DynamicOption[]) =>
-      keys.map((k) => opts.find((o) => o.key === k)?.label ?? k);
-
-    const typeLabels     = resolveLabels(projectType, eff?.typeOptions     ?? []);
-    const audienceLabels = resolveLabels(audience,    eff?.audienceOptions ?? []);
-    const spaceLabels    = resolveLabels(spaces,      eff?.spaceOptions    ?? []);
-    const equipLabels    = resolveLabels(captureEquip,  CAPTURE_EQUIP);
-    const settingLabels  = resolveLabels(captureSetting, CAPTURE_SETTING);
-
     const prompt = buildFinalPrompt(
       venue, eff,
-      typeLabels, projectTypeFree,
-      audienceLabels, audienceFree,
-      spaceLabels, spacesFree,
-      equipLabels, settingLabels,
+      projectType, projectTypeFree,
+      clientType, clientTypeFree,
+      goal, goalFree,
+      audience, audienceFree,
+      spaces, spacesFree,
+      captureEquip, captureSetting,
       toneText, extras,
     );
 
@@ -538,13 +546,14 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
         const parsed = parseJsonFromText(text);
         const defaultLang = (parsed['defaultLang'] as string) ?? (eff?.detectedLang ?? 'en');
 
+        // Build categories from selected spaces, carrying over emoji icons
         const cats: SummaryCat[] = spaces.length > 0
           ? spaces.map((k, i) => {
               const opt = eff?.spaceOptions.find((o) => o.key === k);
-              return { slug: k, name: opt?.label ?? k, color: opt?.color ?? pickColor(i) };
+              return { slug: k, name: opt?.label ?? k, color: opt?.color ?? pickColor(i), icon: opt?.icon };
             })
           : (eff?.spaceOptions.slice(0, 3) ?? []).map((o, i) => ({
-              slug: o.key, name: o.label, color: o.color ?? pickColor(i),
+              slug: o.key, name: o.label, color: o.color ?? pickColor(i), icon: o.icon,
             }));
 
         if (spacesFree.trim()) {
@@ -577,7 +586,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             defaultLang,
             extraLanguages: defaultLang === 'en' ? ['fr'] : ['en'],
             categories:     (eff?.spaceOptions.slice(0, 3) ?? []).map((o, i) => ({
-              slug: o.key, name: o.label, color: o.color ?? pickColor(i),
+              slug: o.key, name: o.label, color: o.color ?? pickColor(i), icon: o.icon,
             })),
             accentColor:    color,
             contextPrompt:  '',
@@ -596,9 +605,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
     setKeyTestState('testing');
     setKeyTestError('');
     try {
-      const result = apiProvider === 'claude'
-        ? await testAiConnection(apiKey)
-        : await testOpenAIConnection(apiKey);
+      const result = apiProvider === 'claude' ? await testAiConnection(apiKey) : await testOpenAIConnection(apiKey);
       setKeyTestState(result.ok ? 'ok' : 'error');
       if (!result.ok) setKeyTestError(result.error ?? 'Connection failed');
     } catch {
@@ -630,14 +637,19 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
 
       const { projectDir } = await window.conchitour.newProject(folder, summary.projectName);
       const proj: Project = buildDefaultProject();
-      proj.meta.name               = summary.projectName;
-      proj.languages.default       = summary.defaultLang;
-      proj.languages.available     = [summary.defaultLang, ...summary.extraLanguages];
-      proj.branding.accentColor    = summary.accentColor;
-      proj.branding.introText      = Object.fromEntries(proj.languages.available.map((l) => [l, '']));
+      proj.meta.name            = summary.projectName;
+      proj.languages.default    = summary.defaultLang;
+      proj.languages.available  = [summary.defaultLang, ...summary.extraLanguages];
+      proj.branding.accentColor = summary.accentColor;
+      proj.branding.introText   = Object.fromEntries(proj.languages.available.map((l) => [l, '']));
 
       const customCats: Category[] = summary.categories.map((c) => ({
-        id: uuid(), slug: c.slug, name: { [summary.defaultLang]: c.name }, color: c.color,
+        id: uuid(),
+        slug: c.slug,
+        name: { [summary.defaultLang]: c.name },
+        color: c.color,
+        // Set iconSvg from emoji if available
+        ...(c.icon ? { iconSvg: emojiToIconSvg(c.icon) } : {}),
       }));
       proj.categories = [...BUILTIN_CATEGORIES, ...customCats];
 
@@ -670,7 +682,9 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       routing:        'api-key',
       venue:          'routing',
       'project-type': 'venue',
-      audience:       'project-type',
+      'client-type':  'project-type',
+      goal:           'client-type',
+      audience:       'goal',
       spaces:         'audience',
       capture:        'spaces',
       tone:           'capture',
@@ -685,16 +699,17 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   const canAdvance = useCallback(() => {
     if (step === 'venue')        return venue.trim().length > 3;
     if (step === 'project-type') return projectType.length > 0 || projectTypeFree.trim().length > 2;
-    if (step === 'audience')     return audience.length > 0 || audienceFree.trim().length > 2;
     if (step === 'api-key')      return apiKey.trim().length > 10;
-    // capture, spaces, tone, extras are optional — always can advance
+    // client-type, goal, audience, spaces, capture, tone, extras — all optional, always can advance
     return true;
-  }, [step, venue, projectType, projectTypeFree, audience, audienceFree, apiKey]);
+  }, [step, venue, projectType, projectTypeFree, apiKey]);
 
   const advance = useCallback(() => {
     const next: Partial<Record<WizardStep, WizardStep>> = {
       venue:          'analyzing',
-      'project-type': 'audience',
+      'project-type': 'client-type',
+      'client-type':  'goal',
+      goal:           'audience',
       audience:       'spaces',
       spaces:         'capture',
       capture:        'tone',
@@ -710,11 +725,14 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
-  const showBack = !['mode-select', 'analyzing', 'generating', 'summary'].includes(step);
-  const showNext = ['venue', 'project-type', 'audience', 'spaces', 'capture', 'tone', 'extras'].includes(step);
+  const showNext = [
+    'venue', 'project-type', 'client-type', 'goal', 'audience', 'spaces', 'capture', 'tone', 'extras',
+  ].includes(step);
+
   const stepNum: Partial<Record<WizardStep, string>> = {
-    venue: 'Step 1 of 7', 'project-type': 'Step 2 of 7', audience: 'Step 3 of 7',
-    spaces: 'Step 4 of 7', capture: 'Step 5 of 7', tone: 'Step 6 of 7', extras: 'Step 7 of 7',
+    venue: 'Step 1 of 9', 'project-type': 'Step 2 of 9', 'client-type': 'Step 3 of 9',
+    goal: 'Step 4 of 9', audience: 'Step 5 of 9', spaces: 'Step 6 of 9',
+    capture: 'Step 7 of 9', tone: 'Step 8 of 9', extras: 'Step 9 of 9',
   };
 
   return (
@@ -756,8 +774,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                     <div className="text-xs text-ink-faded mt-0.5">Just a name, get started now</div>
                   </div>
                 </button>
-                <button
-                  onClick={() => setStep('api-key')}
+                <button onClick={() => setStep('api-key')}
                   className="group flex flex-col items-start gap-3 p-5 rounded-xl border border-accent/40 bg-accent/5 hover:border-accent hover:bg-accent/10 transition-all text-left"
                 >
                   <Bot size={22} className="text-accent" />
@@ -777,8 +794,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                 <h2 className="text-xl font-semibold text-ink-base">Project name</h2>
                 <p className="text-sm text-ink-soft mt-1">You can change it later in Project settings.</p>
               </div>
-              <input
-                ref={quickNameRef} autoFocus value={quickName}
+              <input ref={quickNameRef} autoFocus value={quickName}
                 onChange={(e) => setQuickName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') applyQuick(); }}
                 className="w-full bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent"
@@ -846,7 +862,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">Where do you want to answer the questions?</h2>
-                <p className="text-sm text-ink-soft mt-1">7 short questions to configure your tour automatically.</p>
+                <p className="text-sm text-ink-soft mt-1">9 short questions to configure your tour automatically.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button onClick={() => setStep('venue')}
@@ -883,13 +899,13 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
               </div>
               <div className="flex gap-2 items-start">
                 <textarea autoFocus value={venue} onChange={(e) => setVenue(e.target.value)}
-                  placeholder="e.g. A surf school in Hossegor, France, with a laid-back ocean vibe · Château de Versailles, historic palace near Paris · Luxury boutique hotel in downtown Tokyo with rooftop bar · Car dealership in Lyon specialising in premium electric vehicles"
+                  placeholder="e.g. A rooftop hotel in Dubai Marina with a pool and panoramic views · Grand Palais cultural center, Paris · Luxury car showroom in Zurich specialising in electric vehicles · Historic château in the Loire Valley open for events"
                   rows={4}
                   className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent resize-none"
                 />
                 <MicButton onTranscript={(text) => setVenue((v) => (v ? v + ' ' : '') + text)} lang="en-US" />
               </div>
-              <p className="text-xs text-ink-faded">AI analyzes the location to generate relevant types, audiences, spaces and tone options.</p>
+              <p className="text-xs text-ink-faded">AI analyzes the location to generate relevant types, audiences, spaces, and tone options.</p>
             </div>
           )}
 
@@ -927,7 +943,43 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             </div>
           )}
 
-          {/* ── Step 3: Audience ── */}
+          {/* ── Step 3: Client type ── */}
+          {step === 'client-type' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">Who is the end client?</h2>
+                <p className="text-sm text-ink-soft mt-1">The person or company who commissioned this virtual tour.</p>
+              </div>
+              <DynamicChipsInput
+                options={CLIENT_TYPES}
+                selected={clientType}
+                onToggle={(key) => setClientType(toggleMulti(clientType, key))}
+                freeText={clientTypeFree} onFreeTextChange={setClientTypeFree}
+                placeholder="Other client type…"
+                speechLang={speechLang}
+              />
+            </div>
+          )}
+
+          {/* ── Step 4: Goal ── */}
+          {step === 'goal' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">What is the tour's main objective?</h2>
+                <p className="text-sm text-ink-soft mt-1">Select all that apply — shapes the AI content strategy.</p>
+              </div>
+              <DynamicChipsInput
+                options={TOUR_GOALS}
+                selected={goal}
+                onToggle={(key) => setGoal(toggleMulti(goal, key))}
+                freeText={goalFree} onFreeTextChange={setGoalFree}
+                placeholder="Other objective…"
+                speechLang={speechLang}
+              />
+            </div>
+          )}
+
+          {/* ── Step 5: Audience ── */}
           {step === 'audience' && (
             <div className="space-y-5">
               <div>
@@ -945,12 +997,12 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             </div>
           )}
 
-          {/* ── Step 4: Spaces ── */}
+          {/* ── Step 6: Spaces ── */}
           {step === 'spaces' && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">Which areas will you include?</h2>
-                <p className="text-sm text-ink-soft mt-1">These become your tour categories. Add custom areas below.</p>
+                <p className="text-sm text-ink-soft mt-1">These become your tour categories, each with a dedicated icon and color.</p>
               </div>
               <DynamicChipsInput
                 options={currentAnalysis.spaceOptions}
@@ -961,17 +1013,17 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                 speechLang={speechLang}
               />
               {spaces.length > 0 && (
-                <p className="text-xs text-ink-faded">{spaces.length} area{spaces.length > 1 ? 's' : ''} selected</p>
+                <p className="text-xs text-ink-faded">{spaces.length} area{spaces.length > 1 ? 's' : ''} selected — each will get its own icon and color</p>
               )}
             </div>
           )}
 
-          {/* ── Step 5: Capture ── */}
+          {/* ── Step 7: Capture ── */}
           {step === 'capture' && (
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">How do you capture your shots?</h2>
-                <p className="text-sm text-ink-soft mt-1">Optional — helps AI adapt the project context and space structure.</p>
+                <p className="text-sm text-ink-soft mt-1">Optional — helps contextualise the project and space structure.</p>
               </div>
 
               <div className="space-y-2">
@@ -982,8 +1034,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                     return (
                       <button key={opt.key} type="button" onClick={() => setCaptureEquip(toggleMulti(captureEquip, opt.key))}
                         title={opt.example}
-                        className={clsx(
-                          'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all',
+                        className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all',
                           sel ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft hover:text-ink-base',
                         )}
                       >
@@ -1003,8 +1054,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                     const sel = captureSetting.includes(opt.key);
                     return (
                       <button key={opt.key} type="button" onClick={() => setCaptureSetting(toggleMulti(captureSetting, opt.key))}
-                        className={clsx(
-                          'flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all',
+                        className={clsx('flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all',
                           sel ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft hover:text-ink-base',
                         )}
                       >
@@ -1019,25 +1069,21 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             </div>
           )}
 
-          {/* ── Step 6: Tone (free text) ── */}
+          {/* ── Step 8: Tone (free text) ── */}
           {step === 'tone' && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">What's the editorial voice?</h2>
-                <p className="text-sm text-ink-soft mt-1">Describe how you want visitors to feel when reading your tour content.</p>
+                <p className="text-sm text-ink-soft mt-1">Describe how you want visitors to feel when reading the tour content.</p>
               </div>
 
-              {/* Inspiration starters */}
               <div className="space-y-1.5">
-                <p className="text-xs text-ink-faded">Click to use as a starting point, then edit freely:</p>
+                <p className="text-xs text-ink-faded">Click to use as a starting point, then edit:</p>
                 <div className="space-y-1.5">
                   {TONE_STARTERS.map((s, i) => (
                     <button key={i} type="button" onClick={() => setToneText(s)}
-                      className={clsx(
-                        'w-full text-left px-3 py-2 rounded-lg border text-xs text-ink-soft transition-all',
-                        toneText === s
-                          ? 'border-accent bg-accent/10 text-accent'
-                          : 'border-line bg-paper-strong hover:border-ink-soft hover:text-ink-base',
+                      className={clsx('w-full text-left px-3 py-2 rounded-lg border text-xs text-ink-soft transition-all',
+                        toneText === s ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-paper-strong hover:border-ink-soft hover:text-ink-base',
                       )}
                     >
                       "{s}"
@@ -1046,43 +1092,36 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                 </div>
               </div>
 
-              {/* Free text + mic */}
               <div className="space-y-1.5">
                 <p className="text-xs text-ink-faded">Or write your own:</p>
                 <div className="flex gap-2 items-start">
-                  <textarea
-                    value={toneText}
-                    onChange={(e) => setToneText(e.target.value)}
-                    placeholder="e.g. Adventurous and energetic, speaking directly to surf enthusiasts who love the ocean lifestyle…"
+                  <textarea value={toneText} onChange={(e) => setToneText(e.target.value)}
+                    placeholder="e.g. Adventurous and energetic, speaking directly to travellers seeking authentic experiences in the heart of the city…"
                     rows={3}
                     className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent resize-none"
                   />
-                  <MicButton
-                    onTranscript={(text) => setToneText((v) => (v ? v + ' ' : '') + text)}
-                    lang={speechLang}
-                  />
+                  <MicButton onTranscript={(text) => setToneText((v) => (v ? v + ' ' : '') + text)} lang={speechLang} />
                 </div>
               </div>
             </div>
           )}
 
-          {/* ── Step 7: Extras ── */}
+          {/* ── Step 9: Extras ── */}
           {step === 'extras' && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">Anything else to add?</h2>
-                <p className="text-sm text-ink-soft mt-1">Optional — certifications, special features, brand guidelines, seasonality…</p>
+                <p className="text-sm text-ink-soft mt-1">Optional — certifications, brand guidelines, opening seasons, accessibility features…</p>
               </div>
               <div className="flex gap-2 items-start">
                 <textarea autoFocus value={extras} onChange={(e) => setExtras(e.target.value)}
-                  placeholder="e.g. Eco-certified, organic restaurant on site · Pet-friendly · Open June–September only · Award-winning architecture · Multilingual staff (EN/FR/DE/JA)…"
+                  placeholder="e.g. Eco-certified, organic restaurant on site · Pet-friendly · Open April–October only · Award-winning architecture · Multilingual staff (EN/FR/DE/JA/ZH)…"
                   rows={4}
                   className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent resize-none"
                 />
                 <MicButton onTranscript={(text) => setExtras((v) => (v ? v + ' ' : '') + text)} lang={speechLang} />
               </div>
 
-              {/* Accent color */}
               <div className="space-y-1.5">
                 <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Accent color</label>
                 <div className="flex items-center gap-3">
@@ -1189,9 +1228,10 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                   <label className="text-xs text-ink-faded uppercase tracking-wide font-semibold">Tour categories</label>
                   <div className="flex flex-wrap gap-1.5">
                     {summary.categories.map((c) => (
-                      <span key={c.slug} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                      <span key={c.slug} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                         style={{ backgroundColor: c.color + '22', color: c.color, border: `1px solid ${c.color}44` }}
                       >
+                        {c.icon && <span>{c.icon}</span>}
                         {c.name}
                         <button onClick={() => setSummary({ ...summary, categories: summary.categories.filter((x) => x.slug !== c.slug) })}
                           className="ml-0.5 opacity-60 hover:opacity-100"
