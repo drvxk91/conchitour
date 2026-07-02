@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, ArrowLeft, ArrowRight, Sparkles, Loader2, Check,
-  Zap, Bot, Monitor, Smartphone, QrCode,
+  Zap, Bot, Monitor, Smartphone, QrCode, Mic, MicOff,
 } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import QRCode from 'qrcode';
@@ -17,16 +17,27 @@ import type { Project, Category } from '@/types';
 
 type WizardStep =
   | 'mode-select' | 'quick-name' | 'api-key' | 'routing'
-  | 'q1' | 'q2' | 'q3' | 'q4' | 'q5'
+  | 'venue' | 'analyzing' | 'project-type' | 'audience' | 'spaces' | 'tone' | 'extras'
   | 'generating' | 'summary' | 'qr-waiting';
 
-interface WizardAnswers {
-  loc: string;
-  aud: string[];
-  tone: string;
-  cats: string[];
-  color: string;
-  vtype: string;
+interface DynamicOption {
+  key: string;
+  label: string;
+  icon?: string;
+  color?: string;
+  example?: string;
+  aiTone?: 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational';
+}
+
+interface VenueAnalysis {
+  location: string;
+  detectedLang: string;
+  venueSummary: string;
+  typeOptions: DynamicOption[];
+  audienceOptions: DynamicOption[];
+  spaceOptions: DynamicOption[];
+  toneOptions: DynamicOption[];
+  accentColorSuggestion: string;
 }
 
 interface SummaryCat {
@@ -39,100 +50,54 @@ interface WizardSummary {
   projectName: string;
   defaultLang: string;
   extraLanguages: string[];
-  tone: string;
   categories: SummaryCat[];
   accentColor: string;
   contextPrompt: string;
+  aiTone: 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational';
 }
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
+// ─── Fallbacks ────────────────────────────────────────────────────────────────
 
-const TONES = [
-  { key: 'informative', label: 'Informative', example: 'Built in 1847, this hall features original oak beams…', icon: '📋' },
-  { key: 'immersive',   label: 'Immersive',   example: 'Step into a world where history breathes around you…', icon: '✨' },
-  { key: 'commercial',  label: 'Commercial',  example: 'Discover our award-winning spaces designed for…', icon: '🏆' },
-  { key: 'luxury',      label: 'Luxury',      example: 'An exquisite retreat where every detail has been…', icon: '💎' },
-];
+const COLOR_PALETTE = ['#185FA5', '#8B5CF6', '#1D9E75', '#BA7517', '#0EA5E9', '#F59E0B', '#EF4444', '#EC4899'];
 
-const AUDIENCES = [
-  { key: 'tourists',  label: 'International tourists' },
-  { key: 'locals',    label: 'Local visitors' },
-  { key: 'business',  label: 'Business professionals' },
-  { key: 'families',  label: 'Families & children' },
-  { key: 'luxury',    label: 'Luxury clientele' },
-  { key: 'students',  label: 'Students & education' },
-];
+function pickColor(i: number) { return COLOR_PALETTE[i % COLOR_PALETTE.length]; }
 
-const CATEGORY_PRESETS: Record<string, SummaryCat[]> = {
-  hotel: [
-    { slug: 'rooms',     name: 'Rooms',      color: '#185FA5' },
-    { slug: 'restaurant',name: 'Restaurant', color: '#BA7517' },
-    { slug: 'spa',       name: 'Spa',        color: '#1D9E75' },
-    { slug: 'pool',      name: 'Pool',       color: '#0EA5E9' },
-    { slug: 'lobby',     name: 'Lobby',      color: '#8B5CF6' },
-    { slug: 'terrace',   name: 'Terrace',    color: '#F59E0B' },
+const FALLBACK_ANALYSIS: VenueAnalysis = {
+  location: '',
+  detectedLang: 'en',
+  venueSummary: '',
+  typeOptions: [
+    { key: 'hotel', label: 'Hotel / Resort', icon: '🏨' },
+    { key: 'museum', label: 'Museum / Gallery', icon: '🏛️' },
+    { key: 'restaurant', label: 'Restaurant / Bar', icon: '🍽️' },
+    { key: 'real-estate', label: 'Real Estate', icon: '🏠' },
+    { key: 'heritage', label: 'Heritage Site', icon: '🏰' },
+    { key: 'venue', label: 'Event Venue', icon: '🎪' },
   ],
-  museum: [
-    { slug: 'exhibition', name: 'Exhibition', color: '#185FA5' },
-    { slug: 'collection', name: 'Collection', color: '#8B5CF6' },
-    { slug: 'garden',     name: 'Garden',     color: '#1D9E75' },
-    { slug: 'workshop',   name: 'Workshop',   color: '#BA7517' },
+  audienceOptions: [
+    { key: 'tourists', label: 'International tourists', icon: '✈️' },
+    { key: 'locals', label: 'Local visitors', icon: '📍' },
+    { key: 'business', label: 'Business professionals', icon: '💼' },
+    { key: 'families', label: 'Families', icon: '👨‍👩‍👧' },
+    { key: 'luxury', label: 'Luxury clientele', icon: '💎' },
   ],
-  restaurant: [
-    { slug: 'dining',   name: 'Dining Room', color: '#185FA5' },
-    { slug: 'bar',      name: 'Bar',         color: '#BA7517' },
-    { slug: 'terrace',  name: 'Terrace',     color: '#1D9E75' },
-    { slug: 'kitchen',  name: 'Kitchen',     color: '#8B5CF6' },
+  spaceOptions: [
+    { key: 'main-area', label: 'Main Area', color: '#185FA5' },
+    { key: 'entrance', label: 'Entrance', color: '#BA7517' },
+    { key: 'garden', label: 'Garden / Outdoor', color: '#1D9E75' },
+    { key: 'lounge', label: 'Lounge', color: '#8B5CF6' },
+    { key: 'terrace', label: 'Terrace', color: '#F59E0B' },
   ],
-  'real-estate': [
-    { slug: 'living',   name: 'Living Room', color: '#185FA5' },
-    { slug: 'bedroom',  name: 'Bedroom',     color: '#8B5CF6' },
-    { slug: 'kitchen',  name: 'Kitchen',     color: '#1D9E75' },
-    { slug: 'outdoor',  name: 'Outdoor',     color: '#F59E0B' },
-    { slug: 'overview', name: 'Overview',    color: '#BA7517' },
+  toneOptions: [
+    { key: 'informative', label: 'Informative', icon: '📋', aiTone: 'factual', example: 'Built in 1847, this hall features original oak beams…' },
+    { key: 'immersive', label: 'Immersive', icon: '✨', aiTone: 'storytelling', example: 'Step into a world where history breathes around you…' },
+    { key: 'commercial', label: 'Commercial', icon: '🏆', aiTone: 'marketing', example: 'Discover our award-winning spaces designed for…' },
+    { key: 'luxury', label: 'Luxury', icon: '💎', aiTone: 'poetic', example: 'An exquisite retreat where every detail has been…' },
   ],
-  heritage: [
-    { slug: 'exterior', name: 'Exterior', color: '#BA7517' },
-    { slug: 'interior', name: 'Interior', color: '#185FA5' },
-    { slug: 'garden',   name: 'Garden',   color: '#1D9E75' },
-    { slug: 'chapel',   name: 'Chapel',   color: '#8B5CF6' },
-  ],
-  venue: [
-    { slug: 'main-area', name: 'Main Area',  color: '#185FA5' },
-    { slug: 'garden',    name: 'Garden',     color: '#1D9E75' },
-    { slug: 'room',      name: 'Room',       color: '#8B5CF6' },
-    { slug: 'entrance',  name: 'Entrance',   color: '#BA7517' },
-    { slug: 'outdoor',   name: 'Outdoor',    color: '#F59E0B' },
-  ],
-};
-
-const VENUE_ACCENT: Record<string, string> = {
-  hotel:        '#1D9E75',
-  museum:       '#8B5CF6',
-  restaurant:   '#BA7517',
-  'real-estate':'#185FA5',
-  heritage:     '#B45309',
-  venue:        '#1D9E75',
-};
-
-const TONE_TO_AI_TONE: Record<string, 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational'> = {
-  informative: 'factual',
-  immersive:   'storytelling',
-  commercial:  'marketing',
-  luxury:      'poetic',
+  accentColorSuggestion: '#1D9E75',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function detectVenueType(loc: string): string {
-  const l = loc.toLowerCase();
-  if (/hotel|resort|lodge|inn|hostel/.test(l)) return 'hotel';
-  if (/museum|gallery|exhibition|heritage|archive/.test(l)) return 'museum';
-  if (/restaurant|caf[eé]|bar|bistro|brasserie/.test(l)) return 'restaurant';
-  if (/apartment|flat|house|villa|property|immobilier|real estate/.test(l)) return 'real-estate';
-  if (/chateau|château|manor|castle|abbaye/.test(l)) return 'heritage';
-  return 'venue';
-}
 
 function langLabel(code: string): string {
   const names: Record<string, string> = {
@@ -144,216 +109,214 @@ function langLabel(code: string): string {
   return names[code] ?? code.toUpperCase();
 }
 
-function buildWizardPrompt(answers: WizardAnswers): string {
-  return `You are configuring a virtual tour creation app. Based on the collected answers, produce a JSON configuration.
+function parseJsonFromText(text: string): Record<string, unknown> {
+  const cleaned = text.replace(/^```json?\n?/m, '').replace(/^```\n?/m, '').replace(/```$/m, '').trim();
+  try { return JSON.parse(cleaned) as Record<string, unknown>; } catch { /* fall through */ }
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]) as Record<string, unknown>; } catch { /* fall through */ }
+  }
+  return {};
+}
 
-VENUE: "${answers.loc}"
-AUDIENCE: ${answers.aud.join(', ')}
-TONE: ${answers.tone}
-SPACES/AREAS: ${answers.cats.join(', ')}
-ACCENT COLOR: ${answers.color}
+function buildAnalysisPrompt(venue: string): string {
+  return `You are configuring a virtual-tour app. Analyze this venue description and return contextual options.
 
-Respond with ONLY a valid JSON object (no markdown fences, no explanation):
+VENUE: "${venue}"
+
+Return ONLY valid JSON (no markdown fences, no explanation):
 {
-  "projectName": "<short descriptive name, max 35 chars>",
-  "defaultLang": "<BCP47 code of primary language for this venue's country: Paris→fr, Rome→it, Madrid→es, Berlin→de, NY→en, etc.>",
-  "extraLanguages": ["<code>"],
-  "contextPrompt": "<3-4 sentences starting with 'You are writing for...' describing audience, tone, editorial style>"
+  "location": "<city/place name extracted>",
+  "detectedLang": "<BCP47 of primary language: Paris→fr, Tokyo→ja, Madrid→es, Berlin→de, Rome→it, London/NY→en>",
+  "venueSummary": "<1-2 sentence description of the place>",
+  "typeOptions": [
+    {"key": "slug", "label": "Display name", "icon": "emoji", "example": "Short description"}
+  ],
+  "audienceOptions": [
+    {"key": "slug", "label": "Display name", "icon": "emoji"}
+  ],
+  "spaceOptions": [
+    {"key": "slug", "label": "Area name", "color": "#hexcolor", "example": "What this area contains"}
+  ],
+  "toneOptions": [
+    {"key": "slug", "label": "Tone name", "icon": "emoji", "aiTone": "one of: marketing|factual|storytelling|poetic|educational", "example": "Sample sentence in this tone about the venue"}
+  ],
+  "accentColorSuggestion": "#hexcolor"
 }
 
 Rules:
-- defaultLang must match the venue's country language
-- extraLanguages: include 'en' unless it is defaultLang; add 'zh'/'ja' for Asian tourists; 'de' for German market; 'fr' for luxury; max 4 extra
-- contextPrompt must be in English and serve as an AI instruction for content generation`;
+- typeOptions: 4-6 options SPECIFIC to this location (Hossegor→surf school, villa, sports activities, seafood; Paris→museum, boutique hotel, commerce, coworking; Bali→resort, wellness, temple tour)
+- audienceOptions: 4-6 types relevant to this venue's actual visitors
+- spaceOptions: 5-8 real areas visitors would tour at this specific venue — not generic
+- toneOptions: exactly 4 tones suited to this venue, each with example text IN the tone and about the venue
+- accentColorSuggestion: a hex color matching the venue's identity/nature (ocean→blue, forest→green, luxury→gold)`;
+}
+
+function buildFinalPrompt(
+  venue: string,
+  analysis: VenueAnalysis | null,
+  projectType: string[],
+  projectTypeFree: string,
+  audience: string[],
+  audienceFree: string,
+  spaces: string[],
+  spacesFree: string,
+  toneKey: string,
+  extras: string,
+): string {
+  const typeLabels = projectType.join(', ') + (projectTypeFree ? ` + "${projectTypeFree}"` : '');
+  const audLabels = audience.join(', ') + (audienceFree ? ` + "${audienceFree}"` : '');
+  const spaceLabels = spaces.join(', ') + (spacesFree ? ` + "${spacesFree}"` : '');
+  return `Configure a virtual tour project based on these answers:
+
+VENUE: "${venue}"
+${analysis ? `VENUE CONTEXT: "${analysis.venueSummary}"\n` : ''}PROJECT TYPE: ${typeLabels || 'General'}
+AUDIENCE: ${audLabels || 'General public'}
+SPACES / AREAS: ${spaceLabels || 'To be defined'}
+TONE: ${toneKey}
+ADDITIONAL CONTEXT: ${extras || 'None'}
+
+Return ONLY valid JSON (no markdown fences):
+{
+  "projectName": "<short descriptive project name, max 35 chars>",
+  "defaultLang": "<BCP47 of venue's primary language>",
+  "extraLanguages": ["<code>"],
+  "contextPrompt": "<3-4 sentences starting 'You are writing for...' describing the editorial context for AI content generation. Be specific about the venue type, audience, and tone.>"
+}
+
+Rules:
+- projectName: concise, reflects the venue (not generic)
+- defaultLang: match venue country (Hossegor→fr, Tokyo→ja, etc.)
+- extraLanguages: include 'en' unless it's defaultLang; add 'zh'/'ja' for Asian tourism, 'de' for German market; max 4 extra
+- contextPrompt: highly specific, useful for generating tour copy`;
+}
+
+// ─── Speech recognition ───────────────────────────────────────────────────────
+
+function getSpeechRecognitionClass(): (new () => SpeechRecognition) | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as Record<string, unknown>;
+  return (w['SpeechRecognition'] ?? w['webkitSpeechRecognition'] ?? null) as (new () => SpeechRecognition) | null;
+}
+
+// ─── MicButton ────────────────────────────────────────────────────────────────
+
+function MicButton({ onTranscript, lang = 'en-US' }: { onTranscript: (text: string) => void; lang?: string }) {
+  const [listening, setListening] = useState(false);
+  const recRef = useRef<SpeechRecognition | null>(null);
+  const SpeechRecognitionClass = getSpeechRecognitionClass();
+  if (!SpeechRecognitionClass) return null;
+
+  const toggle = () => {
+    if (listening) {
+      recRef.current?.stop();
+      setListening(false);
+    } else {
+      const rec = new SpeechRecognitionClass();
+      rec.lang = lang;
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.onresult = (e: SpeechRecognitionEvent) => {
+        const transcript = e.results[0]?.[0]?.transcript ?? '';
+        if (transcript) onTranscript(transcript);
+      };
+      rec.onend = () => setListening(false);
+      rec.onerror = () => setListening(false);
+      rec.start();
+      recRef.current = rec;
+      setListening(true);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={listening ? 'Stop dictation' : 'Dictate answer'}
+      className={clsx(
+        'flex items-center justify-center w-9 h-9 rounded-lg border shrink-0 transition-all',
+        listening
+          ? 'border-red-400 bg-red-400/10 text-red-400 animate-pulse'
+          : 'border-line bg-paper-strong text-ink-faded hover:text-ink-soft hover:border-ink-soft',
+      )}
+    >
+      {listening ? <MicOff size={14} /> : <Mic size={14} />}
+    </button>
+  );
+}
+
+// ─── DynamicChips + free text ─────────────────────────────────────────────────
+
+interface ChipsInputProps {
+  options: DynamicOption[];
+  selected: string[];
+  onToggle: (key: string) => void;
+  freeText: string;
+  onFreeTextChange: (v: string) => void;
+  placeholder: string;
+  speechLang?: string;
+  multiSelect?: boolean;
+  onSingleSelect?: (key: string) => void;
+}
+
+function DynamicChipsInput({
+  options, selected, onToggle, freeText, onFreeTextChange, placeholder, speechLang = 'en-US', multiSelect = true, onSingleSelect,
+}: ChipsInputProps) {
+  const handleVoice = (text: string) => {
+    onFreeTextChange((freeText ? freeText + ' ' : '') + text);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {options.map((opt) => {
+          const sel = multiSelect ? selected.includes(opt.key) : selected[0] === opt.key;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => multiSelect ? onToggle(opt.key) : (onSingleSelect ?? onToggle)(opt.key)}
+              title={opt.example}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all',
+                sel
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft hover:text-ink-base',
+              )}
+              style={sel && opt.color ? { borderColor: opt.color, backgroundColor: opt.color + '22', color: opt.color } : undefined}
+            >
+              {opt.icon && <span>{opt.icon}</span>}
+              {opt.label}
+              {sel && <Check size={10} />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={freeText}
+          onChange={(e) => onFreeTextChange(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent"
+        />
+        <MicButton onTranscript={handleVoice} lang={speechLang} />
+      </div>
+    </div>
+  );
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
-const DESKTOP_STEPS: WizardStep[] = ['q1', 'q2', 'q3', 'q4', 'q5', 'generating', 'summary'];
+const PROGRESS_STEPS: WizardStep[] = ['venue', 'project-type', 'audience', 'spaces', 'tone', 'extras'];
 
 function ProgressBar({ step }: { step: WizardStep }) {
-  const idx = DESKTOP_STEPS.indexOf(step);
+  const idx = PROGRESS_STEPS.indexOf(step);
   if (idx < 0) return null;
-  const pct = ((idx + 1) / DESKTOP_STEPS.length) * 100;
+  const pct = ((idx + 1) / PROGRESS_STEPS.length) * 100;
   return (
     <div className="h-0.5 bg-line w-full">
-      <div
-        className="h-full bg-accent transition-all duration-500"
-        style={{ width: `${pct}%` }}
-      />
-    </div>
-  );
-}
-
-// ─── Sub-step components ───────────────────────────────────────────────────────
-
-function StepQ1({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-ink-base">Where is your venue?</h2>
-        <p className="text-sm text-ink-soft mt-1">
-          City, address, or just describe the place — we'll deduce the language and context.
-        </p>
-      </div>
-      <textarea
-        autoFocus
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. Château de Versailles, France · A luxury hotel in downtown Tokyo · Miami Beach resort"
-        rows={3}
-        className="w-full bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent resize-none"
-      />
-    </div>
-  );
-}
-
-function StepQ2({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const toggle = (key: string) =>
-    onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key]);
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-ink-base">Who are your visitors?</h2>
-        <p className="text-sm text-ink-soft mt-1">Select all that apply — we'll deduce the right languages.</p>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {AUDIENCES.map((a) => {
-          const selected = value.includes(a.key);
-          return (
-            <button
-              key={a.key}
-              onClick={() => toggle(a.key)}
-              className={clsx(
-                'text-left px-4 py-3 rounded-lg border text-sm font-medium transition-all',
-                selected
-                  ? 'border-accent bg-accent/10 text-accent'
-                  : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft hover:text-ink-base',
-              )}
-            >
-              {selected && <Check size={12} className="inline mr-1.5" />}
-              {a.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function StepQ3({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-ink-base">What's the editorial tone?</h2>
-        <p className="text-sm text-ink-soft mt-1">This shapes all AI-generated text for your tour.</p>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {TONES.map((t) => {
-          const selected = value === t.key;
-          return (
-            <button
-              key={t.key}
-              onClick={() => onChange(t.key)}
-              className={clsx(
-                'text-left px-4 py-3 rounded-lg border transition-all',
-                selected
-                  ? 'border-accent bg-accent/10'
-                  : 'border-line bg-paper-strong hover:border-ink-soft',
-              )}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span>{t.icon}</span>
-                <span className={clsx('text-sm font-semibold', selected ? 'text-accent' : 'text-ink-base')}>
-                  {t.label}
-                </span>
-              </div>
-              <p className="text-xs text-ink-faded line-clamp-2">"{t.example}"</p>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function StepQ4({ vtype, value, onChange }: { vtype: string; value: string[]; onChange: (v: string[]) => void }) {
-  const options = CATEGORY_PRESETS[vtype] ?? CATEGORY_PRESETS.venue;
-  const toggle = (slug: string) =>
-    onChange(value.includes(slug) ? value.filter((s) => s !== slug) : [...value, slug]);
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-ink-base">What areas / spaces?</h2>
-        <p className="text-sm text-ink-soft mt-1">These become your tour categories. Select what's relevant.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {options.map((cat) => {
-          const selected = value.includes(cat.slug);
-          return (
-            <button
-              key={cat.slug}
-              onClick={() => toggle(cat.slug)}
-              className={clsx(
-                'px-3 py-1.5 rounded-full border text-xs font-medium transition-all',
-                selected
-                  ? 'border-accent bg-accent/10 text-accent'
-                  : 'border-line bg-paper-strong text-ink-soft hover:border-ink-soft',
-              )}
-            >
-              {selected && <Check size={10} className="inline mr-1" />}
-              {cat.name}
-            </button>
-          );
-        })}
-      </div>
-      {value.length > 0 && (
-        <p className="text-xs text-ink-faded">{value.length} space{value.length > 1 ? 's' : ''} selected</p>
-      )}
-    </div>
-  );
-}
-
-function StepQ5({
-  value, onChange, vtype, onAiSuggest,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  vtype: string;
-  onAiSuggest: () => void;
-}) {
-  const suggested = VENUE_ACCENT[vtype] ?? '#1D9E75';
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-ink-base">Pick an accent color</h2>
-        <p className="text-sm text-ink-soft mt-1">Used for buttons, highlights, and UI accents in the compiled tour.</p>
-      </div>
-      <div className="flex items-center gap-4">
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-16 h-16 rounded-lg border border-line cursor-pointer bg-transparent"
-        />
-        <div className="space-y-2">
-          <div className="text-sm font-mono text-ink-base">{value.toUpperCase()}</div>
-          <button
-            onClick={() => onChange(suggested)}
-            className="flex items-center gap-1.5 text-xs text-ink-soft hover:text-accent transition-colors border border-line rounded px-2.5 py-1"
-          >
-            <Sparkles size={11} />
-            Use suggested ({suggested.toUpperCase()})
-          </button>
-          <button
-            onClick={onAiSuggest}
-            className="flex items-center gap-1.5 text-xs text-ink-soft hover:text-accent transition-colors border border-line rounded px-2.5 py-1"
-          >
-            <Bot size={11} />
-            Let AI choose
-          </button>
-        </div>
-      </div>
+      <div className="h-full bg-accent transition-all duration-500" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -374,21 +337,41 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   const [quickName, setQuickName] = useState('My Tour');
   const quickNameRef = useRef<HTMLInputElement>(null);
 
-  // API key step
+  // API key
   const [apiProvider, setApiProvider] = useState<'claude' | 'gpt'>('claude');
   const [apiKey, setApiKey] = useState('');
   const [keyTestState, setKeyTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [keyTestError, setKeyTestError] = useState('');
 
-  // Answers
-  const [loc, setLoc] = useState('');
-  const [aud, setAud] = useState<string[]>([]);
-  const [tone, setTone] = useState('');
-  const [selectedCats, setSelectedCats] = useState<string[]>([]);
+  // Step 1: venue free text
+  const [venue, setVenue] = useState('');
+
+  // AI analysis result
+  const [analysis, setAnalysis] = useState<VenueAnalysis | null>(null);
+  const [analysisError, setAnalysisError] = useState('');
+
+  // Step 3: project type
+  const [projectType, setProjectType] = useState<string[]>([]);
+  const [projectTypeFree, setProjectTypeFree] = useState('');
+
+  // Step 4: audience
+  const [audience, setAudience] = useState<string[]>([]);
+  const [audienceFree, setAudienceFree] = useState('');
+
+  // Step 5: spaces
+  const [spaces, setSpaces] = useState<string[]>([]);
+  const [spacesFree, setSpacesFree] = useState('');
+
+  // Step 6: tone (single select)
+  const [toneKey, setToneKey] = useState('');
+
+  // Step 7: extras
+  const [extras, setExtras] = useState('');
+
+  // Color (from analysis or user pick later)
   const [color, setColor] = useState('#1D9E75');
 
   // Generation
-  const [generating, setGenerating] = useState(false);
   const [generatingDots, setGeneratingDots] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -396,23 +379,61 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   const [summary, setSummary] = useState<WizardSummary | null>(null);
   const [applying, setApplying] = useState(false);
 
-  // QR / mobile server
+  // QR / mobile
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [lanUrl, setLanUrl] = useState<string | null>(null);
 
   // Error
   const [error, setError] = useState('');
 
-  const vtype = detectVenueType(loc);
+  // Speech lang: use detectedLang from analysis if available
+  const speechLang = analysis ? analysis.detectedLang + '-' + analysis.detectedLang.toUpperCase() : 'en-US';
 
-  // Animated dots while generating
+  // Animated dots
   useEffect(() => {
-    if (step !== 'generating') return;
+    if (step !== 'analyzing' && step !== 'generating') return;
     const interval = setInterval(() => {
       setGeneratingDots((d) => (d.length >= 3 ? '' : d + '.'));
     }, 400);
     return () => clearInterval(interval);
   }, [step]);
+
+  // AI venue analysis
+  useEffect(() => {
+    if (step !== 'analyzing') return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setAnalysisError('');
+
+    const prompt = buildAnalysisPrompt(venue);
+
+    callAiStreaming(apiProvider, apiKey, prompt, null, ctrl.signal, () => {})
+      .then(({ text }) => {
+        const parsed = parseJsonFromText(text);
+        const result: VenueAnalysis = {
+          location: (parsed['location'] as string) ?? venue.split(',')[0].trim(),
+          detectedLang: (parsed['detectedLang'] as string) ?? 'en',
+          venueSummary: (parsed['venueSummary'] as string) ?? '',
+          typeOptions: (parsed['typeOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.typeOptions,
+          audienceOptions: (parsed['audienceOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.audienceOptions,
+          spaceOptions: (parsed['spaceOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.spaceOptions,
+          toneOptions: (parsed['toneOptions'] as DynamicOption[]) ?? FALLBACK_ANALYSIS.toneOptions,
+          accentColorSuggestion: (parsed['accentColorSuggestion'] as string) ?? '#1D9E75',
+        };
+        setAnalysis(result);
+        setColor(result.accentColorSuggestion);
+        setStep('project-type');
+      })
+      .catch((err: Error) => {
+        if (err.name !== 'AbortError') {
+          setAnalysisError('Analysis failed — using generic options');
+          setAnalysis({ ...FALLBACK_ANALYSIS, location: venue.split(',')[0].trim() });
+          setStep('project-type');
+        }
+      });
+
+    return () => ctrl.abort();
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // QR code startup
   useEffect(() => {
@@ -420,19 +441,20 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
     let cleanup: (() => void) | null = null;
 
     window.conchitour.wizardStartServer().then(({ port, lanUrl: url }) => {
+      const displayUrl = url ?? `http://localhost:${port}`;
+      setLanUrl(displayUrl);
       if (url) {
-        setLanUrl(url);
         QRCode.toDataURL(url, { width: 200, margin: 1 }).then(setQrDataUrl).catch(() => {});
-      } else {
-        setLanUrl(`http://localhost:${port}`);
       }
-      // Listen for answers from phone
       cleanup = window.conchitour.onWizardMobileAnswers((rawAnswers) => {
-        const a = rawAnswers as { loc?: string; aud?: string[]; tone?: string; cats?: string[]; color?: string; vtype?: string };
-        if (a.loc) setLoc(a.loc);
-        if (a.aud) setAud(a.aud);
-        if (a.tone) setTone(a.tone);
-        if (a.cats) setSelectedCats(a.cats);
+        // Phone sends old-format answers — map to new fields
+        const a = rawAnswers as {
+          loc?: string; aud?: string[]; tone?: string; cats?: string[]; color?: string;
+        };
+        if (a.loc) setVenue(a.loc);
+        if (a.aud) setAudience(a.aud);
+        if (a.tone) setToneKey(a.tone);
+        if (a.cats) setSpaces(a.cats);
         if (a.color) setColor(a.color);
         window.conchitour.wizardStopServer();
         setStep('generating');
@@ -445,77 +467,102 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
     };
   }, [step]);
 
-  // Run AI generation when step === 'generating'
+  // Final AI generation
   useEffect(() => {
     if (step !== 'generating') return;
 
-    const answers: WizardAnswers = { loc, aud, tone, cats: selectedCats, color, vtype };
-    const prompt = buildWizardPrompt(answers);
+    const eff = analysis;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-
-    setGenerating(true);
     setError('');
 
-    const provider = apiProvider;
-    const key = apiKey;
+    // Resolve space label strings for the prompt
+    const spaceLabels = spaces.map((k) => {
+      const opt = eff?.spaceOptions.find((o) => o.key === k);
+      return opt ? opt.label : k;
+    });
 
-    callAiStreaming(provider, key, prompt, null, ctrl.signal, () => {})
+    const typeLabels = projectType.map((k) => {
+      const opt = eff?.typeOptions.find((o) => o.key === k);
+      return opt ? opt.label : k;
+    });
+
+    const audienceLabels = audience.map((k) => {
+      const opt = eff?.audienceOptions.find((o) => o.key === k);
+      return opt ? opt.label : k;
+    });
+
+    const prompt = buildFinalPrompt(
+      venue,
+      eff,
+      typeLabels,
+      projectTypeFree,
+      audienceLabels,
+      audienceFree,
+      spaceLabels,
+      spacesFree,
+      toneKey,
+      extras,
+    );
+
+    callAiStreaming(apiProvider, apiKey, prompt, null, ctrl.signal, () => {})
       .then(({ text }) => {
-        // Parse JSON — strip potential markdown fences
-        const cleaned = text.replace(/^```json?\n?/m, '').replace(/^```\n?/m, '').replace(/```$/m, '').trim();
-        let parsed: {
-          projectName?: string;
-          defaultLang?: string;
-          extraLanguages?: string[];
-          contextPrompt?: string;
-        };
-        try {
-          parsed = JSON.parse(cleaned) as typeof parsed;
-        } catch {
-          // Fallback: extract JSON from response
-          const match = cleaned.match(/\{[\s\S]*\}/);
-          parsed = match ? (JSON.parse(match[0]) as typeof parsed) : {};
-        }
+        const parsed = parseJsonFromText(text);
+        const defaultLang = (parsed['defaultLang'] as string) ?? (eff?.detectedLang ?? 'en');
 
-        const defaultLang = parsed.defaultLang ?? 'en';
-        const cats: SummaryCat[] = (selectedCats.length > 0
-          ? (CATEGORY_PRESETS[vtype] ?? CATEGORY_PRESETS.venue).filter((c) => selectedCats.includes(c.slug))
-          : (CATEGORY_PRESETS[vtype] ?? CATEGORY_PRESETS.venue).slice(0, 3)
+        // Build categories from selected spaces
+        const cats: SummaryCat[] = (
+          spaces.length > 0
+            ? spaces.map((k, i) => {
+                const opt = eff?.spaceOptions.find((o) => o.key === k);
+                return { slug: k, name: opt?.label ?? k, color: opt?.color ?? pickColor(i) };
+              })
+            : (eff?.spaceOptions.slice(0, 3) ?? []).map((o, i) => ({
+                slug: o.key, name: o.label, color: o.color ?? pickColor(i),
+              }))
         );
 
+        if (spacesFree.trim()) {
+          cats.push({ slug: uuid().slice(0, 8), name: spacesFree.trim(), color: pickColor(cats.length) });
+        }
+
+        const selectedToneOpt = eff?.toneOptions.find((o) => o.key === toneKey);
+        const aiTone: WizardSummary['aiTone'] = selectedToneOpt?.aiTone ?? 'marketing';
+
         setSummary({
-          projectName: parsed.projectName ?? (loc.split(',')[0].trim() || 'My Tour'),
+          projectName: (parsed['projectName'] as string) ?? (venue.split(',')[0].trim() || 'My Tour'),
           defaultLang,
-          extraLanguages: (parsed.extraLanguages ?? []).filter((l) => l !== defaultLang).slice(0, 4),
-          tone,
+          extraLanguages: ((parsed['extraLanguages'] as string[]) ?? []).filter((l) => l !== defaultLang).slice(0, 4),
           categories: cats,
           accentColor: color,
-          contextPrompt: parsed.contextPrompt ?? '',
+          contextPrompt: (parsed['contextPrompt'] as string) ?? '',
+          aiTone,
         });
         setStep('summary');
       })
       .catch((err: Error) => {
         if (err.name !== 'AbortError') {
-          setError('AI generation failed. You can edit the summary manually.');
-          // Still show summary with defaults
-          const defaultLang = 'en';
+          setError('AI generation failed — using defaults.');
+          const defaultLang = eff?.detectedLang ?? 'en';
           setSummary({
-            projectName: loc.split(',')[0].trim() || 'My Tour',
+            projectName: (venue.split(',')[0].trim() || 'My Tour'),
             defaultLang,
-            extraLanguages: ['fr'],
-            tone,
-            categories: (CATEGORY_PRESETS[vtype] ?? CATEGORY_PRESETS.venue).slice(0, 3),
+            extraLanguages: defaultLang === 'en' ? ['fr'] : ['en'],
+            categories: (eff?.spaceOptions.slice(0, 3) ?? []).map((o, i) => ({
+              slug: o.key, name: o.label, color: o.color ?? pickColor(i),
+            })),
             accentColor: color,
             contextPrompt: '',
+            aiTone: 'marketing',
           });
           setStep('summary');
         }
-      })
-      .finally(() => setGenerating(false));
+      });
 
     return () => ctrl.abort();
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Handlers ────────────────────────────────────────────────────────────────
 
   const testKey = useCallback(async () => {
     setKeyTestState('testing');
@@ -559,7 +606,6 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
 
       const { projectDir } = await window.conchitour.newProject(folder, summary.projectName);
 
-      // Build project from defaults then override with wizard config
       const proj: Project = buildDefaultProject();
       proj.meta.name = summary.projectName;
       proj.languages.default = summary.defaultLang;
@@ -569,7 +615,6 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
         proj.languages.available.map((l) => [l, ''])
       );
 
-      // Custom categories (built-ins preserved by ensureBuiltins in store)
       const customCats: Category[] = summary.categories.map((c) => ({
         id: uuid(),
         slug: c.slug,
@@ -578,9 +623,8 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       }));
       proj.categories = [...BUILTIN_CATEGORIES, ...customCats];
 
-      // AI context
       proj.aiContext = {
-        tone: TONE_TO_AI_TONE[summary.tone] ?? 'marketing',
+        tone: summary.aiTone,
         audience: 'general',
         theme: 'Tourism',
         length: 'medium',
@@ -588,7 +632,6 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
         tokensUsed: { claude: { in: 0, out: 0 }, gpt: { in: 0, out: 0 } },
       };
 
-      // API key
       if (apiKey) {
         if (apiProvider === 'claude') {
           proj.modules.anthropicApiKey = apiKey;
@@ -610,69 +653,77 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   }, [summary, apiKey, apiProvider, loadProjectData, setActiveScreen, onClose]);
 
   const goBack = useCallback(() => {
-    // If wizard started at api-key (no mode-select), back = close modal
     if (step === 'api-key' && initialStep === 'api-key') { onClose(); return; }
     const prev: Partial<Record<WizardStep, WizardStep>> = {
-      'quick-name': 'mode-select',
-      'api-key':    'mode-select',
-      routing:      'api-key',
-      q1:           'routing',
-      q2:           'q1',
-      q3:           'q2',
-      q4:           'q3',
-      q5:           'q4',
-      summary:      'q5',
-      'qr-waiting': 'routing',
+      'quick-name':   'mode-select',
+      'api-key':      'mode-select',
+      routing:        'api-key',
+      venue:          'routing',
+      'project-type': 'venue',
+      audience:       'project-type',
+      spaces:         'audience',
+      tone:           'spaces',
+      extras:         'tone',
+      summary:        'extras',
+      'qr-waiting':   'routing',
     };
     const target = prev[step];
     if (target) setStep(target);
-  }, [step]);
+  }, [step, initialStep, onClose]);
 
   const canAdvance = useCallback(() => {
-    if (step === 'q1') return loc.trim().length > 3;
-    if (step === 'q2') return aud.length > 0;
-    if (step === 'q3') return tone !== '';
-    if (step === 'q4') return true; // categories optional
-    if (step === 'q5') return color !== '';
+    if (step === 'venue') return venue.trim().length > 3;
+    if (step === 'project-type') return projectType.length > 0 || projectTypeFree.trim().length > 2;
+    if (step === 'audience') return audience.length > 0 || audienceFree.trim().length > 2;
+    if (step === 'tone') return toneKey !== '';
     if (step === 'api-key') return apiKey.trim().length > 10;
     return true;
-  }, [step, loc, aud, tone, color, apiKey]);
+  }, [step, venue, projectType, projectTypeFree, audience, audienceFree, toneKey, apiKey]);
 
   const advance = useCallback(() => {
     const next: Partial<Record<WizardStep, WizardStep>> = {
-      q1: 'q2', q2: 'q3', q3: 'q4', q4: 'q5', q5: 'generating',
+      venue:          'analyzing',
+      'project-type': 'audience',
+      audience:       'spaces',
+      spaces:         'tone',
+      tone:           'extras',
+      extras:         'generating',
     };
-    if (next[step]) setStep(next[step]!);
+    const target = next[step];
+    if (target) setStep(target);
   }, [step]);
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  const toggleMulti = useCallback((arr: string[], key: string): string[] =>
+    arr.includes(key) ? arr.filter((k) => k !== key) : [...arr, key], []);
 
-  const showBackButton = !['mode-select', 'generating', 'summary'].includes(step);
-  const showNextButton = ['q1', 'q2', 'q3', 'q4', 'q5'].includes(step);
-  const stepLabel: Partial<Record<WizardStep, string>> = {
-    q1: 'Step 1 of 5', q2: 'Step 2 of 5', q3: 'Step 3 of 5', q4: 'Step 4 of 5', q5: 'Step 5 of 5',
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
+  const currentAnalysis = analysis ?? FALLBACK_ANALYSIS;
+  const showBack = !['mode-select', 'analyzing', 'generating', 'summary'].includes(step);
+  const showNext = ['venue', 'project-type', 'audience', 'spaces', 'tone', 'extras'].includes(step);
+  const stepNum: Partial<Record<WizardStep, string>> = {
+    venue: 'Step 1 of 6', 'project-type': 'Step 2 of 6', audience: 'Step 3 of 6',
+    spaces: 'Step 4 of 6', tone: 'Step 5 of 6', extras: 'Step 6 of 6',
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
       <div className="relative w-full max-w-lg bg-paper rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0">
           <div className="flex items-center gap-2">
-            {step !== 'mode-select' && (
+            {!['mode-select', 'quick-name'].includes(step) && (
               <Sparkles size={16} className="text-accent" />
             )}
             <span className="text-sm font-semibold text-ink-base">
               {step === 'mode-select' ? 'New project' : 'AI project setup'}
             </span>
-            {stepLabel[step] && (
-              <span className="text-xs text-ink-faded ml-1">{stepLabel[step]}</span>
+            {stepNum[step] && (
+              <span className="text-xs text-ink-faded ml-1">{stepNum[step]}</span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="text-ink-faded hover:text-ink-base transition-colors"
-          >
+          <button onClick={onClose} className="text-ink-faded hover:text-ink-base transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -687,7 +738,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">How do you want to start?</h2>
-                <p className="text-sm text-ink-soft mt-1">Quick setup takes 10 seconds. AI setup configures everything automatically.</p>
+                <p className="text-sm text-ink-soft mt-1">Quick setup takes 10 seconds. AI setup configures everything from your venue description.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -707,7 +758,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                   <Bot size={22} className="text-accent" />
                   <div>
                     <div className="text-sm font-semibold text-accent">AI-assisted setup</div>
-                    <div className="text-xs text-ink-faded mt-0.5">Auto-configure languages, tone, categories</div>
+                    <div className="text-xs text-ink-faded mt-0.5">Describe your venue — AI configures everything</div>
                   </div>
                 </button>
               </div>
@@ -739,7 +790,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">AI provider & key</h2>
                 <p className="text-sm text-ink-soft mt-1">
-                  Your key is stored in this project only and never sent to our servers.
+                  Your key is stored in this project only, never sent to our servers.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -782,16 +833,13 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                     )}
                   >
                     {keyTestState === 'testing' ? <Loader2 size={12} className="animate-spin" /> :
-                     keyTestState === 'ok' ? <Check size={12} /> :
-                     'Test'}
+                     keyTestState === 'ok' ? <Check size={12} /> : 'Test'}
                   </button>
                 </div>
                 {keyTestState === 'error' && (
                   <p className="text-xs text-red-400">{keyTestError || 'Connection failed — check your key'}</p>
                 )}
-                {keyTestState === 'ok' && (
-                  <p className="text-xs text-emerald-400">Connected ✓</p>
-                )}
+                {keyTestState === 'ok' && <p className="text-xs text-emerald-400">Connected ✓</p>}
                 <button
                   onClick={() => window.conchitour.openUrl(
                     apiProvider === 'claude'
@@ -811,11 +859,11 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-semibold text-ink-base">Where do you want to answer the questions?</h2>
-                <p className="text-sm text-ink-soft mt-1">5 short questions to configure your tour automatically.</p>
+                <p className="text-sm text-ink-soft mt-1">A few open questions to configure your tour automatically.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => setStep('q1')}
+                  onClick={() => setStep('venue')}
                   className="group flex flex-col items-start gap-3 p-5 rounded-xl border border-line bg-paper-strong hover:border-ink-soft transition-all text-left"
                 >
                   <Monitor size={22} className="text-ink-soft group-hover:text-ink-base transition-colors" />
@@ -834,42 +882,206 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-ink-base">On my phone</div>
-                    <div className="text-xs text-ink-faded mt-0.5">Scan QR code, answer on mobile</div>
+                    <div className="text-xs text-ink-faded mt-0.5">Scan QR, dictate on mobile</div>
                   </div>
                 </button>
               </div>
             </div>
           )}
 
-          {/* ── Q1 ── */}
-          {step === 'q1' && <StepQ1 value={loc} onChange={setLoc} />}
-
-          {/* ── Q2 ── */}
-          {step === 'q2' && <StepQ2 value={aud} onChange={setAud} />}
-
-          {/* ── Q3 ── */}
-          {step === 'q3' && <StepQ3 value={tone} onChange={setTone} />}
-
-          {/* ── Q4 ── */}
-          {step === 'q4' && (
-            <StepQ4
-              vtype={vtype}
-              value={selectedCats}
-              onChange={setSelectedCats}
-            />
+          {/* ── Step 1: Venue ── */}
+          {step === 'venue' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">Describe your venue</h2>
+                <p className="text-sm text-ink-soft mt-1">
+                  City, type, ambiance — the more detail, the more precise the AI configuration.
+                </p>
+              </div>
+              <div className="flex gap-2 items-start">
+                <textarea
+                  autoFocus
+                  value={venue}
+                  onChange={(e) => setVenue(e.target.value)}
+                  placeholder="e.g. A surf school in Hossegor, France, with a laid-back ocean vibe and lessons for all levels · Château de Versailles, historic palace near Paris · Luxury boutique hotel in downtown Tokyo with rooftop bar"
+                  rows={4}
+                  className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent resize-none"
+                />
+                <MicButton
+                  onTranscript={(text) => setVenue((v) => (v ? v + ' ' : '') + text)}
+                  lang="en-US"
+                />
+              </div>
+              <p className="text-xs text-ink-faded">AI will analyze the location to suggest relevant types, audiences, spaces, and tone.</p>
+            </div>
           )}
 
-          {/* ── Q5 ── */}
-          {step === 'q5' && (
-            <StepQ5
-              value={color}
-              onChange={setColor}
-              vtype={vtype}
-              onAiSuggest={() => {
-                // Use the venue-based suggestion immediately, AI will refine during generation
-                setColor(VENUE_ACCENT[vtype] ?? '#1D9E75');
-              }}
-            />
+          {/* ── Analyzing ── */}
+          {step === 'analyzing' && (
+            <div className="flex flex-col items-center justify-center gap-5 py-12">
+              <div className="relative">
+                <Sparkles size={32} className="text-accent" />
+                <div className="absolute inset-0 animate-ping rounded-full bg-accent/20" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-ink-base">Analyzing your venue{generatingDots}</p>
+                <p className="text-xs text-ink-soft mt-1">Detecting location, context, and relevant options</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Project type ── */}
+          {step === 'project-type' && (
+            <div className="space-y-5">
+              {analysisError && (
+                <p className="text-xs text-amber-400">{analysisError}</p>
+              )}
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">What type of venue is this?</h2>
+                {analysis?.venueSummary && (
+                  <p className="text-xs text-ink-faded mt-1 italic">{analysis.venueSummary}</p>
+                )}
+                <p className="text-sm text-ink-soft mt-1">Select one or more, or describe it yourself.</p>
+              </div>
+              <DynamicChipsInput
+                options={currentAnalysis.typeOptions}
+                selected={projectType}
+                onToggle={(key) => setProjectType(toggleMulti(projectType, key))}
+                freeText={projectTypeFree}
+                onFreeTextChange={setProjectTypeFree}
+                placeholder="Or describe it in your own words…"
+                speechLang={speechLang}
+              />
+            </div>
+          )}
+
+          {/* ── Step 3: Audience ── */}
+          {step === 'audience' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">Who are your visitors?</h2>
+                <p className="text-sm text-ink-soft mt-1">Select all that apply — influences language selection and tone.</p>
+              </div>
+              <DynamicChipsInput
+                options={currentAnalysis.audienceOptions}
+                selected={audience}
+                onToggle={(key) => setAudience(toggleMulti(audience, key))}
+                freeText={audienceFree}
+                onFreeTextChange={setAudienceFree}
+                placeholder="Other audience…"
+                speechLang={speechLang}
+              />
+            </div>
+          )}
+
+          {/* ── Step 4: Spaces ── */}
+          {step === 'spaces' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">Which areas will you include?</h2>
+                <p className="text-sm text-ink-soft mt-1">These become your tour categories. Add custom areas in the text field.</p>
+              </div>
+              <DynamicChipsInput
+                options={currentAnalysis.spaceOptions}
+                selected={spaces}
+                onToggle={(key) => setSpaces(toggleMulti(spaces, key))}
+                freeText={spacesFree}
+                onFreeTextChange={setSpacesFree}
+                placeholder="Other area (e.g. rooftop bar, wine cellar…)"
+                speechLang={speechLang}
+              />
+              {spaces.length > 0 && (
+                <p className="text-xs text-ink-faded">{spaces.length} area{spaces.length > 1 ? 's' : ''} selected</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 5: Tone ── */}
+          {step === 'tone' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">What's the editorial tone?</h2>
+                <p className="text-sm text-ink-soft mt-1">Shapes all AI-generated text. Examples below are tailored to your venue.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {currentAnalysis.toneOptions.map((t) => {
+                  const sel = toneKey === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setToneKey(t.key)}
+                      className={clsx(
+                        'text-left px-4 py-3 rounded-lg border transition-all',
+                        sel ? 'border-accent bg-accent/10' : 'border-line bg-paper-strong hover:border-ink-soft',
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        {t.icon && <span>{t.icon}</span>}
+                        <span className={clsx('text-sm font-semibold', sel ? 'text-accent' : 'text-ink-base')}>
+                          {t.label}
+                        </span>
+                        {sel && <Check size={12} className="ml-auto text-accent" />}
+                      </div>
+                      {t.example && (
+                        <p className="text-xs text-ink-faded line-clamp-2">"{t.example}"</p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 6: Extras ── */}
+          {step === 'extras' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">Anything else to add?</h2>
+                <p className="text-sm text-ink-soft mt-1">
+                  Optional — special selling points, accessibility features, seasonal info, brand guidelines, etc.
+                </p>
+              </div>
+              <div className="flex gap-2 items-start">
+                <textarea
+                  autoFocus
+                  value={extras}
+                  onChange={(e) => setExtras(e.target.value)}
+                  placeholder="e.g. Eco-certified hotel with organic restaurant · Pet-friendly · Runs June–September only · Multilingual staff · Award-winning architecture by Renzo Piano…"
+                  rows={4}
+                  className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2.5 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent resize-none"
+                />
+                <MicButton
+                  onTranscript={(text) => setExtras((v) => (v ? v + ' ' : '') + text)}
+                  lang={speechLang}
+                />
+              </div>
+              <p className="text-xs text-ink-faded">Leave empty to skip — AI will use the venue context alone.</p>
+
+              {/* Accent color */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Accent color</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-10 h-10 rounded-lg border border-line cursor-pointer bg-transparent"
+                  />
+                  <div>
+                    <div className="text-xs font-mono text-ink-soft">{color.toUpperCase()}</div>
+                    {analysis?.accentColorSuggestion && color !== analysis.accentColorSuggestion && (
+                      <button
+                        onClick={() => setColor(analysis.accentColorSuggestion)}
+                        className="text-xs text-ink-faded hover:text-accent transition-colors mt-0.5"
+                      >
+                        ← restore AI suggestion ({analysis.accentColorSuggestion.toUpperCase()})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ── Generating ── */}
@@ -881,7 +1093,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-ink-base">Configuring your project{generatingDots}</p>
-                <p className="text-xs text-ink-soft mt-1">Deducing languages, generating context, setting up categories</p>
+                <p className="text-xs text-ink-soft mt-1">Deducing languages, generating AI context, setting up categories</p>
               </div>
             </div>
           )}
@@ -890,9 +1102,9 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
           {step === 'qr-waiting' && (
             <div className="flex flex-col items-center gap-5 py-4">
               <div>
-                <h2 className="text-xl font-semibold text-ink-base text-center">Scan to continue on your phone</h2>
+                <h2 className="text-xl font-semibold text-ink-base text-center">Scan to answer on your phone</h2>
                 <p className="text-sm text-ink-soft mt-1 text-center">
-                  Make sure your phone is on the same Wi-Fi network.
+                  Same Wi-Fi network required. Voice dictation available on mobile.
                 </p>
               </div>
               {qrDataUrl ? (
@@ -905,16 +1117,11 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                 </div>
               )}
               {lanUrl && (
-                <p className="text-xs font-mono text-ink-faded bg-paper-strong px-3 py-1.5 rounded">
-                  {lanUrl}
-                </p>
+                <p className="text-xs font-mono text-ink-faded bg-paper-strong px-3 py-1.5 rounded">{lanUrl}</p>
               )}
-              <p className="text-xs text-ink-faded text-center">
-                Answer the 5 questions on your phone. This window will update automatically.
-              </p>
               <div className="flex items-center gap-2 text-xs text-ink-faded">
                 <Loader2 size={12} className="animate-spin" />
-                Waiting for phone response…
+                Waiting for response from phone…
               </div>
             </div>
           )}
@@ -979,7 +1186,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
               {/* Categories */}
               {summary.categories.length > 0 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs text-ink-faded uppercase tracking-wide font-semibold">Categories</label>
+                  <label className="text-xs text-ink-faded uppercase tracking-wide font-semibold">Tour categories</label>
                   <div className="flex flex-wrap gap-1.5">
                     {summary.categories.map((c) => (
                       <span
@@ -1018,11 +1225,12 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
 
         {/* Footer */}
         <div className="px-6 pb-5 pt-3 border-t border-line shrink-0">
-          {/* Quick mode apply */}
+
+          {/* Quick mode */}
           {step === 'quick-name' && (
             <div className="flex gap-2">
-              <button onClick={goBack} className="px-4 py-2 text-sm text-ink-soft hover:text-ink-base transition-colors">
-                <ArrowLeft size={14} className="inline mr-1" /> Back
+              <button onClick={() => setStep('mode-select')} className="px-4 py-2 text-sm text-ink-soft hover:text-ink-base transition-colors">
+                <ArrowLeft size={14} className="inline mr-1" />Back
               </button>
               <button
                 onClick={applyQuick}
@@ -1034,11 +1242,11 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             </div>
           )}
 
-          {/* API key proceed */}
+          {/* API key */}
           {step === 'api-key' && (
             <div className="flex gap-2">
               <button onClick={goBack} className="px-4 py-2 text-sm text-ink-soft hover:text-ink-base transition-colors">
-                <ArrowLeft size={14} className="inline mr-1" /> Back
+                <ArrowLeft size={14} className="inline mr-1" />Back
               </button>
               <button
                 onClick={() => setStep('routing')}
@@ -1053,34 +1261,34 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
           {/* Routing */}
           {step === 'routing' && (
             <button onClick={goBack} className="px-4 py-2 text-sm text-ink-soft hover:text-ink-base transition-colors">
-              <ArrowLeft size={14} className="inline mr-1" /> Back
+              <ArrowLeft size={14} className="inline mr-1" />Back
             </button>
           )}
 
-          {/* Q1–Q5 navigation */}
-          {showNextButton && (
+          {/* Steps with Next */}
+          {showNext && (
             <div className="flex gap-2">
               <button onClick={goBack} className="px-4 py-2 text-sm text-ink-soft hover:text-ink-base transition-colors">
-                <ArrowLeft size={14} className="inline mr-1" /> Back
+                <ArrowLeft size={14} className="inline mr-1" />Back
               </button>
               <button
                 onClick={advance}
                 disabled={!canAdvance()}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors"
               >
-                {step === 'q4' || step === 'q5' ? 'Generate' : 'Next'} <ArrowRight size={14} />
+                {step === 'extras' ? 'Generate' : 'Next'} <ArrowRight size={14} />
               </button>
             </div>
           )}
 
-          {/* QR waiting — cancel */}
+          {/* QR cancel */}
           {step === 'qr-waiting' && (
             <button onClick={goBack} className="w-full py-2 text-sm text-ink-soft hover:text-ink-base transition-colors">
-              <ArrowLeft size={14} className="inline mr-1" /> Back to routing
+              <ArrowLeft size={14} className="inline mr-1" />Back to routing
             </button>
           )}
 
-          {/* Summary — apply */}
+          {/* Summary apply */}
           {step === 'summary' && summary && (
             <button
               onClick={applySummary}
@@ -1088,9 +1296,9 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
               className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-40 transition-colors"
             >
               {applying ? (
-                <><Loader2 size={14} className="animate-spin" /> Creating project…</>
+                <><Loader2 size={14} className="animate-spin" />Creating project…</>
               ) : (
-                <><Check size={14} /> Apply configuration</>
+                <><Check size={14} />Apply configuration</>
               )}
             </button>
           )}
