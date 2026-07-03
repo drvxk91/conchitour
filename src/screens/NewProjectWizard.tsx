@@ -588,12 +588,49 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       setLanUrl(displayUrl);
       if (url) QRCode.toDataURL(url, { width: 200, margin: 1 }).then(setQrDataUrl).catch(() => {});
       cleanup = window.conchitour.onWizardMobileAnswers((rawAnswers) => {
-        const a = rawAnswers as { loc?: string; aud?: string[]; tone?: string; cats?: string[]; color?: string };
-        if (a.loc)   setVenue(a.loc);
-        if (a.aud)   setAudience(a.aud);
-        if (a.tone)  setToneText(a.tone);
-        if (a.cats)  setSpaces(a.cats);
-        if (a.color) setColor(a.color);
+        const a = rawAnswers as {
+          loc?: string; projectType?: string[]; clientType?: string[];
+          goal?: string[]; aud?: string[]; cats?: string[];
+          captureEquip?: string[]; captureSetting?: string[];
+          tone?: string; extras?: string; color?: string;
+        };
+        if (a.loc)            setVenue(a.loc);
+        if (a.projectType?.length)  setProjectType(a.projectType);
+        if (a.clientType?.length)   setClientType(a.clientType);
+        if (a.goal?.length)         setGoal(a.goal);
+        if (a.aud?.length)          setAudience(a.aud);
+        if (a.cats?.length)         setSpaces(a.cats);
+        if (a.captureEquip?.length) setCaptureEquip(a.captureEquip);
+        if (a.captureSetting?.length) setCaptureSetting(a.captureSetting);
+        if (a.tone)           setToneText(a.tone);
+        if (a.extras)         setExtras(a.extras);
+        if (a.color)          setColor(a.color);
+        // Set a synthetic analysis so resolve() can look up labels for all mobile-selected keys
+        setAnalysis({
+          ...FALLBACK_ANALYSIS,
+          location: a.loc?.split(',')[0].trim() ?? '',
+          venueSummary: a.loc ?? '',
+          typeOptions: FALLBACK_TYPE_OPTIONS,
+          spaceOptions: [
+            { key: 'main-area',  label: 'Main Area',        icon: '🏠', color: '#185FA5' },
+            { key: 'entrance',   label: 'Entrance',          icon: '🚪', color: '#BA7517' },
+            { key: 'garden',     label: 'Garden / Outdoor',  icon: '🌿', color: '#1D9E75' },
+            { key: 'lounge',     label: 'Lounge',            icon: '🛋️', color: '#8B5CF6' },
+            { key: 'terrace',    label: 'Terrace',           icon: '☀️', color: '#F59E0B' },
+            { key: 'pool',       label: 'Pool',              icon: '🏊', color: '#0EA5E9' },
+            { key: 'restaurant', label: 'Restaurant',        icon: '🍽️', color: '#EF4444' },
+            { key: 'spa',        label: 'Spa',               icon: '💆', color: '#EC4899' },
+            { key: 'rooms',      label: 'Rooms / Suites',    icon: '🛏️', color: '#8B5CF6' },
+            { key: 'bar',        label: 'Bar',               icon: '🍸', color: '#F59E0B' },
+            { key: 'gym',        label: 'Gym',               icon: '🏋️', color: '#1D9E75' },
+            { key: 'conference', label: 'Conference',        icon: '🏛️', color: '#64748b' },
+            { key: 'lobby',      label: 'Lobby',             icon: '🏢', color: '#185FA5' },
+            { key: 'kitchen',    label: 'Kitchen',           icon: '🍳', color: '#BA7517' },
+            { key: 'rooftop',    label: 'Rooftop',           icon: '🌆', color: '#185FA5' },
+            { key: 'parking',    label: 'Parking',           icon: '🚗', color: '#64748b' },
+          ],
+          accentColorSuggestion: a.color ?? '#1D9E75',
+        });
         window.conchitour.wizardStopServer();
         setStep('generating');
       });

@@ -5770,15 +5770,15 @@ const WIZARD_MOBILE_HTML = `<!doctype html>
 <title>Conchitour Setup</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:20px 16px 40px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:20px 16px 60px}
 h1{font-size:18px;font-weight:700;margin-bottom:4px;color:#f8fafc}
 .subtitle{font-size:13px;color:#94a3b8;margin-bottom:24px}
 .section{margin-bottom:20px}
 .label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px}
-textarea,input[type=text]{width:100%;background:#1e293b;border:1.5px solid #334155;border-radius:10px;padding:12px;font-size:15px;color:#f1f5f9;outline:none;resize:none}
-textarea:focus,input[type=text]:focus{border-color:#3b82f6}
-.chips{display:flex;flex-wrap:wrap;gap:8px}
-.chip{padding:8px 14px;border-radius:999px;border:1.5px solid #334155;background:#1e293b;font-size:13px;color:#94a3b8;cursor:pointer;transition:all .15s}
+textarea{width:100%;background:#1e293b;border:1.5px solid #334155;border-radius:10px;padding:12px;font-size:15px;color:#f1f5f9;outline:none;resize:none}
+textarea:focus{border-color:#3b82f6}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:7px 12px;border-radius:999px;border:1.5px solid #334155;background:#1e293b;font-size:13px;color:#94a3b8;cursor:pointer;user-select:none;-webkit-user-select:none;transition:all .15s}
 .chip.sel{border-color:#3b82f6;background:#1e3a5f;color:#93c5fd}
 .mic-row{display:flex;gap:8px;align-items:flex-start}
 .mic-btn{flex-shrink:0;width:42px;height:42px;border-radius:10px;border:1.5px solid #334155;background:#1e293b;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
@@ -5794,23 +5794,85 @@ textarea:focus,input[type=text]:focus{border-color:#3b82f6}
 .done-icon{font-size:56px;margin-bottom:16px}
 .done-title{font-size:22px;font-weight:700;color:#f8fafc;margin-bottom:8px}
 .done-sub{font-size:14px;color:#94a3b8}
+hr{border:none;border-top:1px solid #1e293b;margin:2px 0 20px}
 </style>
 </head>
 <body>
 <div id="form-view">
   <h1>Conchitour Setup</h1>
-  <p class="subtitle">Answer a few questions to configure your virtual tour. Tap the 🎤 mic to dictate.</p>
+  <p class="subtitle">Fill in your project details. Tap 🎤 to dictate. All fields except venue are optional.</p>
 
   <div class="section">
-    <div class="label">Where is your venue?</div>
+    <div class="label">1 · Venue description *</div>
     <div class="mic-row">
-      <textarea id="loc" rows="2" placeholder="e.g. Rooftop hotel in Dubai Marina with pool and panoramic views"></textarea>
+      <textarea id="loc" rows="3" placeholder="e.g. Rooftop hotel in Dubai Marina with pool and panoramic views"></textarea>
       <button class="mic-btn" id="mic-loc" title="Dictate">🎤</button>
     </div>
-  </div>
+  </div><hr>
 
   <div class="section">
-    <div class="label">Who are your visitors?</div>
+    <div class="label">2 · Venue type</div>
+    <div class="chips" id="type-chips">
+      <div class="chip" data-key="hotel">🏨 Hotel / Resort</div>
+      <div class="chip" data-key="bnb">🛏️ B&amp;B / Guesthouse</div>
+      <div class="chip" data-key="villa">🏖️ Villa / Holiday home</div>
+      <div class="chip" data-key="apartment">🏢 Apartment / Flat</div>
+      <div class="chip" data-key="house">🏡 House / Property</div>
+      <div class="chip" data-key="real-estate">🔑 Real estate agency</div>
+      <div class="chip" data-key="restaurant">🍽️ Restaurant</div>
+      <div class="chip" data-key="bar">🍸 Bar / Nightclub</div>
+      <div class="chip" data-key="cafe">☕ Café / Bakery</div>
+      <div class="chip" data-key="shop">🛍️ Shop / Boutique</div>
+      <div class="chip" data-key="mall">🏬 Shopping center</div>
+      <div class="chip" data-key="showroom">✨ Showroom</div>
+      <div class="chip" data-key="car-dealer">🚗 Car dealership</div>
+      <div class="chip" data-key="office">💼 Office / Coworking</div>
+      <div class="chip" data-key="corporate">🏛️ Corporate HQ</div>
+      <div class="chip" data-key="industrial">🏭 Factory / Industrial</div>
+      <div class="chip" data-key="museum">🖼️ Museum / Gallery</div>
+      <div class="chip" data-key="school">🎓 School / University</div>
+      <div class="chip" data-key="library">📚 Library</div>
+      <div class="chip" data-key="heritage">🏰 Heritage site</div>
+      <div class="chip" data-key="attraction">🗺️ Tourist attraction</div>
+      <div class="chip" data-key="spa">💆 Spa / Wellness</div>
+      <div class="chip" data-key="gym">🏋️ Gym / Sports</div>
+      <div class="chip" data-key="clinic">🏥 Clinic / Hospital</div>
+      <div class="chip" data-key="venue">🎪 Event venue</div>
+      <div class="chip" data-key="government">🏛️ Public / Government</div>
+      <div class="chip" data-key="sports">🏟️ Stadium / Arena</div>
+    </div>
+  </div><hr>
+
+  <div class="section">
+    <div class="label">3 · Who commissioned this tour?</div>
+    <div class="chips" id="client-chips">
+      <div class="chip" data-key="individual">👤 Private individual</div>
+      <div class="chip" data-key="sme">🏪 Small business</div>
+      <div class="chip" data-key="hotel">🏨 Hotel / Hospitality</div>
+      <div class="chip" data-key="real-estate">🔑 Real estate agency</div>
+      <div class="chip" data-key="tourism">🗺️ Tourism &amp; culture</div>
+      <div class="chip" data-key="corporate">🏢 Corporate enterprise</div>
+      <div class="chip" data-key="public">🏛️ Public institution</div>
+      <div class="chip" data-key="events">🎪 Events &amp; venues</div>
+    </div>
+  </div><hr>
+
+  <div class="section">
+    <div class="label">4 · Tour objective</div>
+    <div class="chips" id="goal-chips">
+      <div class="chip" data-key="drive-traffic">📍 Drive tourism &amp; visits</div>
+      <div class="chip" data-key="convert">💰 Generate bookings &amp; sales</div>
+      <div class="chip" data-key="showcase-b2b">🤝 Attract events &amp; partners</div>
+      <div class="chip" data-key="remote-preview">🌍 Remote preview</div>
+      <div class="chip" data-key="storytelling">✨ Brand &amp; heritage storytelling</div>
+      <div class="chip" data-key="education">🎓 Education &amp; training</div>
+      <div class="chip" data-key="documentation">📋 Documentation &amp; compliance</div>
+      <div class="chip" data-key="press-pr">📰 Press &amp; media kit</div>
+    </div>
+  </div><hr>
+
+  <div class="section">
+    <div class="label">5 · Who are your visitors?</div>
     <div class="chips" id="aud-chips">
       <div class="chip" data-key="tourists">✈️ Tourists</div>
       <div class="chip" data-key="locals">📍 Locals</div>
@@ -5821,44 +5883,74 @@ textarea:focus,input[type=text]:focus{border-color:#3b82f6}
       <div class="chip" data-key="buyers">🔑 Buyers</div>
       <div class="chip" data-key="partners">🤝 Partners</div>
     </div>
-  </div>
+  </div><hr>
 
   <div class="section">
-    <div class="label">Tour areas (select the spaces to include)</div>
+    <div class="label">6 · Spaces to include</div>
     <div class="chips" id="cats-chips">
       <div class="chip" data-key="main-area">🏠 Main area</div>
       <div class="chip" data-key="entrance">🚪 Entrance</div>
-      <div class="chip" data-key="garden">🌿 Garden</div>
+      <div class="chip" data-key="garden">🌿 Garden / Outdoor</div>
       <div class="chip" data-key="lounge">🛋️ Lounge</div>
       <div class="chip" data-key="terrace">☀️ Terrace</div>
       <div class="chip" data-key="pool">🏊 Pool</div>
       <div class="chip" data-key="restaurant">🍽️ Restaurant</div>
       <div class="chip" data-key="spa">💆 Spa</div>
-      <div class="chip" data-key="rooms">🛏️ Rooms</div>
+      <div class="chip" data-key="rooms">🛏️ Rooms / Suites</div>
       <div class="chip" data-key="bar">🍸 Bar</div>
       <div class="chip" data-key="gym">🏋️ Gym</div>
       <div class="chip" data-key="conference">🏛️ Conference</div>
+      <div class="chip" data-key="lobby">🏢 Lobby</div>
+      <div class="chip" data-key="kitchen">🍳 Kitchen</div>
+      <div class="chip" data-key="rooftop">🌆 Rooftop</div>
+      <div class="chip" data-key="parking">🚗 Parking</div>
     </div>
-  </div>
+  </div><hr>
 
   <div class="section">
-    <div class="label">Editorial voice</div>
+    <div class="label">7 · Capture equipment</div>
+    <div class="chips" id="equip-chips">
+      <div class="chip" data-key="smartphone">📱 Smartphone</div>
+      <div class="chip" data-key="action-cam">🎬 Action cam</div>
+      <div class="chip" data-key="dslr">📷 DSLR / Mirrorless</div>
+      <div class="chip" data-key="360-consumer">🔵 360° Camera</div>
+      <div class="chip" data-key="360-pro">⚡ Pro 360° rig</div>
+      <div class="chip" data-key="drone">🚁 Drone</div>
+      <div class="chip" data-key="video">🎥 Video camera</div>
+    </div>
+    <div class="chips" id="setting-chips" style="margin-top:8px">
+      <div class="chip" data-key="indoor">🏠 Indoor only</div>
+      <div class="chip" data-key="outdoor">🌿 Outdoor only</div>
+      <div class="chip" data-key="mixed">🔄 Both indoor &amp; outdoor</div>
+    </div>
+  </div><hr>
+
+  <div class="section">
+    <div class="label">8 · Editorial voice</div>
     <div class="mic-row">
       <textarea id="tone" rows="3" placeholder="e.g. Warm and welcoming, like a knowledgeable local guide sharing favourite spots…"></textarea>
       <button class="mic-btn" id="mic-tone" title="Dictate">🎤</button>
     </div>
-  </div>
+  </div><hr>
 
   <div class="section">
-    <div class="label">Accent color</div>
+    <div class="label">9 · Extra notes</div>
+    <div class="mic-row">
+      <textarea id="extras" rows="2" placeholder="Any special details, constraints or context…"></textarea>
+      <button class="mic-btn" id="mic-extras" title="Dictate">🎤</button>
+    </div>
+  </div><hr>
+
+  <div class="section">
+    <div class="label">10 · Accent color</div>
     <div class="color-row" id="color-row">
-      <div class="color-swatch sel" data-color="#1D9E75" style="background:#1D9E75" title="#1D9E75"></div>
-      <div class="color-swatch" data-color="#185FA5" style="background:#185FA5" title="#185FA5"></div>
-      <div class="color-swatch" data-color="#8B5CF6" style="background:#8B5CF6" title="#8B5CF6"></div>
-      <div class="color-swatch" data-color="#BA7517" style="background:#BA7517" title="#BA7517"></div>
-      <div class="color-swatch" data-color="#0EA5E9" style="background:#0EA5E9" title="#0EA5E9"></div>
-      <div class="color-swatch" data-color="#EF4444" style="background:#EF4444" title="#EF4444"></div>
-      <div class="color-swatch" data-color="#EC4899" style="background:#EC4899" title="#EC4899"></div>
+      <div class="color-swatch sel" data-color="#1D9E75" style="background:#1D9E75"></div>
+      <div class="color-swatch" data-color="#185FA5" style="background:#185FA5"></div>
+      <div class="color-swatch" data-color="#8B5CF6" style="background:#8B5CF6"></div>
+      <div class="color-swatch" data-color="#BA7517" style="background:#BA7517"></div>
+      <div class="color-swatch" data-color="#0EA5E9" style="background:#0EA5E9"></div>
+      <div class="color-swatch" data-color="#EF4444" style="background:#EF4444"></div>
+      <div class="color-swatch" data-color="#EC4899" style="background:#EC4899"></div>
       <input type="color" id="color-custom" value="#1D9E75" style="width:36px;height:36px;border-radius:8px;border:2px solid #334155;background:none;cursor:pointer;padding:0">
     </div>
   </div>
@@ -5876,19 +5968,15 @@ textarea:focus,input[type=text]:focus{border-color:#3b82f6}
 (function(){
   var selColor = '#1D9E75';
 
-  // Chip toggle
-  function initChips(containerId){
-    var container = document.getElementById(containerId);
-    container.addEventListener('click', function(e){
+  function initChips(id){
+    var c = document.getElementById(id);
+    c.addEventListener('click', function(e){
       var chip = e.target.closest('.chip');
-      if(!chip) return;
-      chip.classList.toggle('sel');
+      if(chip) chip.classList.toggle('sel');
     });
   }
-  initChips('aud-chips');
-  initChips('cats-chips');
+  ['type-chips','client-chips','goal-chips','aud-chips','cats-chips','equip-chips','setting-chips'].forEach(initChips);
 
-  // Color swatches
   document.getElementById('color-row').addEventListener('click', function(e){
     var sw = e.target.closest('.color-swatch');
     if(!sw) return;
@@ -5902,12 +5990,11 @@ textarea:focus,input[type=text]:focus{border-color:#3b82f6}
     document.querySelectorAll('.color-swatch').forEach(function(s){ s.classList.remove('sel'); });
   });
 
-  // Mic helper
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   function setupMic(btnId, targetId){
     if(!SR) return;
     var btn = document.getElementById(btnId);
-    var target = document.getElementById(targetId);
+    var ta = document.getElementById(targetId);
     var rec = null;
     btn.addEventListener('click', function(){
       if(rec){ rec.stop(); return; }
@@ -5915,32 +6002,34 @@ textarea:focus,input[type=text]:focus{border-color:#3b82f6}
       rec.lang = navigator.language || 'en-US';
       rec.continuous = false;
       rec.interimResults = false;
-      rec.onresult = function(e){
-        var t = e.results[0][0].transcript;
-        target.value = (target.value ? target.value + ' ' : '') + t;
-      };
+      rec.onresult = function(e){ ta.value = (ta.value ? ta.value + ' ' : '') + e.results[0][0].transcript; };
       rec.onend = function(){ rec = null; btn.classList.remove('listening'); };
       rec.onerror = function(){ rec = null; btn.classList.remove('listening'); };
       rec.start();
       btn.classList.add('listening');
     });
   }
-  setupMic('mic-loc', 'loc');
-  setupMic('mic-tone', 'tone');
+  setupMic('mic-loc','loc');
+  setupMic('mic-tone','tone');
+  setupMic('mic-extras','extras');
 
-  // Submit
   document.getElementById('submit-btn').addEventListener('click', function(){
     var btn = document.getElementById('submit-btn');
     btn.disabled = true;
     btn.textContent = 'Sending…';
-    var aud = Array.from(document.querySelectorAll('#aud-chips .chip.sel')).map(function(c){ return c.dataset.key; });
-    var cats = Array.from(document.querySelectorAll('#cats-chips .chip.sel')).map(function(c){ return c.dataset.key; });
+    function keys(id){ return Array.from(document.querySelectorAll('#'+id+' .chip.sel')).map(function(c){ return c.dataset.key; }); }
     var payload = {
-      loc: document.getElementById('loc').value.trim(),
-      aud: aud,
-      tone: document.getElementById('tone').value.trim(),
-      cats: cats,
-      color: selColor,
+      loc:            document.getElementById('loc').value.trim(),
+      projectType:    keys('type-chips'),
+      clientType:     keys('client-chips'),
+      goal:           keys('goal-chips'),
+      aud:            keys('aud-chips'),
+      cats:           keys('cats-chips'),
+      captureEquip:   keys('equip-chips'),
+      captureSetting: keys('setting-chips'),
+      tone:           document.getElementById('tone').value.trim(),
+      extras:         document.getElementById('extras').value.trim(),
+      color:          selColor,
     };
     fetch('/answers', {
       method: 'POST',
