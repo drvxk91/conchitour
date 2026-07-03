@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('conchitour', {
     ipcRenderer.on(ch, handler);
     return () => ipcRenderer.removeListener(ch, handler);
   },
+  popupMenu: (label: string, x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke('menu:popup', label, x, y),
   loadProject: (p: string) => ipcRenderer.invoke('project:load', p),
   readPhotosMeta: (paths: string[]) => ipcRenderer.invoke('photos:readMeta', paths),
   copyToProject: (paths: string[], destDir: string) => ipcRenderer.invoke('photos:copyToProject', paths, destDir),
@@ -290,6 +292,7 @@ declare global {
       getProjectDir: () => Promise<string | null>;
       copySourceToProject: (srcPath: string) => Promise<string | null>;
       onMenuAction: (action: string, cb: () => void) => () => void;
+      popupMenu: (label: string, x: number, y: number) => Promise<void>;
       loadProject: (p: string) => Promise<unknown>;
       readPhotosMeta: (paths: string[]) => Promise<PhotoMetaResult[]>;
       copyToProject: (paths: string[], destDir: string) => Promise<string[]>;
@@ -334,4 +337,24 @@ declare global {
       excelBackup: (projectData: unknown, projectDir: string) => Promise<ExcelBackupResult>;
       exportExcelStyled: (projectData: unknown) => Promise<ExcelExportResult>;
       // License
-      licenseGet
+      licenseGetInitialStatus: () => Promise<{ status: LicenseGateStatus }>;
+      licenseCheck: () => Promise<{ status: LicenseGateStatus; license: LocalLicense | null }>;
+      licenseActivate: (key: string) => Promise<LicenseActivateResult>;
+      licenseStartTrial: () => Promise<{ ok: boolean; license?: LocalLicense }>;
+      licenseDeactivate: () => Promise<{ ok: boolean; error?: string }>;
+      licenseGetLocal: () => Promise<LocalLicense | null>;
+      onLicenseStatusChanged: (cb: (status: LicenseGateStatus) => void) => () => void;
+      // Trial
+      trialGetState: (sceneCount: number, languageCount: number) => Promise<TrialState | null>;
+      trialConsumeAiCall: () => Promise<{ ok: boolean; error?: string }>;
+      // Wizard mobile server
+      wizardStartServer: () => Promise<{ port: number; lanUrl: string | null }>;
+      wizardStopServer: () => Promise<void>;
+      onWizardMobileAnswers: (cb: (answers: unknown) => void) => () => void;
+      // Brand color extraction
+      brandExtract: (url: string) => Promise<{ ok: boolean; colors: string[]; logoUrl?: string; error?: string }>;
+    };
+  }
+}
+
+export type { LocalLicense, LicenseGateStatus, LicenseActivateResult, TrialState };

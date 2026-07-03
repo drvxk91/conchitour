@@ -22,12 +22,15 @@ import { TRIAL_LIMITS } from '../src/types/license';
 const isDev = process.env.NODE_ENV === 'development';
 
 async function createWindow() {
+  const isMac = process.platform === 'darwin';
+
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1100,
+    minWidth: 1200,
     minHeight: 700,
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? {} : { titleBarOverlay: { color: '#ffffff', symbolColor: '#1a1a1a', height: 40 } }),
     backgroundColor: '#fafaf9',
     ...(process.platform === 'win32' ? { icon: path.join(app.getAppPath(), 'build/icon.ico') } : {}),
     webPreferences: {
@@ -37,6 +40,11 @@ async function createWindow() {
       backgroundThrottling: false,
     },
   });
+
+  // On Windows/Linux the native app menu bar has no frame to render into once the
+  // title bar is hidden, but hide it explicitly so Alt never reveals a stray bar —
+  // the same menu is now triggered from the in-page menu buttons via 'menu:popup'.
+  if (!isMac) win.setMenuBarVisibility(false);
 
   if (isDev) {
     await win.loadURL('http://localhost:5173');
@@ -2304,6 +2312,15 @@ function setupAppMenu() {
     },
   ]));
 }
+
+// Pops the requested top-level submenu (File/Edit/View/...) at the given point —
+// used by the in-page menu bar so it stays backed by the one real Menu template.
+ipcMain.handle('menu:popup', async (event, label: string, x: number, y: number) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const item = Menu.getApplicationMenu()?.items.find((i) => i.label === label);
+  if (!win || !item?.submenu) return;
+  await item.submenu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
+});
 
 ipcMain.handle('krpano:validate', async (_e, krpanoPath: string) => {
   const checks = [
@@ -5803,6 +5820,21 @@ ipcMain.handle('license:deactivate', async () => {
 
 ipcMain.handle('license:get-local', async () => {
   return getLocalLicense();
+});
+
+// ── Trial IPC ────────────────────────────────────────────────────────────────
+
+ipcMain.handle('trial:get-state', async (_e, sceneCount: number, languageCount: number) => {
+  return getTrialState(sceneCount, languageCount);
+});
+
+ipcMain.handle('trial:consume-ai-call', async () => {
+  try {
+    await consumeTrialAiCall();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 // ── Wizard mobile server ──────────────────────────────────────────────────────

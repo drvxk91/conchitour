@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('conchitour', {
         ipcRenderer.on(ch, handler);
         return () => ipcRenderer.removeListener(ch, handler);
     },
+    popupMenu: (label, x, y) => ipcRenderer.invoke('menu:popup', label, x, y),
     loadProject: (p) => ipcRenderer.invoke('project:load', p),
     readPhotosMeta: (paths) => ipcRenderer.invoke('photos:readMeta', paths),
     copyToProject: (paths, destDir) => ipcRenderer.invoke('photos:copyToProject', paths, destDir),
@@ -93,4 +94,14 @@ contextBridge.exposeInMainWorld('conchitour', {
     // Trial
     trialGetState: (sceneCount, languageCount) => ipcRenderer.invoke('trial:get-state', sceneCount, languageCount),
     trialConsumeAiCall: () => ipcRenderer.invoke('trial:consume-ai-call'),
-    /
+    // Wizard mobile server
+    wizardStartServer: () => ipcRenderer.invoke('wizard:start-server'),
+    wizardStopServer: () => ipcRenderer.invoke('wizard:stop-server'),
+    onWizardMobileAnswers: (cb) => {
+        const handler = (_event, data) => cb(data);
+        ipcRenderer.on('wizard:mobile-answers', handler);
+        return () => ipcRenderer.removeListener('wizard:mobile-answers', handler);
+    },
+    // Brand color extraction
+    brandExtract: (url) => ipcRenderer.invoke('brand:extract', url),
+});

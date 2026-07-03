@@ -31,4 +31,9 @@
   }
   .label-sm { @apply block text-xs text-ink-soft mb-1 font-medium; }
   .help-sm  { @apply text-xs text-ink-faded mt-1 leading-relaxed; }
+
+  /* Custom window title bar (see TitleBar.tsx): the whole bar is a drag handle,
+     interactive children opt back out so clicks/hover reach them. */
+  .titlebar-drag    { -webkit-app-region: drag; }
+  .titlebar-no-drag { -webkit-app-region: no-drag; }
 }
