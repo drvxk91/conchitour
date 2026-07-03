@@ -38,7 +38,7 @@ export function ShareScreen() {
             <span className="text-amber-800">
               Trial builds include a <strong>"Made with Conchitour"</strong> watermark and force copyright to <strong>"© Conchitour"</strong>.{' '}
               <button
-                onClick={() => window.conchitour.openUrl('https://conchitour.com/buy')}
+                onClick={() => window.conchitour.openUrl('https://conchitour.com/pricing/')}
                 className="underline font-medium"
               >
                 Upgrade to remove it.

@@ -20,7 +20,7 @@ export function TrialBanner() {
             onClick={() => setShowModal(true)}
             className="flex items-center gap-1 font-semibold text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-full transition-colors whitespace-nowrap"
           >
-            Upgrade for €299 <ExternalLink size={10} />
+            Upgrade for $149 <ExternalLink size={10} />
           </button>
         </div>
         {showModal && <UpgradeModal feature="generic" onClose={() => setShowModal(false)} />}
@@ -46,10 +46,10 @@ export function TrialBanner() {
         <span className="text-amber-700">{trial.aiCallsRemaining}/{trial.limits.maxAiCalls} AI calls remaining</span>
         <div className="flex-1" />
         <button
-          onClick={() => window.conchitour.openUrl('https://conchitour.com/buy')}
+          onClick={() => window.conchitour.openUrl('https://conchitour.com/pricing/')}
           className="flex items-center gap-1 font-semibold text-amber-800 bg-amber-200 hover:bg-amber-300 px-3 py-1 rounded-full transition-colors whitespace-nowrap"
         >
-          Upgrade for €299 <ExternalLink size={10} />
+          Upgrade for $149 <ExternalLink size={10} />
         </button>
       </div>
       {showModal && <UpgradeModal feature="generic" onClose={() => setShowModal(false)} />}

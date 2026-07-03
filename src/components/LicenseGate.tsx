@@ -165,7 +165,7 @@ export function LicenseGate({ initialStatus, onUnlocked, onReadOnly }: Props) {
               Fill in your details on conchitour.com — we'll email your trial key instantly.
             </p>
             <button
-              onClick={() => window.conchitour.openUrl('https://conchitour.com/buy')}
+              onClick={() => window.conchitour.openUrl('https://conchitour.com/pricing/')}
               className="w-full py-2 text-xs text-ink-faded hover:text-ink transition-colors flex items-center justify-center gap-1.5"
             >
               Buy a full license at conchitour.com <ExternalLink size={11} />

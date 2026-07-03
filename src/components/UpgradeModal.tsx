@@ -84,7 +84,7 @@ export function UpgradeModal({ feature, onClose }: Props) {
           {!showKeyEntry ? (
             <>
               <p className="text-sm text-ink-faded">
-                Get the full version for <span className="font-semibold text-ink">€299</span> — one-time payment, no subscription.
+                Get the full version for <span className="font-semibold text-ink">$149</span> — one-time payment, no subscription.
               </p>
               <ul className="space-y-2">
                 {BENEFITS.map((b) => (
@@ -98,10 +98,10 @@ export function UpgradeModal({ feature, onClose }: Props) {
 
               <div className="space-y-2 pt-1">
                 <button
-                  onClick={() => window.conchitour.openUrl('https://conchitour.com/buy')}
+                  onClick={() => window.conchitour.openUrl('https://conchitour.com/pricing/')}
                   className="w-full py-3 rounded-xl bg-accent text-white font-semibold text-sm hover:bg-accent/90 flex items-center justify-center gap-2"
                 >
-                  Buy Conchitour for €299 <ExternalLink size={14} />
+                  Buy Conchitour for $149 <ExternalLink size={14} />
                 </button>
                 <button
                   onClick={() => setShowKeyEntry(true)}
