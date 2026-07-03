@@ -29,6 +29,7 @@ async function createWindow() {
     minHeight: 700,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#fafaf9',
+    ...(process.platform === 'win32' ? { icon: path.join(app.getAppPath(), 'build/icon.ico') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -123,6 +124,10 @@ async function startTourPreviewServer(outputDir: string, defaultLang: string): P
 }
 
 app.whenReady().then(async () => {
+  // macOS dock icon (dev mode — production uses electron-builder .icns)
+  if (process.platform === 'darwin' && process.env.NODE_ENV === 'development') {
+    try { app.dock.setIcon(path.join(app.getAppPath(), 'build/icon.icns')); } catch { /* ignore */ }
+  }
   // A plain localhost HTTP server is the most reliable way to load local photos
   // into <img> elements in Electron. Custom protocol.handle() works for fetch()
   // but has subresource-loading quirks in Electron 33 that break <img> src.
@@ -1329,6 +1334,99 @@ ipcMain.handle('project:git-commit', async (_e, projectDir: string, message: str
     return { ok: true, sha };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+
+// ── Git publish (push output folder to a remote) ─────────────────────────────
+
+ipcMain.handle('git:get-remote', async (_e, projectDir: string) => {
+  try {
+    const cfgPath = path.join(projectDir, '.conchitour-publish.json');
+    const raw = await fs.readFile(cfgPath, 'utf-8');
+    return JSON.parse(raw) as { remote: string; branch: string };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('git:set-remote', async (_e, projectDir: string, remote: string, branch: string) => {
+  try {
+    const cfgPath = path.join(projectDir, '.conchitour-publish.json');
+    await fs.writeFile(cfgPath, JSON.stringify({ remote, branch }, null, 2), 'utf-8');
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle('git:publish', async (_e, outputDir: string, remote: string, branch: string) => {
+  const win = getMainWindow();
+  const send = (msg: string) => win?.webContents.send('git:progress', msg);
+  try {
+    // Check git availability
+    try { execFileSync('git', ['--version'], { timeout: 5_000 }); }
+    catch { return { ok: false, error: 'Git is not installed or not found in PATH.' }; }
+
+    // Init repo if needed
+    const hasGit = await fs.access(path.join(outputDir, '.git')).then(() => true).catch(() => false);
+    if (!hasGit) {
+      send('→ Initializing git repository…');
+      try {
+        execFileSync('git', ['-C', outputDir, 'init', '-b', branch], { timeout: 10_000 });
+      } catch {
+        // older git versions don't support -b
+        execFileSync('git', ['-C', outputDir, 'init'], { timeout: 10_000 });
+        execFileSync('git', ['-C', outputDir, 'checkout', '-b', branch], { timeout: 5_000 });
+      }
+      send('✓ Repository initialized');
+    }
+
+    // Configure remote
+    send('→ Configuring remote…');
+    try { execFileSync('git', ['-C', outputDir, 'remote', 'remove', 'origin'], { timeout: 5_000 }); } catch { /* no existing remote */ }
+    execFileSync('git', ['-C', outputDir, 'remote', 'add', 'origin', remote], { timeout: 5_000 });
+    send(`✓ Remote: ${remote}`);
+
+    // Set git identity if not configured (required for commit)
+    try { execFileSync('git', ['-C', outputDir, 'config', 'user.email'], { timeout: 3_000 }); }
+    catch {
+      execFileSync('git', ['-C', outputDir, 'config', 'user.email', 'conchitour@local'], { timeout: 3_000 });
+      execFileSync('git', ['-C', outputDir, 'config', 'user.name', 'Conchitour'], { timeout: 3_000 });
+    }
+
+    // Add a .nojekyll file (required for GitHub Pages to serve assets correctly)
+    await fs.writeFile(path.join(outputDir, '.nojekyll'), '', 'utf-8');
+
+    // Stage all files
+    send('→ Staging files…');
+    execFileSync('git', ['-C', outputDir, 'add', '-A'], { timeout: 30_000 });
+    send('✓ Files staged');
+
+    // Commit
+    send('→ Creating commit…');
+    const date = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    try {
+      execFileSync('git', ['-C', outputDir, 'commit', '-m', `Conchitour publish ${date}`], { timeout: 10_000 });
+      send('✓ Commit created');
+    } catch (e) {
+      if (String(e).includes('nothing to commit')) {
+        send('ℹ No changes since last publish — pushing anyway');
+      } else {
+        throw e;
+      }
+    }
+
+    // Push (force, since output is always a fresh static build)
+    send(`→ Pushing to ${branch}…`);
+    execFileSync('git', ['-C', outputDir, 'push', '-u', 'origin', branch, '--force'], { timeout: 120_000 });
+    send('✓ Published successfully!');
+
+    return { ok: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    send(`✗ ${msg}`);
+    return { ok: false, error: msg };
   }
 });
 

@@ -33,6 +33,17 @@ contextBridge.exposeInMainWorld('conchitour', {
   importExcel: (projectData: unknown) => ipcRenderer.invoke('excel:import', projectData),
   gitCommit: (projectDir: string, message: string): Promise<GitCommitResult> =>
     ipcRenderer.invoke('project:git-commit', projectDir, message),
+  gitPublish: (outputDir: string, remote: string, branch: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('git:publish', outputDir, remote, branch),
+  getGitRemote: (projectDir: string): Promise<{ remote: string; branch: string } | null> =>
+    ipcRenderer.invoke('git:get-remote', projectDir),
+  setGitRemote: (projectDir: string, remote: string, branch: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('git:set-remote', projectDir, remote, branch),
+  onGitProgress: (cb: (msg: string) => void): (() => void) => {
+    const handler = (_: unknown, msg: string) => cb(msg);
+    ipcRenderer.on('git:progress', handler as never);
+    return () => ipcRenderer.removeListener('git:progress', handler as never);
+  },
   // Electron 32+: file.path is not available with contextIsolation; use this instead.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Synchronous: returns the port of the localhost file server started in main.
@@ -289,6 +300,10 @@ declare global {
       downloadExcelTemplate: (projectData: unknown) => Promise<ExcelExportResult>;
       importExcel: (projectData: unknown) => Promise<ImportDiffResult>;
       gitCommit: (projectDir: string, message: string) => Promise<GitCommitResult>;
+      gitPublish: (outputDir: string, remote: string, branch: string) => Promise<{ ok: boolean; error?: string }>;
+      getGitRemote: (projectDir: string) => Promise<{ remote: string; branch: string } | null>;
+      setGitRemote: (projectDir: string, remote: string, branch: string) => Promise<{ ok: boolean; error?: string }>;
+      onGitProgress: (cb: (msg: string) => void) => () => void;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
       settingsGet: () => Promise<ConchitourSettings>;
@@ -319,24 +334,4 @@ declare global {
       excelBackup: (projectData: unknown, projectDir: string) => Promise<ExcelBackupResult>;
       exportExcelStyled: (projectData: unknown) => Promise<ExcelExportResult>;
       // License
-      licenseGetInitialStatus: () => Promise<{ status: LicenseGateStatus }>;
-      licenseCheck: () => Promise<{ status: LicenseGateStatus; license: LocalLicense | null }>;
-      licenseActivate: (key: string) => Promise<LicenseActivateResult>;
-      licenseStartTrial: () => Promise<{ ok: boolean; license?: LocalLicense }>;
-      licenseDeactivate: () => Promise<{ ok: boolean; error?: string }>;
-      licenseGetLocal: () => Promise<LocalLicense | null>;
-      onLicenseStatusChanged: (cb: (status: LicenseGateStatus) => void) => () => void;
-      // Trial
-      trialGetState: (sceneCount: number, languageCount: number) => Promise<TrialState | null>;
-      trialConsumeAiCall: () => Promise<{ ok: boolean; error?: string }>;
-      // Wizard mobile server
-      wizardStartServer: () => Promise<{ port: number; lanUrl: string | null }>;
-      wizardStopServer: () => Promise<void>;
-      onWizardMobileAnswers: (cb: (answers: unknown) => void) => () => void;
-      // Brand color extraction
-      brandExtract: (url: string) => Promise<{ ok: boolean; colors: string[]; logoUrl?: string; error?: string }>;
-    };
-  }
-}
-
-export type { LocalLicense, LicenseGateStatus, LicenseActivateResult, TrialState };
+      licenseGet

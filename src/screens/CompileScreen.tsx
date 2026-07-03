@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   FolderOpen, Play, CheckCircle, AlertTriangle, Circle,
   Loader2, ExternalLink, Copy, Settings, RotateCw, XCircle, ChevronDown, Key,
-  ClipboardCheck, Globe, Lock, Wifi, QrCode, Eye, Square, Zap, ArrowRight,
+  ClipboardCheck, Globe, Lock, Wifi, QrCode, Eye, Square, Zap, ArrowRight, UploadCloud, GitBranch, X,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import clsx from 'clsx';
@@ -135,7 +135,36 @@ export function CompileScreen() {
   const [lanUrl, setLanUrl]   = useState<string | null>(null);
   const [showQr, setShowQr]  = useState(false);
 
+  // Publish (git push)
+  const [showPublish, setShowPublish]         = useState(false);
+  const [publishRemote, setPublishRemote]     = useState('');
+  const [publishBranch, setPublishBranch]     = useState('main');
+  const [publishLog, setPublishLog]           = useState<string[]>([]);
+  const [publishing, setPublishing]           = useState(false);
+  const [publishDone, setPublishDone]         = useState<{ ok: boolean; error?: string } | null>(null);
+  const [publishConfigured, setPublishConfigured] = useState(false);
+
   const parsedLicense = useMemo(() => parseLicenseCode(licenseCode), [licenseCode]);
+
+  // Load publish config from project dir
+  useEffect(() => {
+    window.conchitour.getProjectDir().then(async (dir) => {
+      if (!dir) return;
+      const cfg = await window.conchitour.getGitRemote(dir);
+      if (cfg) {
+        setPublishRemote(cfg.remote);
+        setPublishBranch(cfg.branch);
+        setPublishConfigured(true);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const unsub = window.conchitour.onGitProgress((msg) => {
+      setPublishLog((prev) => [...prev, msg]);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     window.conchitour.settingsGet().then((s) => {
@@ -313,6 +342,19 @@ export function CompileScreen() {
 
   const handleCancel = useCallback(() => { window.conchitour.compileCancel(); }, []);
 
+  const handlePublish = useCallback(async () => {
+    if (!result?.outputDir || publishing) return;
+    const dir = await window.conchitour.getProjectDir();
+    if (dir) await window.conchitour.setGitRemote(dir, publishRemote, publishBranch);
+    setPublishConfigured(true);
+    setPublishing(true);
+    setPublishLog([]);
+    setPublishDone(null);
+    const res = await window.conchitour.gitPublish(result.outputDir, publishRemote, publishBranch);
+    setPublishDone(res);
+    setPublishing(false);
+  }, [result, publishing, publishRemote, publishBranch]);
+
   const handleCopyPath = useCallback(() => {
     if (!result?.outputDir) return;
     navigator.clipboard.writeText(result.outputDir).then(() => {
@@ -463,9 +505,93 @@ export function CompileScreen() {
                       <Copy size={12} />
                       {copied ? 'Copied!' : 'Copy path'}
                     </button>
+                    <button
+                      onClick={() => { setShowPublish(p => !p); setPublishLog([]); setPublishDone(null); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-blue-300 text-blue-700 text-xs font-medium hover:bg-blue-50"
+                    >
+                      <UploadCloud size={12} />
+                      Publish
+                    </button>
                   </>
                 )}
               </div>
+
+              {/* Publish panel */}
+              {!result.isPreview && showPublish && (
+                <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5"><GitBranch size={12} />Publish via git push</p>
+                    <button onClick={() => setShowPublish(false)} className="text-blue-400 hover:text-blue-600"><X size={13} /></button>
+                  </div>
+
+                  {/* Remote + branch config */}
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-blue-700 font-medium">Remote URL</label>
+                      <input
+                        type="text"
+                        value={publishRemote}
+                        onChange={(e) => setPublishRemote(e.target.value)}
+                        placeholder="git@github.com:username/repo.git"
+                        className="mt-1 w-full rounded border border-blue-300 bg-white px-2 py-1.5 text-xs font-mono text-ink outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-blue-700 font-medium">Branch</label>
+                      <input
+                        type="text"
+                        value={publishBranch}
+                        onChange={(e) => setPublishBranch(e.target.value)}
+                        placeholder="main"
+                        className="mt-1 w-full rounded border border-blue-300 bg-white px-2 py-1.5 text-xs font-mono text-ink outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                    <p className="text-xs text-blue-600/70">
+                      GitHub Pages: create a public repo → Settings → Pages → Branch: <code className="font-mono">gh-pages</code> → / (root).
+                      Netlify/Vercel: connect the repo once, each push auto-deploys.
+                    </p>
+                  </div>
+
+                  {/* Push button */}
+                  <button
+                    onClick={handlePublish}
+                    disabled={!publishRemote || publishing}
+                    className={clsx(
+                      'flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold transition-all',
+                      publishRemote && !publishing
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                        : 'bg-blue-200 text-blue-400 cursor-not-allowed'
+                    )}
+                  >
+                    {publishing
+                      ? <><Loader2 size={12} className="animate-spin" />Pushing…</>
+                      : <><UploadCloud size={12} />{publishConfigured ? 'Push again' : 'Push to remote'}</>}
+                  </button>
+
+                  {/* Progress log */}
+                  {publishLog.length > 0 && (
+                    <div className="rounded bg-white border border-blue-200 px-3 py-2 space-y-0.5 max-h-32 overflow-y-auto">
+                      {publishLog.map((line, i) => (
+                        <p key={i} className={clsx(
+                          'text-xs font-mono',
+                          line.startsWith('✓') ? 'text-emerald-700' :
+                          line.startsWith('✗') ? 'text-red-700' :
+                          line.startsWith('ℹ') ? 'text-amber-700' : 'text-blue-700'
+                        )}>{line}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Done state */}
+                  {publishDone && (
+                    <div className={clsx('text-xs font-medium rounded px-3 py-2', publishDone.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800')}>
+                      {publishDone.ok
+                        ? '🚀 Published! Your tour is deploying.'
+                        : `Error: ${publishDone.error}`}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {!result.isPreview && (
                 <p className="text-xs text-emerald-600/70 font-mono">

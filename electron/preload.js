@@ -24,6 +24,14 @@ contextBridge.exposeInMainWorld('conchitour', {
     downloadExcelTemplate: (projectData) => ipcRenderer.invoke('excel:download-template', projectData),
     importExcel: (projectData) => ipcRenderer.invoke('excel:import', projectData),
     gitCommit: (projectDir, message) => ipcRenderer.invoke('project:git-commit', projectDir, message),
+    gitPublish: (outputDir, remote, branch) => ipcRenderer.invoke('git:publish', outputDir, remote, branch),
+    getGitRemote: (projectDir) => ipcRenderer.invoke('git:get-remote', projectDir),
+    setGitRemote: (projectDir, remote, branch) => ipcRenderer.invoke('git:set-remote', projectDir, remote, branch),
+    onGitProgress: (cb) => {
+      const handler = (_, msg) => cb(msg);
+      ipcRenderer.on('git:progress', handler);
+      return () => ipcRenderer.removeListener('git:progress', handler);
+    },
     // Electron 32+: file.path is not available with contextIsolation; use this instead.
     getPathForFile: (file) => webUtils.getPathForFile(file),
     // Synchronous: returns the port of the localhost file server started in main.
@@ -85,14 +93,4 @@ contextBridge.exposeInMainWorld('conchitour', {
     // Trial
     trialGetState: (sceneCount, languageCount) => ipcRenderer.invoke('trial:get-state', sceneCount, languageCount),
     trialConsumeAiCall: () => ipcRenderer.invoke('trial:consume-ai-call'),
-    // Wizard mobile server
-    wizardStartServer: () => ipcRenderer.invoke('wizard:start-server'),
-    wizardStopServer: () => ipcRenderer.invoke('wizard:stop-server'),
-    onWizardMobileAnswers: (cb) => {
-        const handler = (_event, data) => cb(data);
-        ipcRenderer.on('wizard:mobile-answers', handler);
-        return () => ipcRenderer.removeListener('wizard:mobile-answers', handler);
-    },
-    // Brand color extraction
-    brandExtract: (url) => ipcRenderer.invoke('brand:extract', url),
-});
+    /
