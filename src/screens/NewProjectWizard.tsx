@@ -340,7 +340,7 @@ function extractColorsFromImageBlob(objectUrl: string): Promise<string[]> {
 
 function getSpeechRecognitionClass(): (new () => SpeechRecognition) | null {
   if (typeof window === 'undefined') return null;
-  const w = window as Record<string, unknown>;
+  const w = window as unknown as Record<string, unknown>;
   return (w['SpeechRecognition'] ?? w['webkitSpeechRecognition'] ?? null) as (new () => SpeechRecognition) | null;
 }
 

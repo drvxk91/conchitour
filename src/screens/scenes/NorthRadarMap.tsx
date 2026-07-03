@@ -33,11 +33,12 @@ export function NorthRadarMap({ scene, viewBearing, heading }: Props) {
 
   useEffect(() => {
     bearingRef.current = viewBearing;
-    const m = markerRef.current;
+    // _icon is Leaflet's internal marker DOM element — not in the public Marker type.
+    const m = markerRef.current as (L.Marker & { _icon?: HTMLElement }) | null;
     if (!m || !m._icon) return;
     const az = (viewBearing + 360) % 360;
     const svgEl = m._icon.querySelector('svg');
-    if (svgEl) (svgEl as HTMLElement).style.transform = `rotate(${az}deg)`;
+    if (svgEl) svgEl.style.transform = `rotate(${az}deg)`;
   }, [viewBearing]);
 
   useEffect(() => {

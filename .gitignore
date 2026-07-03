@@ -13,6 +13,9 @@ assets/krpano/*.html
 assets/krpano/krpanolicense.xml
 sample-projects/
 
-# Block .js files in src/ — the project is 100% TypeScript.
-# Stale compiled .js files shadow .tsx modules and break Vite resolution.
+# Block .js files in src/ and electron/ — the project is 100% TypeScript.
+# Stale compiled .js files shadow .ts(x) modules and break Vite resolution.
+# (tsc -b has no outDir for these projects, so it emits .js next to the .ts
+# source by default — these are always build output, never hand-written.)
 src/**/*.js
+electron/**/*.js

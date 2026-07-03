@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Key, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
+import { Key, Clock, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useLicense } from '@/store/license';
 import type { LicenseGateStatus } from '@/types/license';

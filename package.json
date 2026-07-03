@@ -14,7 +14,7 @@
     "vite:dev": "vite",
     "electron:wait": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "lint": "eslint src --ext ts,tsx",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "check:no-js": "node -e \"const fs=require('fs');const r=(d)=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?r(d+'/'+e.name):[d+'/'+e.name]);const files=r('src').filter(f=>f.endsWith('.js')&&!f.endsWith('.d.ts'));if(files.length){console.error('Found .js files in src:');console.error(files.join('\\n'));process.exit(1);}console.log('No leftover .js files in src');\""

@@ -46,7 +46,7 @@ function SelectField({ label, value, onChange, options }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: Record<string, string> | string[];
+  options: Record<string, string> | readonly string[];
 }) {
   const entries: [string, string][] = Array.isArray(options)
     ? options.map((v) => [v, v])

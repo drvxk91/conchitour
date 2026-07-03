@@ -1,3 +1,5 @@
+import { describe, it, expect } from 'vitest';
+
 /**
  * Regression tests for language-switch URL building in the compiled tour.
  *

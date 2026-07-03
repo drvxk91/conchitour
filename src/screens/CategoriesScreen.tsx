@@ -10,7 +10,8 @@ import { useProject } from '@/store/project';
 import { toSlug, isValidSlug, uniqueSlug } from '@/lib/slug';
 import type { Category } from '@/types';
 import { ScreenShell } from '@/components/shell/ScreenShell';
-import type { ExcelImportResult } from '../../electron/preload';
+import type { ImportDiffResult } from '../../electron/preload';
+import { buildPatchesFromChanges } from '@/lib/import-patches';
 
 // ── Built-in icon set ─────────────────────────────────────────────────────────
 
@@ -287,7 +288,7 @@ function CategoryModal({ initial, takenSlugs, languages, defaultLang, onSave, on
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function CategoriesScreen() {
-  const { project, addCategory, updateCategory, deleteCategory, updateScene, updatePage, updateAnalytics } = useProject();
+  const { project, addCategory, updateCategory, deleteCategory, applyImport } = useProject();
   const [modalOpen, setModalOpen] = useState<'new' | string | null>(null); // 'new' | category id | null
   const [toast, setToast] = useState<string | null>(null);
 
@@ -351,34 +352,19 @@ export function CategoriesScreen() {
   }
 
   async function handleImportExcel() {
-    const result: ExcelImportResult = await window.conchitour.importExcel(project);
+    const result: ImportDiffResult = await window.conchitour.importExcel(project);
     if (result.canceled) return;
+    if (result.error) { showToast(`Import failed: ${result.error}`); return; }
 
-    // Apply scene patches to store
-    if (result.scenePatch) {
-      for (const [sceneId, patch] of Object.entries(result.scenePatch)) {
-        updateScene(sceneId, patch as Parameters<typeof updateScene>[1]);
-      }
-    }
-    // Apply category patches to store
-    if (result.catPatch) {
-      for (const [catId, patch] of Object.entries(result.catPatch)) {
-        updateCategory(catId, patch as Parameters<typeof updateCategory>[1]);
-      }
-    }
-    // Apply page patches to store
-    if (result.pagePatch) {
-      for (const [pageId, patch] of Object.entries(result.pagePatch)) {
-        updatePage(pageId, patch as Parameters<typeof updatePage>[1]);
-      }
-    }
-    // Apply analytics patch
-    if (result.analyticsPatch) {
-      updateAnalytics(result.analyticsPatch as Parameters<typeof updateAnalytics>[0]);
-    }
+    const patches = buildPatchesFromChanges(result.changes, project);
+    applyImport(
+      patches.scenePatch, patches.catPatch, patches.pagePatch, patches.analyticsPatch,
+      patches.hotspotPatch, patches.metaPatch, patches.modulesPatch, patches.aiContextPatch,
+    );
 
-    const summary = `Import done — ${result.updated ?? 0} updated, ${result.skipped ?? 0} skipped` +
-      (result.errors?.length ? `, ${result.errors.length} error(s)` : '');
+    const summary = result.validationErrors.length
+      ? `Import done — ${result.changes.length} change(s), ${result.validationErrors.length} validation warning(s)`
+      : `Import done — ${result.changes.length} change(s) applied`;
     showToast(summary);
   }
 

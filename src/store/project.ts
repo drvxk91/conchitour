@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Project, Scene, Category, UUID, Hotspot, StaticPage, AnalyticsConfig, AiContext, AiUsage, AiUsageRecord } from '@/types';
 import { newProject, BUILTIN_CATEGORIES, DEFAULT_ANALYTICS } from '@/lib/factory';
 import { DEFAULT_BUILTIN_PAGES } from '@/lib/builtin-pages';
+import { detectDefaultCurrency } from '@/lib/currency';
 
 const EMPTY_AI_USAGE: AiUsage = {
   records: [],
@@ -393,7 +394,9 @@ export const useProject = create<ProjectStore>((set) => ({
         : p.analytics;
       const meta = metaPatch ? { ...p.meta, ...metaPatch } : p.meta;
       const modules = modulesPatch ? { ...p.modules, ...modulesPatch } : p.modules;
-      const aiContext = aiContextPatch ? { ...(p.aiContext ?? {}), ...aiContextPatch } : p.aiContext;
+      const aiContext = aiContextPatch
+        ? { ...(p.aiContext ?? { tone: 'marketing', audience: 'general', theme: 'Tourism', length: 'medium' }), ...aiContextPatch }
+        : p.aiContext;
       return withHistory(s, { ...p, scenes, categories, pages, analytics, meta, modules, aiContext });
     }),
 
@@ -444,7 +447,7 @@ export const useProject = create<ProjectStore>((set) => ({
     set((s) => ({
       project: {
         ...s.project,
-        uiPreferences: { ...(s.project.uiPreferences ?? {}), ...patch },
+        uiPreferences: { ...(s.project.uiPreferences ?? { currency: detectDefaultCurrency() }), ...patch },
       },
       isDirty: true,
     })),

@@ -322,9 +322,9 @@ export function GenerateModal({
             <div className="grid grid-cols-2 gap-3">
               <SelectField label="Theme" value={theme} onChange={setTheme}
                 options={Object.fromEntries(AI_THEMES.map((t) => [t, t]))} />
-              <SelectField label="Tone" value={tone} onChange={setTone} options={AI_TONE_LABELS} />
-              <SelectField label="Audience" value={audience} onChange={setAudience} options={AI_AUDIENCE_LABELS} />
-              <SelectField label="Length" value={length} onChange={setLength} options={AI_LENGTH_LABELS} />
+              <SelectField label="Tone" value={tone} onChange={(v) => setTone(v as typeof tone)} options={AI_TONE_LABELS} />
+              <SelectField label="Audience" value={audience} onChange={(v) => setAudience(v as typeof audience)} options={AI_AUDIENCE_LABELS} />
+              <SelectField label="Length" value={length} onChange={(v) => setLength(v as typeof length)} options={AI_LENGTH_LABELS} />
             </div>
             <div>
               <label className="text-[11px] font-medium text-ink-soft uppercase tracking-wide">Custom instructions</label>

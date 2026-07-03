@@ -8,6 +8,7 @@
 ;   3. Quick Start  (nsDialogs: first-run guide)
 ; =============================================================================
 
+!include "MUI2.nsh"
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 
