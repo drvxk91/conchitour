@@ -167,8 +167,12 @@ export async function generateSeoWithAi(
     .replace(/\s*```\s*$/, '')
     .trim();
 
-  let parsed: Partial<SeoGenerateResult & { altTexts: Record<string, string> }> = {};
-  try { parsed = JSON.parse(clean); } catch { /* ignore parse error */ }
+  let parsed: Partial<SeoGenerateResult & { altTexts: Record<string, string> }>;
+  try {
+    parsed = JSON.parse(clean);
+  } catch {
+    throw new Error('AI returned malformed JSON — the response may have been cut off. Try again with fewer languages or without alt-text generation.');
+  }
 
   const validSchemaTypes: ProjectSeo['schemaType'][] = ['TouristAttraction', 'Hotel', 'Museum', 'Place'];
   const schemaType = validSchemaTypes.includes(parsed.schemaType as ProjectSeo['schemaType'])

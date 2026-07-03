@@ -25,7 +25,7 @@ async function callOpenAIStreaming(
     },
     body: JSON.stringify({
       model: modelId,
-      max_tokens: 1500,
+      max_tokens: 4096,
       stream: true,
       stream_options: { include_usage: true },
       messages: [{ role: 'user', content: userContent }],
@@ -285,7 +285,7 @@ async function callAnthropicStreaming(
     },
     body: JSON.stringify({
       model: modelId,
-      max_tokens: 1500,
+      max_tokens: 4096,
       stream: true,
       messages: [{ role: 'user', content }],
     }),
