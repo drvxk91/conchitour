@@ -189,7 +189,7 @@ function PreviewMode({ initialSourcePath, initialHeading }: { initialSourcePath:
 }
 
 export default function App() {
-  const { activeScreen, setActiveScreen, project, clearDirty, loadProjectData, setProjectDir } = useProject();
+  const { activeScreen, setActiveScreen, project, projectDir, clearDirty, loadProjectData, setProjectDir } = useProject();
   const { status: licenseStatus, initialized: licenseInitialized, initialize: initLicense, setStatus: setLicenseStatus } = useLicense();
   const needsFullHeight = activeScreen === 'scenes' || activeScreen === 'map';
 
@@ -263,7 +263,13 @@ export default function App() {
   useEffect(() => {
     if (!window.conchitour?.onMenuAction) return;
 
-    const nav = (screen: Parameters<typeof setActiveScreen>[0]) => () => setActiveScreen(screen);
+    // Ignore navigation shortcuts until a project has actually been created/opened —
+    // otherwise Cmd/Ctrl+1..0 can jump straight into the editor against the empty
+    // in-memory placeholder project that always exists in the store by default.
+    const nav = (screen: Parameters<typeof setActiveScreen>[0]) => () => {
+      if (!useProject.getState().projectDir) return;
+      setActiveScreen(screen);
+    };
 
     const unsubs = [
       // File
