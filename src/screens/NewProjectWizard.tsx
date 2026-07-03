@@ -11,14 +11,14 @@ import { newProject as buildDefaultProject, BUILTIN_CATEGORIES } from '@/lib/fac
 import { callAiStreaming } from '@/lib/ai-content';
 import { testAiConnection, testOpenAIConnection } from '@/lib/audit/ai-checks';
 import { flagFor } from '@/lib/language-flags';
-import type { Project, Category } from '@/types';
+import type { Project, Category, AiContext } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type WizardStep =
   | 'mode-select' | 'quick-name' | 'api-key' | 'routing'
   | 'venue' | 'analyzing'
-  | 'project-type' | 'client-type' | 'goal' | 'audience' | 'spaces' | 'capture' | 'tone' | 'extras'
+  | 'project-type' | 'client-type' | 'client-info' | 'goal' | 'audience' | 'spaces' | 'capture' | 'tone' | 'extras'
   | 'generating' | 'summary' | 'qr-waiting';
 
 interface DynamicOption {
@@ -54,6 +54,14 @@ interface WizardSummary {
   accentColor: string;
   contextPrompt: string;
   aiTone: 'marketing' | 'factual' | 'storytelling' | 'poetic' | 'educational';
+  // Client info
+  clientName?: string;
+  logoNativePath?: string;
+  // AiContext derivation helpers
+  audienceKeys: string[];
+  projectTypeKeys: string[];
+  clientTypeKeys: string[];
+  projectTypeFreeText: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -217,13 +225,16 @@ Rules:
 - typeOptions: 4-6 options SPECIFIC to this location (Dubai hotel→luxury suites/rooftop bar/infinity pool/spa/ballroom; Dubai mall→flagship store/food court/entertainment zone/luxury brand; Paris museum→permanent collection/temporary exhibition/sculpture garden; Tokyo restaurant→sushi counter/private dining/sake bar)
 - audienceOptions: 4-6 realistic visitor profiles for THIS venue
 - spaceOptions: 5-8 actual physical areas at this specific venue — match the real place. Each space MUST have an emoji icon that fits it (pool→🏊, lobby→🛋️, restaurant→🍽️, terrace→☀️, gym→🏋️, spa→💆, suite→🛏️, garden→🌿)
-- accentColorSuggestion: match the venue identity (ocean/pool→#0EA5E9, desert/gold→#BA7517, forest/eco→#1D9E75, luxury/purple→#8B5CF6)`;
+- accentColorSuggestion: match the venue identity (ocean/pool→#0EA5E9, desert/gold→#BA7517, forest/eco→#1D9E75, luxury/purple→#8B5CF6)
+
+IMPORTANT: Respond in English only, regardless of the venue location or language.`;
 }
 
 function buildFinalPrompt(
   venue: string, analysis: VenueAnalysis | null,
   projectType: string[], projectTypeFree: string,
   clientType: string[], clientTypeFree: string,
+  clientName: string,
   goal: string[], goalFree: string,
   audience: string[], audienceFree: string,
   spaces: string[], spacesFree: string,
@@ -238,7 +249,7 @@ function buildFinalPrompt(
 
 VENUE: "${venue}"
 ${analysis ? `VENUE CONTEXT: "${analysis.venueSummary}"\n` : ''}VENUE TYPE: ${resolve(projectType, analysis?.typeOptions ?? []) + (projectTypeFree ? ` + "${projectTypeFree}"` : '') || 'General'}
-CLIENT: ${resolve(clientType, CLIENT_TYPES) + (clientTypeFree ? ` + "${clientTypeFree}"` : '') || 'Not specified'}
+CLIENT: ${(clientName ? `${clientName} — ` : '') + resolve(clientType, CLIENT_TYPES) + (clientTypeFree ? ` + "${clientTypeFree}"` : '') || 'Not specified'}
 TOUR OBJECTIVE: ${resolve(goal, TOUR_GOALS) + (goalFree ? ` + "${goalFree}"` : '') || 'Not specified'}
 AUDIENCE: ${resolve(audience, analysis?.audienceOptions ?? []) + (audienceFree ? ` + "${audienceFree}"` : '') || 'General public'}
 SPACES: ${resolve(spaces, analysis?.spaceOptions ?? []) + (spacesFree ? ` + "${spacesFree}"` : '') || 'To be defined'}
@@ -261,7 +272,68 @@ Rules:
 - defaultLang: match venue country (Dubai→ar, Paris→fr, Tokyo→ja)
 - extraLanguages: include 'en' unless defaultLang; consider audience (Chinese tourists→zh, German market→de, luxury/international→fr); max 4 extra
 - aiTone: best fit for the described editorial voice (marketing=persuasive, factual=informative/precise, storytelling=immersive, poetic=lyrical/luxury, educational=pedagogic)
-- contextPrompt: weave in the actual objectives and tone — make it genuinely useful for AI content generation`;
+- contextPrompt: weave in the actual objectives and tone — make it genuinely useful for AI content generation
+
+IMPORTANT: Respond in English only, regardless of the venue location or language.`;
+}
+
+// ─── AiContext mapping tables ─────────────────────────────────────────────────
+
+const AUDIENCE_TO_AI: Record<string, AiContext['audience']> = {
+  luxury: 'luxury', business: 'professional', partners: 'professional',
+  buyers: 'professional', students: 'youth', families: 'family',
+  tourists: 'general', locals: 'general',
+};
+
+const TYPE_TO_THEME: Record<string, string> = {
+  hotel: 'Hotel & Hospitality', bnb: 'Hotel & Hospitality',
+  villa: 'Vacation Rental', apartment: 'Real Estate', house: 'Real Estate',
+  'real-estate': 'Real Estate', restaurant: 'Food & Beverage',
+  bar: 'Food & Beverage', cafe: 'Food & Beverage', shop: 'Retail',
+  mall: 'Retail', showroom: 'Showroom', 'car-dealer': 'Automotive',
+  office: 'Office & Workspace', corporate: 'Corporate', industrial: 'Industrial',
+  museum: 'Museum & Culture', school: 'Education', library: 'Education',
+  heritage: 'Heritage & Tourism', attraction: 'Tourism', spa: 'Wellness',
+  gym: 'Sports & Wellness', clinic: 'Healthcare', venue: 'Events & Venues',
+  government: 'Public Institution', sports: 'Sports & Entertainment',
+};
+
+const CLIENT_TO_THEME: Record<string, string> = {
+  hotel: 'Hotel & Hospitality', 'real-estate': 'Real Estate',
+  tourism: 'Tourism & Culture', corporate: 'Corporate',
+  public: 'Public Institution', events: 'Events & Venues',
+  sme: 'Small Business', individual: 'Private',
+};
+
+// ─── Color extraction from image (renderer Canvas API) ────────────────────────
+
+function extractColorsFromImageBlob(objectUrl: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 120; canvas.height = 120;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve([]); return; }
+      ctx.drawImage(img, 0, 0, 120, 120);
+      const { data } = ctx.getImageData(0, 0, 120, 120);
+      const colorMap = new Map<string, number>();
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a < 128) continue;
+        const lum = (r * 299 + g * 587 + b * 114) / 1000;
+        if (lum > 230 || lum < 15) continue;
+        if (Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b)) < 25) continue;
+        const rq = Math.round(r / 16) * 16, gq = Math.round(g / 16) * 16, bq = Math.round(b / 16) * 16;
+        const hex = '#' + [rq, gq, bq].map((v) => v.toString(16).padStart(2, '0')).join('');
+        colorMap.set(hex, (colorMap.get(hex) ?? 0) + 1);
+      }
+      const top = [...colorMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([h]) => h.toUpperCase());
+      resolve(top);
+    };
+    img.onerror = () => resolve([]);
+    img.src = objectUrl;
+  });
 }
 
 // ─── Speech recognition ───────────────────────────────────────────────────────
@@ -361,7 +433,7 @@ function DynamicChipsInput({ options, selected, onToggle, freeText, onFreeTextCh
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 const PROGRESS_STEPS: WizardStep[] = [
-  'venue', 'project-type', 'client-type', 'goal', 'audience', 'spaces', 'capture', 'tone', 'extras',
+  'venue', 'project-type', 'client-type', 'client-info', 'goal', 'audience', 'spaces', 'capture', 'tone', 'extras',
 ];
 
 function ProgressBar({ step }: { step: WizardStep }) {
@@ -411,6 +483,14 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   // Step 3 — client type
   const [clientType, setClientType] = useState<string[]>([]);
   const [clientTypeFree, setClientTypeFree] = useState('');
+
+  // Step 3b — client info
+  const [clientName, setClientName] = useState('');
+  const [clientWebsite, setClientWebsite] = useState('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoObjectUrl, setLogoObjectUrl] = useState<string | null>(null);
+  const [brandColors, setBrandColors] = useState<string[]>([]);
+  const [fetchingBrandColors, setFetchingBrandColors] = useState(false);
 
   // Step 4 — goal
   const [goal, setGoal] = useState<string[]>([]);
@@ -534,12 +614,14 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       venue, eff,
       projectType, projectTypeFree,
       clientType, clientTypeFree,
+      clientName,
       goal, goalFree,
       audience, audienceFree,
       spaces, spacesFree,
       captureEquip, captureSetting,
       toneText, extras,
     );
+    const logoNativePath = logoFile ? window.conchitour.getPathForFile(logoFile) : undefined;
 
     callAiStreaming(apiProvider, apiKey, prompt, null, ctrl.signal, () => {})
       .then(({ text }) => {
@@ -574,6 +656,12 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
           accentColor:    color,
           contextPrompt:  (parsed['contextPrompt'] as string)   ?? '',
           aiTone,
+          clientName:     clientName.trim() || undefined,
+          logoNativePath,
+          audienceKeys:   audience,
+          projectTypeKeys: projectType,
+          clientTypeKeys:  clientType,
+          projectTypeFreeText: projectTypeFree,
         });
         setStep('summary');
       })
@@ -591,6 +679,12 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
             accentColor:    color,
             contextPrompt:  '',
             aiTone:         'marketing',
+            clientName:     clientName.trim() || undefined,
+            logoNativePath,
+            audienceKeys:   audience,
+            projectTypeKeys: projectType,
+            clientTypeKeys:  clientType,
+            projectTypeFreeText: projectTypeFree,
           });
           setStep('summary');
         }
@@ -643,18 +737,36 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       proj.branding.accentColor = summary.accentColor;
       proj.branding.introText   = Object.fromEntries(proj.languages.available.map((l) => [l, '']));
 
+      // Copy logo to project if provided
+      if (summary.logoNativePath) {
+        const newLogoPath = await window.conchitour.copySourceToProject(summary.logoNativePath);
+        if (newLogoPath) proj.branding.logoPath = newLogoPath;
+      }
+
       const customCats: Category[] = summary.categories.map((c) => ({
         id: uuid(),
         slug: c.slug,
         name: { [summary.defaultLang]: c.name },
         color: c.color,
-        // Set iconSvg from emoji if available
         ...(c.icon ? { iconSvg: emojiToIconSvg(c.icon) } : {}),
       }));
       proj.categories = [...BUILTIN_CATEGORIES, ...customCats];
 
+      // Derive AiContext audience from wizard selections
+      const derivedAudience: AiContext['audience'] =
+        summary.audienceKeys.map((k) => AUDIENCE_TO_AI[k]).find(Boolean) ?? 'general';
+
+      // Derive AiContext theme from project type → client type → free text fallback
+      const derivedTheme: string =
+        (summary.projectTypeKeys[0] && TYPE_TO_THEME[summary.projectTypeKeys[0]]) ??
+        (summary.clientTypeKeys[0] && CLIENT_TO_THEME[summary.clientTypeKeys[0]]) ??
+        (summary.projectTypeFreeText.trim() || 'Virtual Tour');
+
       proj.aiContext = {
-        tone: summary.aiTone, audience: 'general', theme: 'Tourism', length: 'medium',
+        tone: summary.aiTone,
+        audience: derivedAudience,
+        theme: derivedTheme,
+        length: 'medium',
         projectContext: summary.contextPrompt,
         tokensUsed: { claude: { in: 0, out: 0 }, gpt: { in: 0, out: 0 } },
       };
@@ -683,7 +795,8 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
       venue:          'routing',
       'project-type': 'venue',
       'client-type':  'project-type',
-      goal:           'client-type',
+      'client-info':  'client-type',
+      goal:           'client-info',
       audience:       'goal',
       spaces:         'audience',
       capture:        'spaces',
@@ -708,7 +821,8 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
     const next: Partial<Record<WizardStep, WizardStep>> = {
       venue:          'analyzing',
       'project-type': 'client-type',
-      'client-type':  'goal',
+      'client-type':  'client-info',
+      'client-info':  'goal',
       goal:           'audience',
       audience:       'spaces',
       spaces:         'capture',
@@ -726,13 +840,13 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   const showNext = [
-    'venue', 'project-type', 'client-type', 'goal', 'audience', 'spaces', 'capture', 'tone', 'extras',
+    'venue', 'project-type', 'client-type', 'client-info', 'goal', 'audience', 'spaces', 'capture', 'tone', 'extras',
   ].includes(step);
 
   const stepNum: Partial<Record<WizardStep, string>> = {
-    venue: 'Step 1 of 9', 'project-type': 'Step 2 of 9', 'client-type': 'Step 3 of 9',
-    goal: 'Step 4 of 9', audience: 'Step 5 of 9', spaces: 'Step 6 of 9',
-    capture: 'Step 7 of 9', tone: 'Step 8 of 9', extras: 'Step 9 of 9',
+    venue: 'Step 1 of 10', 'project-type': 'Step 2 of 10', 'client-type': 'Step 3 of 10',
+    'client-info': 'Step 4 of 10', goal: 'Step 5 of 10', audience: 'Step 6 of 10',
+    spaces: 'Step 7 of 10', capture: 'Step 8 of 10', tone: 'Step 9 of 10', extras: 'Step 10 of 10',
   };
 
   return (
@@ -958,6 +1072,147 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
                 placeholder="Other client type…"
                 speechLang={speechLang}
               />
+            </div>
+          )}
+
+          {/* ── Step 3b: Client info ── */}
+          {step === 'client-info' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold text-ink-base">Client details</h2>
+                <p className="text-sm text-ink-soft mt-1">Optional — used to personalise the project name and import brand colors.</p>
+              </div>
+
+              {/* Client name */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Client name</label>
+                <input
+                  type="text" value={clientName} onChange={(e) => setClientName(e.target.value)}
+                  placeholder="e.g. Burj Al Arab, Musée d'Orsay, Tesla Zurich…"
+                  className="w-full bg-paper-strong border border-line-soft rounded-lg px-3 py-2 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent"
+                />
+              </div>
+
+              {/* Client website + brand color extraction */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Client website (optional)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url" value={clientWebsite} onChange={(e) => setClientWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                    className="flex-1 bg-paper-strong border border-line-soft rounded-lg px-3 py-2 text-sm text-ink-base placeholder-ink-faded focus:outline-none focus:border-accent"
+                  />
+                  <button
+                    type="button"
+                    disabled={!clientWebsite.trim() || fetchingBrandColors}
+                    onClick={async () => {
+                      if (!clientWebsite.trim()) return;
+                      setFetchingBrandColors(true);
+                      try {
+                        const result = await window.conchitour.brandExtract(clientWebsite.trim());
+                        if (result.ok && result.colors.length > 0) {
+                          setBrandColors((prev) => {
+                            const merged = [...new Set([...result.colors, ...prev])].slice(0, 8);
+                            return merged;
+                          });
+                          setColor(result.colors[0]);
+                        }
+                      } catch { /* ignore */ }
+                      setFetchingBrandColors(false);
+                    }}
+                    className="shrink-0 px-3 py-2 rounded-lg border border-line bg-paper-strong text-xs text-ink-soft hover:text-ink-base hover:border-ink-soft disabled:opacity-40 transition-all"
+                  >
+                    {fetchingBrandColors ? <Loader2 size={12} className="animate-spin" /> : '🎨 Fetch colors'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Logo upload */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Client logo (optional)</label>
+                <div className="flex gap-3 items-start">
+                  <label className={clsx(
+                    'flex flex-col items-center justify-center gap-1.5 w-24 h-24 rounded-xl border-2 border-dashed cursor-pointer transition-all shrink-0',
+                    logoObjectUrl ? 'border-accent/40' : 'border-line hover:border-ink-soft',
+                  )}>
+                    {logoObjectUrl
+                      ? <img src={logoObjectUrl} alt="Logo" className="w-full h-full object-contain rounded-xl p-1" />
+                      : <>
+                          <span className="text-2xl">🖼️</span>
+                          <span className="text-xs text-ink-faded text-center leading-tight">Upload logo</span>
+                        </>
+                    }
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl);
+                        if (!file) { setLogoFile(null); setLogoObjectUrl(null); return; }
+                        setLogoFile(file);
+                        const objUrl = URL.createObjectURL(file);
+                        setLogoObjectUrl(objUrl);
+                        const extracted = await extractColorsFromImageBlob(objUrl);
+                        if (extracted.length > 0) {
+                          setBrandColors((prev) => {
+                            const merged = [...new Set([...extracted, ...prev])].slice(0, 8);
+                            return merged;
+                          });
+                          setColor(extracted[0]);
+                        }
+                      }}
+                    />
+                  </label>
+                  <div className="flex-1 space-y-1.5">
+                    <p className="text-xs text-ink-faded">
+                      Logo used in the virtual tour and to extract brand colors automatically.
+                    </p>
+                    {logoFile && (
+                      <button type="button" onClick={() => {
+                        if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl);
+                        setLogoFile(null); setLogoObjectUrl(null);
+                      }} className="text-xs text-ink-faded hover:text-red-400 transition-colors">
+                        Remove logo ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Brand color swatches */}
+              {brandColors.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Brand colors — pick accent</label>
+                  <div className="flex flex-wrap gap-2">
+                    {brandColors.map((hex) => (
+                      <button key={hex} type="button" onClick={() => setColor(hex)}
+                        className={clsx(
+                          'w-8 h-8 rounded-lg border-2 transition-all',
+                          color.toUpperCase() === hex.toUpperCase() ? 'border-ink-base scale-110' : 'border-transparent hover:scale-105',
+                        )}
+                        style={{ backgroundColor: hex }}
+                        title={hex}
+                      />
+                    ))}
+                    <div className="flex items-center gap-1.5 ml-1">
+                      <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+                        className="w-8 h-8 rounded-lg border border-line cursor-pointer bg-transparent"
+                      />
+                      <span className="text-xs font-mono text-ink-faded">{color.toUpperCase()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {brandColors.length === 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-ink-faded uppercase tracking-wide font-medium">Accent color</label>
+                  <div className="flex items-center gap-3">
+                    <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+                      className="w-10 h-10 rounded-lg border border-line cursor-pointer bg-transparent"
+                    />
+                    <span className="text-xs font-mono text-ink-soft">{color.toUpperCase()}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
