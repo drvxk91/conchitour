@@ -1,10 +1,17 @@
 import { useProject } from '@/store/project';
 import { Save } from 'lucide-react';
 
+// On macOS with titleBarStyle:'hiddenInset', the real traffic lights appear at
+// top-left inside the window — we need left padding to avoid overlapping them.
+// On Windows, the native title bar is fully visible and already shows the app
+// name, so we hide the duplicate branding from our custom header.
+const isMac = navigator.userAgent.includes('Mac');
+
 export function TitleBar() {
   const { project, isDirty, projectDir, clearDirty } = useProject();
   const projectName = project.meta.name || 'Untitled';
   const folderName = projectDir ? projectDir.split(/[\\/]/).pop()?.replace('.conchitour', '') : null;
+  const displayName = folderName || projectName;
 
   async function handleSave() {
     try {
@@ -14,29 +21,28 @@ export function TitleBar() {
   }
 
   return (
-    <header className="h-10 bg-paper border-b border-line flex items-center px-4 gap-3 select-none flex-shrink-0">
-      <div className="flex gap-1.5">
-        <span className="w-3 h-3 rounded-full bg-red-400/80" />
-        <span className="w-3 h-3 rounded-full bg-amber-400/80" />
-        <span className="w-3 h-3 rounded-full bg-green-400/80" />
-      </div>
+    <header
+      className="h-10 bg-paper border-b border-line flex items-center gap-3 select-none flex-shrink-0 pr-4"
+      style={{ paddingLeft: isMac ? 80 : 16 }}
+    >
+      {/* macOS: real traffic lights occupy the left 76px — just show project name */}
+      {isMac && displayName && (
+        <div className="flex items-center gap-1.5">
+          <svg width="16" height="16" viewBox="0 0 512 512" fill="none" aria-hidden="true" className="flex-shrink-0">
+            <path d="M256 256 Q256 112 368 112 Q480 112 480 256 Q480 420 312 440 Q112 460 72 280 Q32 96 240 32 Q424 -24 464 128" stroke="#4B9FE1" strokeWidth="18" fill="none" strokeLinecap="round"/>
+            <path d="M256 256 Q256 176 320 176 Q392 176 392 256 Q392 344 296 352 Q184 360 172 272 Q160 176 248 148" stroke="#D4A574" strokeWidth="12" fill="none" strokeLinecap="round"/>
+            <circle cx="256" cy="256" r="16" fill="#4B9FE1"/>
+          </svg>
+          <span className="text-xs font-semibold text-ink tracking-tight">Conchitour</span>
+          <span className="text-line-strong text-sm font-light">·</span>
+          <span className="text-xs text-ink-soft truncate max-w-[200px]">{displayName}</span>
+        </div>
+      )}
 
-      <div className="flex items-center gap-1.5 ml-1">
-        <svg width="16" height="16" viewBox="0 0 512 512" fill="none" aria-hidden="true" className="flex-shrink-0">
-          <path d="M256 256 Q256 112 368 112 Q480 112 480 256 Q480 420 312 440 Q112 460 72 280 Q32 96 240 32 Q424 -24 464 128" stroke="#4B9FE1" strokeWidth="18" fill="none" strokeLinecap="round"/>
-          <path d="M256 256 Q256 176 320 176 Q392 176 392 256 Q392 344 296 352 Q184 360 172 272 Q160 176 248 148" stroke="#D4A574" strokeWidth="12" fill="none" strokeLinecap="round"/>
-          <circle cx="256" cy="256" r="16" fill="#4B9FE1"/>
-        </svg>
-        <span className="text-xs font-semibold text-ink tracking-tight">Conchitour</span>
-        {(folderName || projectName) && (
-          <>
-            <span className="text-line-strong text-sm font-light">·</span>
-            <span className="text-xs text-ink-soft truncate max-w-[180px]">
-              {folderName || projectName}
-            </span>
-          </>
-        )}
-      </div>
+      {/* Windows: native title bar already shows "Conchitour" — only show project name */}
+      {!isMac && displayName && (
+        <span className="text-xs text-ink-soft truncate max-w-[280px]">{displayName}</span>
+      )}
 
       <div className="ml-auto flex items-center gap-1.5">
         {isDirty && (
