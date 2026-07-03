@@ -116,6 +116,9 @@ contextBridge.exposeInMainWorld('conchitour', {
     ipcRenderer.on('wizard:mobile-answers', handler as Parameters<typeof ipcRenderer.on>[1]);
     return () => ipcRenderer.removeListener('wizard:mobile-answers', handler as Parameters<typeof ipcRenderer.removeListener>[1]);
   },
+  // Brand color extraction from a website URL
+  brandExtract: (url: string): Promise<{ ok: boolean; colors: string[]; logoUrl?: string; error?: string }> =>
+    ipcRenderer.invoke('brand:extract', url),
 });
 
 export interface PhotoExif {
@@ -330,6 +333,8 @@ declare global {
       wizardStartServer: () => Promise<{ port: number; lanUrl: string | null }>;
       wizardStopServer: () => Promise<void>;
       onWizardMobileAnswers: (cb: (answers: unknown) => void) => () => void;
+      // Brand color extraction
+      brandExtract: (url: string) => Promise<{ ok: boolean; colors: string[]; logoUrl?: string; error?: string }>;
     };
   }
 }

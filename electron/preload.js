@@ -93,4 +93,6 @@ contextBridge.exposeInMainWorld('conchitour', {
         ipcRenderer.on('wizard:mobile-answers', handler);
         return () => ipcRenderer.removeListener('wizard:mobile-answers', handler);
     },
+    // Brand color extraction
+    brandExtract: (url) => ipcRenderer.invoke('brand:extract', url),
 });
