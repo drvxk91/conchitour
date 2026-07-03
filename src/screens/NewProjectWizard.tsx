@@ -1418,6 +1418,7 @@ export function NewProjectWizard({ onClose, initialStep = 'mode-select' }: Props
               <div>
                 <h2 className="text-xl font-semibold text-ink-base text-center">Scan to answer on your phone</h2>
                 <p className="text-sm text-ink-soft mt-1 text-center">Same Wi-Fi network required. Voice dictation available on mobile.</p>
+                <p className="text-xs text-amber-400 mt-1 text-center">Your browser will show a security warning — tap <strong>Advanced → Proceed</strong> to open the page, then allow microphone access.</p>
               </div>
               {qrDataUrl ? (
                 <div className="p-3 bg-white rounded-xl"><img src={qrDataUrl} alt="QR code" className="w-44 h-44" /></div>

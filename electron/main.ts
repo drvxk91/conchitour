@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import https from 'node:https';
 import { spawn, execFileSync } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -5707,8 +5708,59 @@ ipcMain.handle('license:get-local', async () => {
 });
 
 // ── Wizard mobile server ──────────────────────────────────────────────────────
-let wizardServer: import('http').Server | null = null;
+let wizardServer: import('https').Server | null = null;
 let wizardServerPort = 0;
+
+// ── Wizard HTTPS self-signed cert (valid 10 years, local LAN only) ────────────
+const WIZARD_TLS_CERT = `-----BEGIN CERTIFICATE-----
+MIIDOzCCAiOgAwIBAgIUbrtaYTpwaaKc5n6zrNAMDKzMTowwDQYJKoZIhvcNAQEL
+BQAwHDEaMBgGA1UEAwwRY29uY2hpdG91ci13aXphcmQwHhcNMjYwNzAzMDUwMDU1
+WhcNMzYwNjMwMDUwMDU1WjAcMRowGAYDVQQDDBFjb25jaGl0b3VyLXdpemFyZDCC
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMUDcZ91vq//i9bETQAQf2hJ
+LH7O87CAb1VrODTpaY80eNGHA9T/ZjSMACIY3OC6D3hT3eXtCUCOGyYerfiRdiYi
+2KQaS7vq1X1LtG4HpEf4ZFttwAM2o3PXel59/ELEZBxVB+L622NdjfyaBPmNhg4W
+9PDB3eBsPR2P5W95rPfcFV4JRbynlLt1FuYA2Wq++8CIEcjPI5tTBfPJ4HW5JaCV
+PwDTGZKjMJEZ8+fOo5bqHq8nPn6NRvEk2Z3qZRXF3R5P7C6WlpwgMBtD9ZU212Wq
+R3lX2XGfS+w+4v1eS/1wW2P34KKJydLw67P5/vLLivFsP4Cqy3EMzL9lgMuDYV8C
+AwEAAaN1MHMwHQYDVR0OBBYEFGMf3zR8CjElJV530B+C7EZ5RcCJMB8GA1UdIwQY
+MBaAFGMf3zR8CjElJV530B+C7EZ5RcCJMA8GA1UdEwEB/wQFMAMBAf8wIAYDVR0R
+BBkwF4cEAAAAAIcEfwAAAYIJbG9jYWxob3N0MA0GCSqGSIb3DQEBCwUAA4IBAQDB
+E9nquLIz7EmMA4dWYIlHeI+TNRgxVBtpDP6TxiKOnjmIA5EPbHp9Q0KJRKR9yecs
+U8jgeHncBeYMuVuDrDT2aczpeuyT8y5E+9o7A5N83PNhvQVx5o1+XvI9NsT06xdI
+LuX+h8H/9Rhg6IOzO1SCrm0KD8MSiJ5o337UQ57seAmwpRPGopMrfLQVXBHyVj7n
+b6mV9HvL+LyTsgwEPlGRD/rEHIf4saMI4IqoE1MgRCNF9ylyb14ku9sz7/a2ous8
+qKjJgQKz8KNmAS8biNevPYwOYiEehVEEij+4DwnhuBNuhg4QcCbozrGLs4cS6Lkm
+nfAMbpdrR/ujjwxTYYTI
+-----END CERTIFICATE-----`;
+
+const WIZARD_TLS_KEY = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFA3Gfdb6v/4vW
+xE0AEH9oSSx+zvOwgG9Vazg06WmPNHjRhwPU/2Y0jAAiGNzgug94U93l7QlAjhsm
+Hq34kXYmItikGku76tV9S7RuB6RH+GRbbcADNqNz13peffxCxGQcVQfi+ttjXY38
+mgT5jYYOFvTwwd3gbD0dj+Vveaz33BVeCUW8p5S7dRbmANlqvvvAiBHIzyObUwXz
+yeB1uSWglT8A0xmSozCRGfPnzqOW6h6vJz5+jUbxJNmd6mUVxd0eT+wulpacIDAb
+Q/WVNtdlqkd5V9lxn0vsPuL9Xkv9cFtj9+CiicnS8Ouz+f7yy4rxbD+AqstxDMy/
+ZYDLg2FfAgMBAAECggEANKrnBSoFACfgyllP/GRsqwRk0MGig9zR5pPzQrHjdlUg
+t2LQs3BTcli68GKVKb6TxCcnewATKR7UQyyQdZLtcuR95eDhvirZR9WlNoT0dgkB
+Sy/b1QAWUjGYlQo5FeBKowhYQ2WsoLOx8YV7LvuWis24TWSGXCiTbgO54kM06k2D
+KrJ9EXnYT3kbf2J8dVvlPqrIX1LZFYDPwt0gsyHaT98DtBCMidjdV3v31QL9HQ3B
+CGd2FFhCqAWFD2146UEiiTAmOVM20h00HPf5W2wCCqMJJkpyA8T27Rz/DE2t+C84
+Xfj3LRfCI8sY8jLx1Eyl5nh1DCP+dEKZGp/HQSZtgQKBgQD0HDKUItKp/QDi2jFI
+MzYDwhIyMCATQAotU529yXrLmS/siGzjZ9fKGAXlu5hdviDb+5lpXPJY8cWxh9Zr
+aiWPlq4oPrI17sBVn9kO09ntl+Oz5Bi5Q1FgoG+T1cR7MWqxhwX5zhYyJLSm3b3x
+ucUXKCRlzaIOuAxxYS2hwQPKQwKBgQDOm/+6MXXa8aIZgPgS2xDhKXo2ayol+h38
+V4JaE8Z0bAXiNMWWzeamDwkTxPPYbrh0pHelCCV2/o0FpZaKwXSlSLQCdFAnFkmN
+aqRSP8PRZH77P9xYUQl/BWG3wbdbWUW2wzVkSVyxOoy9gxC93LNOzUdyw7wiER/1
+AjWBgu8gtQKBgQCTtZxFVuzyP02R90Vq0tIUZBJunABMpauC0d3ZQVk0aXU+Qy7g
+S62fc/ndkS4ZSzrG4e9qefuLJoDhc7ijNo+T2zF22LktOVLYfOjyt+5eflIiQBtV
+vw420d2yLt+9S6Gr2nAbQEDeBqfpcLPG2QoRgRDFKTCuh1/AG3VpM0n/0QKBgGuI
+qhsArzSbWyEnDPbTaf+nFOLJ+A/4FC9IZKH5dOsXZiCMEuMgm5GGddUCR2A4kGy1
+RUhx6v36EvADdU0Wz11Pb9FvNGCDqxidjpT4dzS+t5CRdl/JHcYsyOVZP9OdrTko
+dNuTi1j6/lGMq+QFwJWdJjjHQ13/x8A/vBWCTm+ZAoGAMj1nksiueRob+JC5w90R
+43qaJs0KtOrRJLQ1Fkk2uM7qPg7OA8NB0dHgSpLXhgQ8CY5JTuxjK9YFMVJ3T75v
+QwkLvzPuqbRbVoKRMe+2w8X/thFY0Qkr32t6FHOYsXdIitaGkNFEZDABKQdl97Dg
+lpg76Qqkfz1CqxvZ+qYtZnw=
+-----END PRIVATE KEY-----`;
 
 const WIZARD_MOBILE_HTML = `<!doctype html>
 <html lang="en">
@@ -5718,237 +5770,325 @@ const WIZARD_MOBILE_HTML = `<!doctype html>
 <title>Conchitour Setup</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e8e8e4;min-height:100dvh;padding:20px 16px 48px}
-.logo{font-size:14px;font-weight:700;color:#185FA5;letter-spacing:.3px;margin-bottom:28px}
-.progress{display:flex;gap:5px;margin-bottom:32px}
-.dot{height:3px;flex:1;border-radius:2px;background:#222;transition:background .3s}
-.dot.active{background:#185FA5}
-.dot.done{background:#1D9E75}
-h2{font-size:22px;font-weight:700;line-height:1.3;margin-bottom:6px}
-.sub{font-size:14px;color:#777;margin-bottom:22px;line-height:1.5}
-input[type=text]{width:100%;padding:14px 16px;border-radius:12px;border:1.5px solid #222;background:#141414;color:#e8e8e4;font-size:16px;outline:none;transition:border .2s;-webkit-appearance:none}
-input[type=text]:focus{border-color:#185FA5}
-.chip-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
-.chip{padding:10px 16px;border-radius:100px;border:1.5px solid #222;background:#141414;color:#999;font-size:14px;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent;user-select:none}
-.chip.sel{border-color:#185FA5;background:#185FA520;color:#e8e8e4}
-.tone-card{padding:16px;border-radius:14px;border:1.5px solid #222;background:#141414;margin-bottom:10px;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent}
-.tone-card.sel{border-color:#185FA5;background:#185FA510}
-.tone-title{font-weight:600;font-size:15px;margin-bottom:4px}
-.tone-ex{font-size:12px;color:#555;font-style:italic}
-.color-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-input[type=color]{width:44px;height:44px;border-radius:10px;border:none;cursor:pointer;padding:0;background:none;-webkit-appearance:none;appearance:none}
-.hex-in{flex:1;padding:12px 14px;border-radius:10px;border:1.5px solid #222;background:#141414;color:#e8e8e4;font-size:15px;font-family:monospace;outline:none}
-.hex-in:focus{border-color:#185FA5}
-.auto-btn{width:100%;padding:13px;border-radius:10px;border:1.5px solid #222;background:#141414;color:#999;font-size:14px;cursor:pointer;margin-bottom:8px;transition:all .15s;-webkit-tap-highlight-color:transparent}
-.auto-lbl{font-size:12px;color:#555;margin-bottom:4px;min-height:16px}
-.btn{width:100%;padding:16px;border-radius:14px;background:#185FA5;color:#fff;font-size:16px;font-weight:600;border:none;cursor:pointer;margin-top:24px;-webkit-tap-highlight-color:transparent;transition:opacity .15s}
-.btn:disabled{opacity:.45}
-.step{display:none}
-.step.active{display:block}
-.done{text-align:center;padding:70px 0}
-.done-icon{font-size:56px;margin-bottom:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:20px 16px 40px}
+h1{font-size:18px;font-weight:700;margin-bottom:4px;color:#f8fafc}
+.subtitle{font-size:13px;color:#94a3b8;margin-bottom:24px}
+.section{margin-bottom:20px}
+.label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px}
+textarea,input[type=text]{width:100%;background:#1e293b;border:1.5px solid #334155;border-radius:10px;padding:12px;font-size:15px;color:#f1f5f9;outline:none;resize:none}
+textarea:focus,input[type=text]:focus{border-color:#3b82f6}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:8px 14px;border-radius:999px;border:1.5px solid #334155;background:#1e293b;font-size:13px;color:#94a3b8;cursor:pointer;transition:all .15s}
+.chip.sel{border-color:#3b82f6;background:#1e3a5f;color:#93c5fd}
+.mic-row{display:flex;gap:8px;align-items:flex-start}
+.mic-btn{flex-shrink:0;width:42px;height:42px;border-radius:10px;border:1.5px solid #334155;background:#1e293b;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.mic-btn.listening{border-color:#ef4444;background:#450a0a;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.submit-btn{width:100%;padding:16px;border-radius:12px;background:#3b82f6;color:#fff;font-size:16px;font-weight:700;border:none;cursor:pointer;margin-top:8px;transition:background .15s}
+.submit-btn:active{background:#2563eb}
+.submit-btn:disabled{background:#1e3a5f;color:#475569;cursor:not-allowed}
+.color-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.color-swatch{width:36px;height:36px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all .15s}
+.color-swatch.sel{border-color:#fff;transform:scale(1.12)}
+.done-screen{display:none;text-align:center;padding:60px 16px}
+.done-icon{font-size:56px;margin-bottom:16px}
+.done-title{font-size:22px;font-weight:700;color:#f8fafc;margin-bottom:8px}
+.done-sub{font-size:14px;color:#94a3b8}
 </style>
 </head>
 <body>
-<div class="logo">✦ Conchitour</div>
-<div class="progress"><div class="dot" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div><div class="dot" id="d5"></div></div>
+<div id="form-view">
+  <h1>Conchitour Setup</h1>
+  <p class="subtitle">Answer a few questions to configure your virtual tour. Tap the 🎤 mic to dictate.</p>
 
-<div class="step active" id="s1">
-<h2>What place are you touring?</h2>
-<p class="sub">Name, city, or description of the venue.</p>
-<input type="text" id="loc" placeholder="e.g. Château de Versailles, France" autocomplete="off"/>
-<button class="btn" id="n1" disabled>Continue →</button>
+  <div class="section">
+    <div class="label">Where is your venue?</div>
+    <div class="mic-row">
+      <textarea id="loc" rows="2" placeholder="e.g. Rooftop hotel in Dubai Marina with pool and panoramic views"></textarea>
+      <button class="mic-btn" id="mic-loc" title="Dictate">🎤</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Who are your visitors?</div>
+    <div class="chips" id="aud-chips">
+      <div class="chip" data-key="tourists">✈️ Tourists</div>
+      <div class="chip" data-key="locals">📍 Locals</div>
+      <div class="chip" data-key="business">💼 Business</div>
+      <div class="chip" data-key="families">👨‍👩‍👧 Families</div>
+      <div class="chip" data-key="luxury">💎 Luxury</div>
+      <div class="chip" data-key="students">🎓 Students</div>
+      <div class="chip" data-key="buyers">🔑 Buyers</div>
+      <div class="chip" data-key="partners">🤝 Partners</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Tour areas (select the spaces to include)</div>
+    <div class="chips" id="cats-chips">
+      <div class="chip" data-key="main-area">🏠 Main area</div>
+      <div class="chip" data-key="entrance">🚪 Entrance</div>
+      <div class="chip" data-key="garden">🌿 Garden</div>
+      <div class="chip" data-key="lounge">🛋️ Lounge</div>
+      <div class="chip" data-key="terrace">☀️ Terrace</div>
+      <div class="chip" data-key="pool">🏊 Pool</div>
+      <div class="chip" data-key="restaurant">🍽️ Restaurant</div>
+      <div class="chip" data-key="spa">💆 Spa</div>
+      <div class="chip" data-key="rooms">🛏️ Rooms</div>
+      <div class="chip" data-key="bar">🍸 Bar</div>
+      <div class="chip" data-key="gym">🏋️ Gym</div>
+      <div class="chip" data-key="conference">🏛️ Conference</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Editorial voice</div>
+    <div class="mic-row">
+      <textarea id="tone" rows="3" placeholder="e.g. Warm and welcoming, like a knowledgeable local guide sharing favourite spots…"></textarea>
+      <button class="mic-btn" id="mic-tone" title="Dictate">🎤</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Accent color</div>
+    <div class="color-row" id="color-row">
+      <div class="color-swatch sel" data-color="#1D9E75" style="background:#1D9E75" title="#1D9E75"></div>
+      <div class="color-swatch" data-color="#185FA5" style="background:#185FA5" title="#185FA5"></div>
+      <div class="color-swatch" data-color="#8B5CF6" style="background:#8B5CF6" title="#8B5CF6"></div>
+      <div class="color-swatch" data-color="#BA7517" style="background:#BA7517" title="#BA7517"></div>
+      <div class="color-swatch" data-color="#0EA5E9" style="background:#0EA5E9" title="#0EA5E9"></div>
+      <div class="color-swatch" data-color="#EF4444" style="background:#EF4444" title="#EF4444"></div>
+      <div class="color-swatch" data-color="#EC4899" style="background:#EC4899" title="#EC4899"></div>
+      <input type="color" id="color-custom" value="#1D9E75" style="width:36px;height:36px;border-radius:8px;border:2px solid #334155;background:none;cursor:pointer;padding:0">
+    </div>
+  </div>
+
+  <button class="submit-btn" id="submit-btn">Send answers to desktop →</button>
 </div>
 
-<div class="step" id="s2">
-<h2>Who's visiting?</h2>
-<p class="sub">Select all that apply.</p>
-<div class="chip-grid" id="aud-chips">
-<div class="chip" data-v="international_tourists">🌍 International tourists</div>
-<div class="chip" data-v="local_customers">🛒 Local customers</div>
-<div class="chip" data-v="property_buyers">🏠 Property buyers</div>
-<div class="chip" data-v="students">🎓 Students</div>
-<div class="chip" data-v="general_public">👥 General public</div>
-</div>
-<button class="btn" id="n2">Continue →</button>
-</div>
-
-<div class="step" id="s3">
-<h2>Editorial tone</h2>
-<p class="sub">How should content feel?</p>
-<div class="tone-card" data-v="factual"><div class="tone-title">📚 Informative</div><div class="tone-ex">"Built in 1682, the château counts 2,300 rooms…"</div></div>
-<div class="tone-card" data-v="storytelling"><div class="tone-title">🌊 Immersive</div><div class="tone-ex">"Imagine walking these royal corridors…"</div></div>
-<div class="tone-card" data-v="marketing"><div class="tone-title">💼 Commercial</div><div class="tone-ex">"Discover our park-view suites, perfect for…"</div></div>
-<div class="tone-card" data-v="poetic"><div class="tone-title">✨ Luxury</div><div class="tone-ex">"An exceptional experience at the heart of unique heritage."</div></div>
-<button class="btn" id="n3" disabled>Continue →</button>
-</div>
-
-<div class="step" id="s4">
-<h2>Types of spaces</h2>
-<p class="sub">Select all spaces you'll photograph.</p>
-<div class="chip-grid" id="cat-chips"></div>
-<button class="btn" id="n4">Continue →</button>
-</div>
-
-<div class="step" id="s5">
-<h2>Accent color</h2>
-<p class="sub">Primary color for hotspots and UI.</p>
-<div class="color-row">
-<input type="color" id="cswatch" value="#185FA5">
-<input type="text" class="hex-in" id="chex" value="#185FA5" maxlength="7"/>
-</div>
-<button class="auto-btn" id="auto-c">✦ Let AI suggest a color</button>
-<div class="auto-lbl" id="auto-lbl"></div>
-<button class="btn" id="n5">Finish &amp; send →</button>
-</div>
-
-<div class="step done" id="sdone">
-<div class="done-icon">✓</div>
-<h2>Setup sent!</h2>
-<p class="sub" style="margin-top:10px">Return to your computer.<br>The configuration has been applied.</p>
+<div class="done-screen" id="done-view">
+  <div class="done-icon">✅</div>
+  <div class="done-title">Answers sent!</div>
+  <div class="done-sub">Return to your desktop — the AI is now configuring your project.</div>
 </div>
 
 <script>
-const S={loc:'',aud:[],tone:'',cats:[],color:'#185FA5',vtype:''};
-const CATS={hotel:['Rooms','Restaurant','Spa','Exterior','Meeting rooms'],museum:['Permanent galleries','Temporary exhibitions','Common areas'],realEstate:['Living areas','Bedrooms','Exterior','Garden'],restaurant:['Dining room','Bar','Kitchen','Terrace'],heritage:['Main halls','Gardens','Courtyards','Exhibition spaces']};
-const AUTO_COLORS={hotel:'#185FA5',museum:'#8B1A1A',realEstate:'#1D7A4A',restaurant:'#BA4A00',heritage:'#8B6914'};
+(function(){
+  var selColor = '#1D9E75';
 
-function show(id){
-  document.querySelectorAll('.step').forEach(el=>el.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  const n=parseInt(id.replace('s',''))||0;
-  for(let i=1;i<=5;i++){
-    const d=document.getElementById('d'+i);
-    if(i<n)d.className='dot done';else if(i===n)d.className='dot active';else d.className='dot';
+  // Chip toggle
+  function initChips(containerId){
+    var container = document.getElementById(containerId);
+    container.addEventListener('click', function(e){
+      var chip = e.target.closest('.chip');
+      if(!chip) return;
+      chip.classList.toggle('sel');
+    });
   }
-}
+  initChips('aud-chips');
+  initChips('cats-chips');
 
-// Q1
-const loc=document.getElementById('loc');
-loc.addEventListener('input',()=>{S.loc=loc.value.trim();document.getElementById('n1').disabled=!S.loc;});
-loc.addEventListener('keydown',e=>{if(e.key==='Enter'&&S.loc)show('s2');});
-document.getElementById('n1').addEventListener('click',()=>show('s2'));
-
-// Q2
-document.querySelectorAll('#aud-chips .chip').forEach(c=>{
-  c.addEventListener('click',()=>{
-    c.classList.toggle('sel');
-    const v=c.dataset.v;
-    S.aud=c.classList.contains('sel')?[...S.aud,v]:S.aud.filter(x=>x!==v);
+  // Color swatches
+  document.getElementById('color-row').addEventListener('click', function(e){
+    var sw = e.target.closest('.color-swatch');
+    if(!sw) return;
+    document.querySelectorAll('.color-swatch').forEach(function(s){ s.classList.remove('sel'); });
+    sw.classList.add('sel');
+    selColor = sw.dataset.color;
+    document.getElementById('color-custom').value = selColor;
   });
-});
-document.getElementById('n2').addEventListener('click',()=>show('s3'));
-
-// Q3
-document.querySelectorAll('.tone-card').forEach(c=>{
-  c.addEventListener('click',()=>{
-    document.querySelectorAll('.tone-card').forEach(x=>x.classList.remove('sel'));
-    c.classList.add('sel');S.tone=c.dataset.v;
-    document.getElementById('n3').disabled=false;
+  document.getElementById('color-custom').addEventListener('input', function(e){
+    selColor = e.target.value;
+    document.querySelectorAll('.color-swatch').forEach(function(s){ s.classList.remove('sel'); });
   });
-});
-document.getElementById('n3').addEventListener('click',()=>{
-  const l=S.loc.toLowerCase();
-  if(/hotel|resort|inn|lodge/i.test(l))S.vtype='hotel';
-  else if(/museum|gallery|musée|galerie/i.test(l))S.vtype='museum';
-  else if(/apartment|villa|house|flat|immo/i.test(l))S.vtype='realEstate';
-  else if(/restaurant|bistro|café|cafe|brasserie/i.test(l))S.vtype='restaurant';
-  else if(/château|castle|cathedral|monument|palace|palais|abbey|abbaye/i.test(l))S.vtype='heritage';
-  else S.vtype='';
-  const cats=CATS[S.vtype];
-  if(cats){
-    const g=document.getElementById('cat-chips');g.innerHTML='';
-    cats.forEach(cat=>{const el=document.createElement('div');el.className='chip';el.textContent=cat;el.dataset.v=cat;el.addEventListener('click',()=>{el.classList.toggle('sel');S.cats=el.classList.contains('sel')?[...S.cats,cat]:S.cats.filter(x=>x!==cat);});g.appendChild(el);});
-    show('s4');
-  }else{show('s5');}
-});
 
-// Q4
-document.getElementById('n4').addEventListener('click',()=>show('s5'));
+  // Mic helper
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function setupMic(btnId, targetId){
+    if(!SR) return;
+    var btn = document.getElementById(btnId);
+    var target = document.getElementById(targetId);
+    var rec = null;
+    btn.addEventListener('click', function(){
+      if(rec){ rec.stop(); return; }
+      rec = new SR();
+      rec.lang = navigator.language || 'en-US';
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.onresult = function(e){
+        var t = e.results[0][0].transcript;
+        target.value = (target.value ? target.value + ' ' : '') + t;
+      };
+      rec.onend = function(){ rec = null; btn.classList.remove('listening'); };
+      rec.onerror = function(){ rec = null; btn.classList.remove('listening'); };
+      rec.start();
+      btn.classList.add('listening');
+    });
+  }
+  setupMic('mic-loc', 'loc');
+  setupMic('mic-tone', 'tone');
 
-// Q5
-const cswatch=document.getElementById('cswatch');
-const chex=document.getElementById('chex');
-cswatch.addEventListener('input',()=>{chex.value=cswatch.value;S.color=cswatch.value;});
-chex.addEventListener('input',()=>{const v=chex.value;if(/^#[0-9a-fA-F]{6}$/.test(v)){cswatch.value=v;S.color=v;}});
-document.getElementById('auto-c').addEventListener('click',()=>{
-  const c=AUTO_COLORS[S.vtype]||'#185FA5';
-  cswatch.value=c;chex.value=c;S.color=c;
-  document.getElementById('auto-lbl').textContent='✓ Color matched to venue type';
-});
-document.getElementById('n5').addEventListener('click',async()=>{
-  const btn=document.getElementById('n5');
-  btn.disabled=true;btn.textContent='Sending…';
-  try{
-    await fetch('/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(S)});
-    show('sdone');
-    document.querySelector('.progress').style.display='none';
-  }catch{btn.disabled=false;btn.textContent='Retry →';}
-});
-
-show('s1');
-setTimeout(()=>loc.focus(),100);
+  // Submit
+  document.getElementById('submit-btn').addEventListener('click', function(){
+    var btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    var aud = Array.from(document.querySelectorAll('#aud-chips .chip.sel')).map(function(c){ return c.dataset.key; });
+    var cats = Array.from(document.querySelectorAll('#cats-chips .chip.sel')).map(function(c){ return c.dataset.key; });
+    var payload = {
+      loc: document.getElementById('loc').value.trim(),
+      aud: aud,
+      tone: document.getElementById('tone').value.trim(),
+      cats: cats,
+      color: selColor,
+    };
+    fetch('/answers', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    }).then(function(){
+      document.getElementById('form-view').style.display = 'none';
+      document.getElementById('done-view').style.display = 'block';
+    }).catch(function(){
+      btn.disabled = false;
+      btn.textContent = 'Send answers to desktop →';
+      alert('Network error — are you on the same Wi-Fi?');
+    });
+  });
+})();
 </script>
 </body>
 </html>`;
 
 ipcMain.handle('wizard:start-server', async () => {
-  if (wizardServer) { wizardServer.close(); wizardServer = null; }
-
-  wizardServer = http.createServer((req, res) => {
-    if (req.method === 'GET' && (req.url === '/' || req.url === '')) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(WIZARD_MOBILE_HTML);
-      return;
-    }
-    if (req.method === 'POST' && req.url === '/finish') {
-      let body = '';
-      req.on('data', chunk => { body += String(chunk); });
-      req.on('end', () => {
-        try {
-          const answers = JSON.parse(body);
-          sendToRenderer('wizard:mobile-answers', answers);
-        } catch { /* malformed */ }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-      });
-      return;
-    }
-    res.writeHead(404).end();
-  });
-
+  if (wizardServer) {
+    return { port: wizardServerPort, lanUrl: getLanUrl(wizardServerPort) };
+  }
   return new Promise<{ port: number; lanUrl: string | null }>((resolve) => {
-    wizardServer!.listen(0, '0.0.0.0', () => {
-      wizardServerPort = (wizardServer!.address() as { port: number }).port;
-      const ifaces = os.networkInterfaces();
-      let lanUrl: string | null = null;
-      for (const iface of Object.values(ifaces).flat()) {
-        if (iface && iface.family === 'IPv4' && !iface.internal) {
-          lanUrl = `http://${iface.address}:${wizardServerPort}/`;
-          break;
-        }
+    wizardServer = https.createServer({ cert: WIZARD_TLS_CERT, key: WIZARD_TLS_KEY }, (req, res) => {
+      if (req.method === 'GET' && req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(WIZARD_MOBILE_HTML);
+      } else if (req.method === 'POST' && req.url === '/answers') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('{"ok":true}');
+          try {
+            const answers = JSON.parse(body) as unknown;
+            sendToRenderer('wizard:mobile-answers', answers);
+          } catch { /* ignore */ }
+        });
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
       }
-      resolve({ port: wizardServerPort, lanUrl });
+    });
+    wizardServer.listen(0, '0.0.0.0', () => {
+      const addr = wizardServer!.address() as import('net').AddressInfo;
+      wizardServerPort = addr.port;
+      resolve({ port: wizardServerPort, lanUrl: getLanUrl(wizardServerPort) });
     });
   });
 });
 
-ipcMain.handle('wizard:stop-server', () => {
-  if (wizardServer) { wizardServer.close(); wizardServer = null; wizardServerPort = 0; }
-});
-
-// ── Trial IPC ─────────────────────────────────────────────────────────────────
-
-ipcMain.handle('trial:get-state', async (_e, sceneCount: number, languageCount: number) => {
-  return getTrialState(sceneCount, languageCount);
-});
-
-ipcMain.handle('trial:consume-ai-call', async () => {
-  try {
-    await consumeTrialAiCall();
-    return { ok: true };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: msg };
+ipcMain.handle('wizard:stop-server', async () => {
+  if (wizardServer) {
+    wizardServer.close();
+    wizardServer = null;
+    wizardServerPort = 0;
   }
 });
+
+function getLanUrl(port: number): string | null {
+  try {
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name] ?? []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return `https://${iface.address}:${port}`;
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+// ── Brand color extraction ────────────────────────────────────────────────────
+
+ipcMain.handle('brand:extract', async (_event, rawUrl: string) => {
+  try {
+    let url = rawUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+
+    const html = await fetchUrl(url);
+
+    const colors: string[] = [];
+
+    // 1. <meta name="theme-color">
+    const themeMatch = html.match(/<meta[^>]+name=["']theme-color["'][^>]+content=["'](#[0-9a-fA-F]{3,6})["']/i)
+      ?? html.match(/<meta[^>]+content=["'](#[0-9a-fA-F]{3,6})["'][^>]+name=["']theme-color["']/i);
+    if (themeMatch?.[1]) colors.push(normalizeHex(themeMatch[1]));
+
+    // 2. CSS hex colors from <style> blocks and inline style attributes
+    const cssBlocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
+    const inlineStyles = [...html.matchAll(/style=["']([^"']+)["']/gi)].map((m) => m[1]);
+    const allCss = [...cssBlocks, ...inlineStyles].join(' ');
+
+    const hexRegex = /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+    const freq = new Map<string, number>();
+    let m: RegExpExecArray | null;
+    while ((m = hexRegex.exec(allCss)) !== null) {
+      const hex = normalizeHex('#' + m[1]);
+      if (!isNearNeutral(hex)) freq.set(hex, (freq.get(hex) ?? 0) + 1);
+    }
+
+    const topCss = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([h]) => h);
+    colors.push(...topCss);
+
+    const deduped = [...new Set(colors)].slice(0, 8);
+    return { ok: true, colors: deduped };
+  } catch (err) {
+    return { ok: false, colors: [], error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+function fetchUrl(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? require('https') : require('http');
+    const req = mod.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Conchitour/1.0)' },
+      timeout: 8000,
+    }, (res: import('http').IncomingMessage) => {
+      // Follow one redirect
+      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+        fetchUrl(res.headers.location).then(resolve).catch(reject);
+        return;
+      }
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => { data += chunk; if (data.length > 500_000) req.destroy(); });
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+  });
+}
+
+function normalizeHex(hex: string): string {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  return ('#' + full).toUpperCase();
+}
+
+function isNearNeutral(hex: string): boolean {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  const lum = (r * 299 + g * 587 + b * 114) / 1000;
+  if (lum > 230 || lum < 20) return true; // near-white or near-black
+  if (Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b)) < 25) return true; // near-gray
+  return false;
+}
