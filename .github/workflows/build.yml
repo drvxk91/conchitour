@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - run: npm ci
-      - run: npm run build -- --win
+      - run: npm run build -- --win --publish=never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - name: Rename installer
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - run: npm ci
-      - run: npm run build -- --mac
+      - run: npm run build -- --mac --publish=never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - name: Rename DMG
