@@ -45,7 +45,7 @@ export function Sidebar() {
             return null;
           },
         },
-        { id: 'ai',        label: 'AI',         Icon: Brain },
+        { id: 'ai',        label: 'AI & API',   Icon: Brain },
       ],
     },
     {

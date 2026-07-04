@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { useProject, type ScreenId } from '@/store/project';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { runStaticAudit } from '@/lib/audit/static-checks';
+import { runMediaAudit } from '@/lib/audit/media-checks';
 import { runAiAuditStreaming, type AuditStreamEvent } from '@/lib/audit/ai-checks';
 import { resolveAiProvider } from '@/lib/ai-resolve';
 import { computeAiCost, resolvedModelId } from '@/lib/ai-tracking';
@@ -179,10 +180,11 @@ export function AuditScreen() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  const runStatic = useCallback(() => {
+  const runStatic = useCallback(async () => {
     const issues = runStaticAudit(project);
+    const mediaIssues = await runMediaAudit(project);
     const aiIssues = report?.issues.filter((i) => i.aiGenerated) ?? [];
-    const merged = [...issues, ...aiIssues];
+    const merged = [...issues, ...mediaIssues, ...aiIssues];
     setReport(buildReport(merged, report?.aiUsed ?? false, report?.aiTokensIn, report?.aiTokensOut));
     setDismissed(new Set());
   }, [project, report]);
@@ -190,6 +192,10 @@ export function AuditScreen() {
   useEffect(() => {
     const issues = runStaticAudit(project);
     setReport(buildReport(issues, false));
+    runMediaAudit(project).then((mediaIssues) => {
+      if (mediaIssues.length === 0) return;
+      setReport((prev) => prev && buildReport([...prev.issues, ...mediaIssues], prev.aiUsed, prev.aiTokensIn, prev.aiTokensOut));
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleCancel() {
@@ -212,6 +218,7 @@ export function AuditScreen() {
 
       try {
         const staticIssues = runStaticAudit(project);
+        const mediaIssues = await runMediaAudit(project);
 
         const handleEvent = (ev: AuditStreamEvent) => {
           if (ev.type === 'status') setAiStatus(ev.message);
@@ -233,7 +240,7 @@ export function AuditScreen() {
           costUsd,
           operation: 'audit',
         });
-        setReport(buildReport([...staticIssues, ...aiIssues], true, tokensIn, tokensOut));
+        setReport(buildReport([...staticIssues, ...mediaIssues, ...aiIssues], true, tokensIn, tokensOut));
         showToast(`AI audit complete — ${aiIssues.length} suggestion${aiIssues.length !== 1 ? 's' : ''}`);
       } catch (err) {
         if ((err as Error).name === 'AbortError') {

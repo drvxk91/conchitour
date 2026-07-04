@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Sparkles, Bot, CheckCircle, AlertCircle, Loader2,
   RotateCcw, Brain, ChevronDown, AlertTriangle,
@@ -120,6 +120,32 @@ export function AIScreen() {
   const [gptTest,    setGptTest]    = useState<TestState>('idle');
   const [gptMsg,     setGptMsg]     = useState('');
 
+  // Git publishing config lives in a per-project sidecar file (not project.modules),
+  // read/written via getGitConfig/setGitConfig — same store the Compile screen's
+  // Publish panel uses, so remote/branch stay in sync between the two screens.
+  const [gitDir,     setGitDir]     = useState<string | null>(null);
+  const [gitRemote,  setGitRemote]  = useState('');
+  const [gitBranch,  setGitBranch]  = useState('main');
+  const [gitToken,   setGitToken]   = useState('');
+  const [gitTrigger, setGitTrigger] = useState<'save' | 'compile' | 'manual'>('manual');
+  const [gitTest,    setGitTest]    = useState<TestState>('idle');
+  const [gitTestMsg, setGitTestMsg] = useState('');
+  const [gitSaved,   setGitSaved]   = useState(false);
+
+  useEffect(() => {
+    window.conchitour.getProjectDir().then(async (dir) => {
+      setGitDir(dir);
+      if (!dir) return;
+      const cfg = await window.conchitour.getGitConfig(dir);
+      if (cfg) {
+        setGitRemote(cfg.remote ?? '');
+        setGitBranch(cfg.branch || 'main');
+        setGitToken(cfg.token ?? '');
+        setGitTrigger(cfg.pushTrigger ?? 'manual');
+      }
+    });
+  }, []);
+
   async function autoSaveModules(patch: Parameters<typeof updateModules>[0]) {
     updateModules(patch);
     try {
@@ -134,6 +160,37 @@ export function AIScreen() {
       const dir = await window.conchitour.getProjectDir();
       if (dir) await window.conchitour.saveProject(useProject.getState().project);
     } catch { /* non-fatal */ }
+  }
+
+  async function saveGitConfig(patch: Partial<{ remote: string; branch: string; token: string; pushTrigger: 'save' | 'compile' | 'manual' }>) {
+    const next = {
+      remote: patch.remote ?? gitRemote,
+      branch: patch.branch ?? gitBranch,
+      token: patch.token ?? gitToken,
+      pushTrigger: patch.pushTrigger ?? gitTrigger,
+    };
+    setGitRemote(next.remote);
+    setGitBranch(next.branch);
+    setGitToken(next.token);
+    setGitTrigger(next.pushTrigger);
+    if (!gitDir) return;
+    await window.conchitour.setGitConfig(gitDir, {
+      remote: next.remote,
+      branch: next.branch || 'main',
+      token: next.token || undefined,
+      pushTrigger: next.pushTrigger,
+    });
+    setGitSaved(true);
+    setTimeout(() => setGitSaved(false), 2000);
+  }
+
+  async function handleTestGitConnection() {
+    if (!gitRemote.trim()) return;
+    setGitTest('testing'); setGitTestMsg('');
+    const r = await window.conchitour.gitTestConnection(gitRemote.trim(), gitToken.trim() || undefined);
+    setGitTest(r.ok ? 'ok' : 'error');
+    setGitTestMsg(r.error ?? '');
+    if (r.ok) setTimeout(() => setGitTest('idle'), 3000);
   }
 
   async function handleTestClaude() {
@@ -165,7 +222,7 @@ export function AIScreen() {
   const openaiModels = modelsForProvider('openai');
 
   return (
-    <ScreenShell title="AI" subtitle="Configure AI providers, model selection, and editorial context.">
+    <ScreenShell title="AI & API" subtitle="Configure AI providers, model selection, editorial context, and git publishing.">
       {licenseExpired && (
         <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 max-w-6xl mx-auto">
           <AlertTriangle size={15} className="text-amber-500 flex-shrink-0" />
@@ -391,6 +448,97 @@ export function AIScreen() {
             </div>
           </div>
 
+        </div>
+
+        {/* ── Git Publishing ─────────────────────────────────────────────── */}
+        <div className="mt-6 space-y-3">
+          <p className="text-[10px] uppercase tracking-widest text-ink-faded font-semibold">Git publishing</p>
+          <div className="rounded-xl border border-line-soft bg-paper-tinted p-4 space-y-4">
+            <p className="text-xs text-ink-soft leading-relaxed">
+              Push your compiled tour straight to a git remote (e.g. GitHub Pages). Works with SSH remotes
+              that already have a key set up on this machine, or HTTPS remotes with a personal access token below.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-ink-faded font-semibold block mb-0.5">Repository URL</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={gitRemote}
+                  placeholder="https://github.com/username/repo.git"
+                  onChange={(e) => setGitRemote(e.target.value)}
+                  onBlur={() => saveGitConfig({ remote: gitRemote.trim() })}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-ink-faded font-semibold block mb-0.5">Branch</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={gitBranch}
+                  placeholder="main"
+                  onChange={(e) => setGitBranch(e.target.value)}
+                  onBlur={() => saveGitConfig({ branch: gitBranch.trim() || 'main' })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="text-[10px] uppercase tracking-wide text-ink-faded font-semibold">Access token (HTTPS only)</label>
+                <a href="#" onClick={(e) => { e.preventDefault(); window.conchitour.openUrl('https://github.com/settings/tokens'); }} className="text-[11px] text-accent underline">
+                  Create one ↗
+                </a>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  className={inputCls + ' flex-1'}
+                  value={gitToken}
+                  placeholder="Leave empty if using SSH (git@github.com:...)"
+                  onChange={(e) => setGitToken(e.target.value)}
+                  onBlur={() => saveGitConfig({ token: gitToken.trim() })}
+                />
+                <TestButton state={gitTest} disabled={!gitRemote.trim()} onClick={handleTestGitConnection} />
+              </div>
+              {gitTest === 'error' && <p className="text-[11px] text-red-500 mt-1">{gitTestMsg || 'Connection failed.'}</p>}
+              <p className="text-[11px] text-ink-faded mt-1 leading-relaxed">
+                Only needed for <code className="font-mono">https://</code> repository URLs — GitHub, GitLab, and Bitbucket
+                all support pasting a personal access token here instead of typing a password. If your URL starts with{' '}
+                <code className="font-mono">git@</code> (SSH), leave this blank; the SSH key already configured for git
+                on this machine will be used automatically.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase tracking-wide text-ink-faded font-semibold block mb-1.5">When to push automatically</label>
+              <div className="space-y-1.5">
+                {([
+                  ['manual', 'Only when I click Publish', 'Safest — nothing happens until you compile and publish from the Compile screen.'],
+                  ['compile', 'Every time I compile', 'Pushes right after a successful compile — no extra step needed to keep the live site in sync.'],
+                  ['save', 'Every time I save the project', 'Heaviest option — recompiles the whole tour and pushes on every save (Ctrl+S). Only use this for small tours.'],
+                ] as const).map(([val, label, desc]) => (
+                  <label key={val} className="flex items-start gap-2 cursor-pointer select-none">
+                    <input
+                      type="radio"
+                      name="gitTrigger"
+                      checked={gitTrigger === val}
+                      onChange={() => saveGitConfig({ pushTrigger: val })}
+                      className="mt-0.5 accent-accent"
+                    />
+                    <span className="text-xs">
+                      <span className="font-medium text-ink">{label}</span>
+                      <span className="text-ink-faded ml-1.5 text-[11px]">{desc}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {gitSaved && <p className="text-[11px] text-emerald-600 flex items-center gap-1"><CheckCircle size={11} /> Saved</p>}
+            {!gitDir && <p className="text-[11px] text-amber-600">Open or create a project first to configure git publishing.</p>}
+          </div>
         </div>
       </div>
 

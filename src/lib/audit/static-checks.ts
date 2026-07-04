@@ -1,8 +1,8 @@
 import type { Project, AuditIssue, AuditCategory, AuditSeverity, LinkHotspot } from '../../types';
 
-type PushFn = (i: Omit<AuditIssue, 'id'>) => void;
+export type PushFn = (i: Omit<AuditIssue, 'id'>) => void;
 
-function hashIssue(i: Omit<AuditIssue, 'id'>): string {
+export function hashIssue(i: Omit<AuditIssue, 'id'>): string {
   const key = [i.category, i.severity, i.title, i.targetEntityId || ''].join('|');
   let h = 5381;
   for (let j = 0; j < key.length; j++) {
@@ -11,7 +11,7 @@ function hashIssue(i: Omit<AuditIssue, 'id'>): string {
   return (h >>> 0).toString(16);
 }
 
-function issue(
+export function issue(
   severity: AuditSeverity,
   category: AuditCategory,
   title: string,

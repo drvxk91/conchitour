@@ -11,7 +11,8 @@ import { useLicense } from '@/store/license';
 import { useTrialState } from '@/lib/trial';
 import { ScreenShell } from '@/components/shell/ScreenShell';
 import { runStaticAudit } from '@/lib/audit/static-checks';
-import type { CompileResult, ConchitourSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo } from '../../electron/preload';
+import { maybeAutoPublish } from '@/lib/auto-publish';
+import type { CompileResult, ConchitourSettings, KrpanoValidationResult, KrpanoLicenseStatus, KrpanoRegisterResult, TileProgressData, LicenseInfo, GitPublishConfig } from '../../electron/preload';
 
 function parseLicenseCode(code: string): LicenseInfo | null {
   const result: LicenseInfo = {};
@@ -135,10 +136,13 @@ export function CompileScreen() {
   const [lanUrl, setLanUrl]   = useState<string | null>(null);
   const [showQr, setShowQr]  = useState(false);
 
-  // Publish (git push)
+  // Publish (git push) — token and pushTrigger are configured on the AI & API
+  // screen; this screen only edits remote/branch, so we keep them in a ref-like
+  // state and merge them back in on save rather than clobbering them.
   const [showPublish, setShowPublish]         = useState(false);
   const [publishRemote, setPublishRemote]     = useState('');
   const [publishBranch, setPublishBranch]     = useState('main');
+  const [publishExtra, setPublishExtra]       = useState<Pick<GitPublishConfig, 'token' | 'pushTrigger'>>({});
   const [publishLog, setPublishLog]           = useState<string[]>([]);
   const [publishing, setPublishing]           = useState(false);
   const [publishDone, setPublishDone]         = useState<{ ok: boolean; error?: string } | null>(null);
@@ -150,10 +154,11 @@ export function CompileScreen() {
   useEffect(() => {
     window.conchitour.getProjectDir().then(async (dir) => {
       if (!dir) return;
-      const cfg = await window.conchitour.getGitRemote(dir);
+      const cfg = await window.conchitour.getGitConfig(dir);
       if (cfg) {
         setPublishRemote(cfg.remote);
         setPublishBranch(cfg.branch);
+        setPublishExtra({ token: cfg.token, pushTrigger: cfg.pushTrigger });
         setPublishConfigured(true);
       }
     });
@@ -333,7 +338,10 @@ export function CompileScreen() {
       const projectData = forceRegenTiles ? { ...project, __forceRegenTiles: true } : project;
       const res = await window.conchitour.compileRun(projectData, outputDir);
       setResult(res);
-      if (res.ok) await fetchLanUrl();
+      if (res.ok) {
+        await fetchLanUrl();
+        maybeAutoPublish('compile', (msg) => setPublishLog((prev) => [...prev, msg]), res.outputDir ?? outputDir);
+      }
     } finally {
       setRunning(false);
       setIsCompiling(false);
@@ -345,15 +353,15 @@ export function CompileScreen() {
   const handlePublish = useCallback(async () => {
     if (!result?.outputDir || publishing) return;
     const dir = await window.conchitour.getProjectDir();
-    if (dir) await window.conchitour.setGitRemote(dir, publishRemote, publishBranch);
+    if (dir) await window.conchitour.setGitConfig(dir, { remote: publishRemote, branch: publishBranch, ...publishExtra });
     setPublishConfigured(true);
     setPublishing(true);
     setPublishLog([]);
     setPublishDone(null);
-    const res = await window.conchitour.gitPublish(result.outputDir, publishRemote, publishBranch);
+    const res = await window.conchitour.gitPublish(result.outputDir, publishRemote, publishBranch, publishExtra.token);
     setPublishDone(res);
     setPublishing(false);
-  }, [result, publishing, publishRemote, publishBranch]);
+  }, [result, publishing, publishRemote, publishBranch, publishExtra]);
 
   const handleCopyPath = useCallback(() => {
     if (!result?.outputDir) return;

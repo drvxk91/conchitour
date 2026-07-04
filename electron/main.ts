@@ -123,7 +123,9 @@ async function startTourPreviewServer(outputDir: string, defaultLang: string): P
   });
 
   return new Promise<number>((resolve) => {
-    tourPreviewServer!.listen(0, '127.0.0.1', () => {
+    // Bind to all interfaces (not just loopback) so phones on the same LAN
+    // can reach the QR-code preview URL — mirrors the wizard server's binding.
+    tourPreviewServer!.listen(0, '0.0.0.0', () => {
       tourPreviewPort = (tourPreviewServer!.address() as { port: number }).port;
       tourPreviewDir  = outputDir;
       resolve(tourPreviewPort);
@@ -241,6 +243,19 @@ ipcMain.handle('dialog:openFiles', async () => {
     filters: [{ name: 'Equirectangular images', extensions: ['jpg', 'jpeg', 'png'] }],
   });
   return result.canceled ? [] : result.filePaths;
+});
+
+// Used by the Audit screen to flag branding images (logo, favicon, loader) that
+// exist on disk but fail to decode — sharp throws on truncated/malformed files
+// that a plain fs.readFile/copyFile would happily pass through unnoticed.
+ipcMain.handle('image:validate', async (_e, filePath: string) => {
+  try {
+    const sharp = (await import(/* @vite-ignore */ 'sharp')).default;
+    await sharp(filePath).metadata();
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 ipcMain.handle('project:load', async (_e, projectPath: string) => {
@@ -1352,29 +1367,72 @@ ipcMain.handle('project:git-commit', async (_e, projectDir: string, message: str
 
 // ── Git publish (push output folder to a remote) ─────────────────────────────
 
-ipcMain.handle('git:get-remote', async (_e, projectDir: string) => {
+export interface GitPublishConfig {
+  remote: string;
+  branch: string;
+  token?: string;
+  pushTrigger?: 'save' | 'compile' | 'manual';
+}
+
+// Embeds a PAT into an http(s) remote as its "username" — the standard way
+// GitHub/GitLab/Bitbucket accept token auth over HTTPS. SSH remotes (git@host:...)
+// aren't valid URL syntax, so `new URL()` throws and they pass through untouched —
+// those are expected to already work via the system's SSH key/agent.
+function withEmbeddedToken(remote: string, token?: string): string {
+  if (!token) return remote;
+  try {
+    const url = new URL(remote);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return remote;
+    url.username = token;
+    url.password = '';
+    return url.toString();
+  } catch {
+    return remote;
+  }
+}
+
+ipcMain.handle('git:get-config', async (_e, projectDir: string) => {
   try {
     const cfgPath = path.join(projectDir, '.conchitour-publish.json');
     const raw = await fs.readFile(cfgPath, 'utf-8');
-    return JSON.parse(raw) as { remote: string; branch: string };
+    return JSON.parse(raw) as GitPublishConfig;
   } catch {
     return null;
   }
 });
 
-ipcMain.handle('git:set-remote', async (_e, projectDir: string, remote: string, branch: string) => {
+ipcMain.handle('git:set-config', async (_e, projectDir: string, config: GitPublishConfig) => {
   try {
     const cfgPath = path.join(projectDir, '.conchitour-publish.json');
-    await fs.writeFile(cfgPath, JSON.stringify({ remote, branch }, null, 2), 'utf-8');
+    await fs.writeFile(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
     return { ok: true };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 });
 
-ipcMain.handle('git:publish', async (_e, outputDir: string, remote: string, branch: string) => {
+// Quick, non-destructive check that a remote + token can actually be reached —
+// lets the user validate their setup without waiting for a full compile+push.
+ipcMain.handle('git:test-connection', async (_e, remote: string, token?: string) => {
+  try {
+    try { execFileSync('git', ['--version'], { timeout: 5_000 }); }
+    catch { return { ok: false, error: 'Git is not installed or not found in PATH.' }; }
+
+    const authedRemote = withEmbeddedToken(remote, token);
+    execFileSync('git', ['ls-remote', '--exit-code', authedRemote], { timeout: 20_000 });
+    return { ok: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg.includes('Authentication') || msg.includes('403') || msg.includes('fatal: could not read')
+      ? 'Could not authenticate — check the repository URL and token.'
+      : msg };
+  }
+});
+
+ipcMain.handle('git:publish', async (_e, outputDir: string, remote: string, branch: string, token?: string) => {
   const win = getMainWindow();
   const send = (msg: string) => win?.webContents.send('git:progress', msg);
+  const authedRemote = withEmbeddedToken(remote, token);
   try {
     // Check git availability
     try { execFileSync('git', ['--version'], { timeout: 5_000 }); }
@@ -1397,7 +1455,7 @@ ipcMain.handle('git:publish', async (_e, outputDir: string, remote: string, bran
     // Configure remote
     send('→ Configuring remote…');
     try { execFileSync('git', ['-C', outputDir, 'remote', 'remove', 'origin'], { timeout: 5_000 }); } catch { /* no existing remote */ }
-    execFileSync('git', ['-C', outputDir, 'remote', 'add', 'origin', remote], { timeout: 5_000 });
+    execFileSync('git', ['-C', outputDir, 'remote', 'add', 'origin', authedRemote], { timeout: 5_000 });
     send(`✓ Remote: ${remote}`);
 
     // Set git identity if not configured (required for commit)
@@ -2946,7 +3004,7 @@ function generatePageHtml(project: any, page: any, lang: string, bodyHtml: strin
 </head>
 <body>
   <header class="sp-header">
-    ${logoPath ? `<img src="/assets/logo${path.extname(logoPath) || '.png'}" alt="${projectTitle}" class="sp-logo" />` : ''}
+    ${logoPath ? `<img src="/assets/logo${path.extname(logoPath) || '.png'}" alt="${projectTitle}" class="sp-logo" onerror="this.style.display='none'" />` : ''}
     <span class="sp-header-title">${projectTitle}</span>
     ${allLangs.length > 1 ? `<div class="sp-lang">${langLinks}</div>` : ''}
     <a href="${backHref}" class="sp-back">← Back to tour</a>
@@ -3274,7 +3332,7 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
   const pillInitial: string  = (projectTitle || '?').trim().charAt(0).toUpperCase();
   // logoPath file > initial letter from tour title
   const logoImgHtml: string = branding.logoPath
-    ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}">`
+    ? `<img id="hdr-logo-img" src="/assets/logo${xmlEsc(logoExt)}" alt="${xmlEsc(projectTitle)}" onerror="this.style.display='none'">`
     : `<span id="hdr-logo-img" class="hdr-initial" aria-hidden="true">${xmlEsc(pillInitial)}</span>`;
   // Compute initial sheet title/category from start scene
   const initialSheetTitle: string = startScene
@@ -3337,6 +3395,13 @@ function generateTourHtml(project: any, lang: string, startSceneSlug: string | n
     `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>` +
     ` Scene info</button>`
   );
+  if (hasHdrShare) {
+    mobMoreItems.push(
+      `<button class="mob-more-item" onclick="window._mobileShare&&window._mobileShare();_closeMobMore()">` +
+      `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>` +
+      ` Share</button>`
+    );
+  }
   if (project.modules?.vr) {
     mobMoreItems.push(
       `<button class="mob-more-item" onclick="if(_krpano)_krpano.call('webvr.enterVR()');_closeMobMore()">` +
@@ -3576,7 +3641,7 @@ ${hsPreviewCss}
 
     /* ── Video popup ─────────────────────────────── */
     #video-popup{
-      position:fixed;inset:0;z-index:200;
+      position:fixed;inset:0;z-index:9999;
       background:rgba(0,0,0,.9);
       display:flex;align-items:center;justify-content:center;padding:32px;
       opacity:0;pointer-events:none;transition:opacity .2s;
@@ -3598,7 +3663,7 @@ ${hsPreviewCss}
 
     /* ── Form popup ─────────────────────────────── */
     #form-popup{
-      position:fixed;inset:0;z-index:200;
+      position:fixed;inset:0;z-index:9999;
       background:rgba(0,0,0,.52);
       display:flex;align-items:center;justify-content:center;padding:40px;
       opacity:0;pointer-events:none;transition:opacity .2s;
@@ -3910,15 +3975,6 @@ ${hsPreviewCss}
     .mp{transition:transform .2s ease}
     .mp:hover,.mp.mp-hover{transform:scale(1.22)!important;z-index:1000!important}
     .mp.mp-off:hover .mp-dot,.mp.mp-off.mp-hover .mp-dot{box-shadow:0 0 0 1px rgba(0,0,0,.3),0 0 16px rgba(255,255,255,.5)}
-    #map-toast{
-      position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:600;
-      background:rgba(8,8,10,.82);color:#fff;font-size:12px;font-weight:600;
-      font-family:-apple-system,sans-serif;white-space:nowrap;
-      padding:5px 14px 6px;border-radius:20px;pointer-events:none;
-      opacity:0;transition:opacity .25s;max-width:320px;
-      text-overflow:ellipsis;overflow:hidden;
-    }
-    #map-toast.visible{opacity:1}
     /* ── Loading splash ─────────────────────────────────── */
     #splash{
       position:fixed;inset:0;z-index:9999;
@@ -3995,7 +4051,6 @@ ${hsPreviewCss}
 ${sharePopoverHtml}${mobMorePopoverHtml}
 ${showMap ? `  <div id="map-panel">
     <button id="map-close" aria-label="Close map">&#x2715;</button>
-    <div id="map-toast"></div>
     <div id="leaflet-map"></div>
   </div>\n` : ''}
   <div id="info-panel">
@@ -4611,7 +4666,6 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
   var _markers = {};          // slug → L.marker
   var _markerColors = {};     // slug → color string (for radar reuse)
   var _transLine = null;      // current transition polyline
-  var _mapToastTimer = null;
   var MAP_TILES = {
     streets:   { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:19 },
     satellite: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'&copy; Esri, i-cubed, USDA, AEX, GeoEye', maxZoom:18 },
@@ -4754,17 +4808,6 @@ ${showMap ? `  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></s
       if (!_lmap.getBounds().contains(ll)) {
         _lmap.flyTo(ll, _lmap.getZoom(), { duration:0.8, easeLinearity:0.5 });
       }
-    }
-
-    // Toast: "Prev title → New title"
-    var toastEl = document.getElementById('map-toast');
-    if (toastEl) {
-      var prevTitle = prevSlug ? _displayTitle(prevSlug) : '';
-      var newTitle  = _displayTitle(newSlug);
-      toastEl.textContent = prevTitle ? (prevTitle + ' → ' + newTitle) : newTitle;
-      toastEl.classList.add('visible');
-      clearTimeout(_mapToastTimer);
-      _mapToastTimer = setTimeout(function() { toastEl.classList.remove('visible'); }, 2200);
     }
   };
 

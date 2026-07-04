@@ -35,12 +35,14 @@ contextBridge.exposeInMainWorld('conchitour', {
   importExcel: (projectData: unknown) => ipcRenderer.invoke('excel:import', projectData),
   gitCommit: (projectDir: string, message: string): Promise<GitCommitResult> =>
     ipcRenderer.invoke('project:git-commit', projectDir, message),
-  gitPublish: (outputDir: string, remote: string, branch: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('git:publish', outputDir, remote, branch),
-  getGitRemote: (projectDir: string): Promise<{ remote: string; branch: string } | null> =>
-    ipcRenderer.invoke('git:get-remote', projectDir),
-  setGitRemote: (projectDir: string, remote: string, branch: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('git:set-remote', projectDir, remote, branch),
+  gitPublish: (outputDir: string, remote: string, branch: string, token?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('git:publish', outputDir, remote, branch, token),
+  getGitConfig: (projectDir: string): Promise<GitPublishConfig | null> =>
+    ipcRenderer.invoke('git:get-config', projectDir),
+  setGitConfig: (projectDir: string, config: GitPublishConfig): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('git:set-config', projectDir, config),
+  gitTestConnection: (remote: string, token?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('git:test-connection', remote, token),
   onGitProgress: (cb: (msg: string) => void): (() => void) => {
     const handler = (_: unknown, msg: string) => cb(msg);
     ipcRenderer.on('git:progress', handler as never);
@@ -132,6 +134,9 @@ contextBridge.exposeInMainWorld('conchitour', {
   // Brand color extraction from a website URL
   brandExtract: (url: string): Promise<{ ok: boolean; colors: string[]; logoUrl?: string; error?: string }> =>
     ipcRenderer.invoke('brand:extract', url),
+  // Detects truncated/malformed image files (e.g. a logo that copies fine but won't decode)
+  validateImage: (filePath: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('image:validate', filePath),
 });
 
 export interface PhotoExif {
@@ -179,6 +184,14 @@ export interface GitCommitResult {
   ok: boolean;
   sha?: string;
   error?: string;
+}
+
+export interface GitPublishConfig {
+  remote: string;
+  branch: string;
+  /** Personal access token for HTTPS remotes — never required for SSH remotes. */
+  token?: string;
+  pushTrigger?: 'save' | 'compile' | 'manual';
 }
 
 export interface ExcelExportResult {
@@ -303,9 +316,10 @@ declare global {
       downloadExcelTemplate: (projectData: unknown) => Promise<ExcelExportResult>;
       importExcel: (projectData: unknown) => Promise<ImportDiffResult>;
       gitCommit: (projectDir: string, message: string) => Promise<GitCommitResult>;
-      gitPublish: (outputDir: string, remote: string, branch: string) => Promise<{ ok: boolean; error?: string }>;
-      getGitRemote: (projectDir: string) => Promise<{ remote: string; branch: string } | null>;
-      setGitRemote: (projectDir: string, remote: string, branch: string) => Promise<{ ok: boolean; error?: string }>;
+      gitPublish: (outputDir: string, remote: string, branch: string, token?: string) => Promise<{ ok: boolean; error?: string }>;
+      getGitConfig: (projectDir: string) => Promise<GitPublishConfig | null>;
+      setGitConfig: (projectDir: string, config: GitPublishConfig) => Promise<{ ok: boolean; error?: string }>;
+      gitTestConnection: (remote: string, token?: string) => Promise<{ ok: boolean; error?: string }>;
       onGitProgress: (cb: (msg: string) => void) => () => void;
       getPathForFile: (file: File) => string;
       getFileServerPort: () => number;
@@ -353,6 +367,7 @@ declare global {
       onWizardMobileAnswers: (cb: (answers: unknown) => void) => () => void;
       // Brand color extraction
       brandExtract: (url: string) => Promise<{ ok: boolean; colors: string[]; logoUrl?: string; error?: string }>;
+      validateImage: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }

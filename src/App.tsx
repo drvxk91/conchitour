@@ -7,6 +7,7 @@ import { WelcomeScreen } from '@/screens/WelcomeScreen';
 import { LicenseGate } from '@/components/LicenseGate';
 import { ContextWizardProvider } from '@/components/ContextWizard';
 import { toLocalUrl } from '@/lib/local-url';
+import { maybeAutoPublish } from '@/lib/auto-publish';
 import { useProject } from '@/store/project';
 import { useLicense } from '@/store/license';
 import type { Scene, LinkHotspot, ExternalHotspot, FormHotspot, Project } from '@/types';
@@ -223,6 +224,9 @@ export default function App() {
     try {
       await window.conchitour.saveProject(project);
       clearDirty();
+      // Fire-and-forget: no-ops unless the project's push trigger is set to
+      // "save" (configured on the AI & API screen). Compiles then publishes.
+      maybeAutoPublish('save', (msg) => console.log('[git]', msg));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('No project open')) {
