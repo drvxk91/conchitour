@@ -65,7 +65,11 @@ function SceneDiffRow({ scene, result, kept, onToggle, diffs }: SceneDiffRowProp
             : <div className="w-full h-full flex items-center justify-center"><ImageOff size={10} className="text-ink-faded" /></div>}
         </div>
         <span className="text-xs font-mono text-ink-soft flex-1">{scene.slug}</span>
-        <span className="text-[10px] text-ink-faded">{diffs.length} change{diffs.length !== 1 ? 's' : ''}</span>
+        {result.error ? (
+          <span title={result.error} className="text-[10px] text-red-500 max-w-[220px] truncate cursor-help">⚠ {result.error}</span>
+        ) : (
+          <span className="text-[10px] text-ink-faded">{diffs.length} change{diffs.length !== 1 ? 's' : ''}</span>
+        )}
         <button
           onClick={() => setExpanded((v) => !v)}
           className="text-[10px] text-ink-faded hover:text-ink px-1.5 py-0.5 rounded border border-line-soft"

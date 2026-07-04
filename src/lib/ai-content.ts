@@ -118,6 +118,8 @@ export interface SceneContentResult {
   title?: Record<string, string>;
   description?: Record<string, string>;
   altText?: Record<string, string>;
+  /** Set when the AI response for this scene couldn't be parsed — title/description/altText are empty, not "no changes needed". */
+  error?: string;
 }
 
 const IMAGE_WIDTHS: Record<GenerateOptions['imageQuality'], number> = {
@@ -205,19 +207,29 @@ function parseContentResponse(
   scene: Scene,
   options: GenerateOptions,
 ): SceneContentResult {
-  const clean = text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
-
-  let parsed: Record<string, Record<string, string>> = {};
-  try { parsed = JSON.parse(clean); }
-  catch { parsed = {}; }
+  // Extract the outermost {...} rather than only stripping a leading/trailing
+  // markdown fence — models sometimes add a preamble or explanation the fence
+  // regex alone doesn't account for.
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  const clean = firstBrace !== -1 && lastBrace > firstBrace
+    ? text.slice(firstBrace, lastBrace + 1)
+    : text.trim();
 
   const result: SceneContentResult = {
     sceneId: scene.id,
     sceneSlug: scene.slug,
   };
+
+  let parsed: Record<string, Record<string, string>> = {};
+  try {
+    parsed = JSON.parse(clean);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`[ai-content] failed to parse response for scene "${scene.slug}". Reason:`, reason, '\nFull response:', text);
+    result.error = `AI returned malformed JSON (${reason}). Response: "${text.slice(0, 120).replace(/\s+/g, ' ')}${text.length > 120 ? '…' : ''}"`;
+    return result;
+  }
 
   const langs = options.langs;
   const defaultLang = langs[0] || 'en';

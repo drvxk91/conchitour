@@ -87,14 +87,23 @@ interface AiRawIssue {
 }
 
 function parseAiResponse(text: string, project: Project): AuditIssue[] {
-  const clean = text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
+  // Extract the outermost {...} rather than only stripping a leading/trailing
+  // markdown fence — models sometimes add a preamble or explanation the fence
+  // regex alone doesn't account for.
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  const clean = firstBrace !== -1 && lastBrace > firstBrace
+    ? text.slice(firstBrace, lastBrace + 1)
+    : text.trim();
 
   let parsed: { issues?: AiRawIssue[] };
-  try { parsed = JSON.parse(clean); }
-  catch { return []; }
+  try {
+    parsed = JSON.parse(clean);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[ai-checks] failed to parse audit response. Reason:', reason, '\nFull response:', text);
+    throw new Error(`AI returned malformed JSON (${reason}) — audit results are incomplete, not clean. Response: "${text.slice(0, 120).replace(/\s+/g, ' ')}${text.length > 120 ? '…' : ''}"`);
+  }
 
   return (parsed.issues ?? []).map((i) => {
     const targetEntityId = i.targetSlug

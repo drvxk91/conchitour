@@ -300,7 +300,7 @@ export function SeoScreen() {
 
           {/* action buttons */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {aiError && <span className="text-[10px] text-red-500 max-w-[140px] truncate">{aiError}</span>}
+            {aiError && <span title={aiError} className="text-[10px] text-red-500 max-w-[140px] truncate cursor-help">{aiError}</span>}
             {aiState === 'done' && <CheckCircle size={12} className="text-green-500" />}
             {undoSnapshot && (
               <button onClick={handleUndo} className="btn text-xs gap-1 text-amber-600 border-amber-200 hover:bg-amber-50 py-0.5">

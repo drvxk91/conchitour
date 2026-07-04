@@ -162,16 +162,22 @@ export async function generateSeoWithAi(
 
   const { text } = await callAiStreaming(provider, apiKey, prompt, null, signal, onToken);
 
-  const clean = text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
+  // Extract the outermost {...} rather than only stripping a leading/trailing
+  // markdown fence — models sometimes add a preamble or explanation the fence
+  // regex alone doesn't account for.
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  const clean = firstBrace !== -1 && lastBrace > firstBrace
+    ? text.slice(firstBrace, lastBrace + 1)
+    : text.trim();
 
   let parsed: Partial<SeoGenerateResult & { altTexts: Record<string, string> }>;
   try {
     parsed = JSON.parse(clean);
-  } catch {
-    throw new Error('AI returned malformed JSON — the response may have been cut off. Try again with fewer languages or without alt-text generation.');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[ai-seo] failed to parse AI response. Reason:', reason, '\nFull response:', text);
+    throw new Error(`AI returned malformed JSON (${reason}). Response: "${text.slice(0, 120).replace(/\s+/g, ' ')}${text.length > 120 ? '…' : ''}"`);
   }
 
   const validSchemaTypes: ProjectSeo['schemaType'][] = ['TouristAttraction', 'Hotel', 'Museum', 'Place'];

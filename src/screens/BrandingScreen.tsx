@@ -143,9 +143,22 @@ Return ONLY valid JSON (no markdown, no explanation):
         modelId,
       );
 
-      const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-      let parsed: Record<string, string> = {};
-      try { parsed = JSON.parse(clean); } catch { /* keep empty */ }
+      // Extract the outermost {...} rather than only stripping a leading/trailing
+      // markdown fence — models sometimes add a preamble or explanation the fence
+      // regex alone doesn't account for.
+      const firstBrace = text.indexOf('{');
+      const lastBrace = text.lastIndexOf('}');
+      const clean = firstBrace !== -1 && lastBrace > firstBrace
+        ? text.slice(firstBrace, lastBrace + 1)
+        : text.trim();
+      let parsed: Record<string, string>;
+      try {
+        parsed = JSON.parse(clean);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error('[branding] failed to parse AI response. Reason:', reason, '\nFull response:', text);
+        throw new Error(`AI returned malformed JSON (${reason}). Response: "${text.slice(0, 120).replace(/\s+/g, ' ')}${text.length > 120 ? '…' : ''}"`);
+      }
 
       const newIntroText = { ...(b.introText ?? {}) };
       for (const l of langs) {
