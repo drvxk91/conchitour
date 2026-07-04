@@ -5,7 +5,6 @@ import { TitleBar } from '@/components/shell/TitleBar';
 import { ScreenRouter } from '@/components/shell/ScreenRouter';
 import { WelcomeScreen } from '@/screens/WelcomeScreen';
 import { LicenseGate } from '@/components/LicenseGate';
-import { TrialBanner } from '@/components/TrialBanner';
 import { ContextWizardProvider } from '@/components/ContextWizard';
 import { toLocalUrl } from '@/lib/local-url';
 import { useProject } from '@/store/project';
@@ -357,7 +356,6 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col">
       <TitleBar />
-      <TrialBanner />
       <div className="flex-1 flex overflow-hidden min-h-0">
         <Sidebar />
         {/* Scenes + Map own their scroll/overflow; other screens scroll freely */}
